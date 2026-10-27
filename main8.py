@@ -8443,14 +8443,42 @@ def criar_executor_ferramentas_ahm7(message):
                     flags=re.IGNORECASE,
                 )) or bool(alvos)
                 if quer_avatar:
-                    alvo = alvos[0] if alvos else message.author
-                    avatar = getattr(alvo, "display_avatar", None)
-                    if avatar:
-                        args["imagem_url"] = str(avatar.with_size(1024).url)
+                    alvos = alvos[:3] if alvos else [message.author]
+                    referencias_avatar = []
+                    nomes_alvos = []
+                    for alvo in alvos:
+                        avatar = getattr(alvo, "display_avatar", None)
+                        if not avatar:
+                            continue
+                        try:
+                            url_avatar = str(avatar.with_size(1024).url)
+                            dados_avatar, mime_avatar, nome_avatar = await baixar_imagem_url(url_avatar)
+                            referencias_avatar.append((getattr(alvo, "display_name", alvo.name), dados_avatar, mime_avatar, url_avatar, nome_avatar))
+                            nomes_alvos.append(getattr(alvo, "display_name", alvo.name))
+                        except (FalhaProvedor, discord.HTTPException, OSError) as error:
+                            log_console(f"AVISO: não foi possível carregar avatar para referência ({type(error).__name__}).")
+                    if referencias_avatar:
+                        if len(referencias_avatar) > 1:
+                            try:
+                                nome_prancha, bytes_prancha, mime_prancha = await asyncio.to_thread(
+                                    combinar_imagens_para_analise,
+                                    [(nome, dados, mime) for nome, dados, mime, _, _ in referencias_avatar],
+                                )
+                                args["anexo"] = ImagemPorLink(
+                                    referencias_avatar[0][3], bytes_prancha, mime_prancha,
+                                    "referencias-perfil.jpg",
+                                )
+                            except (FalhaProvedor, ValueError, OSError) as error:
+                                log_console(f"AVISO: não foi possível combinar avatares ({type(error).__name__}); usando a primeira referência.")
+                                args["imagem_url"] = referencias_avatar[0][3]
+                        else:
+                            args["imagem_url"] = referencias_avatar[0][3]
                         args["consulta"] = (
                             str(args.get("consulta", "")).strip()
-                            + " Use a foto de perfil como referência visual para a pessoa; "
-                              "crie uma nova imagem conforme o pedido, sem afirmar que é uma foto real."
+                            + " Use a(s) foto(s) de perfil como referência visual. Pessoas de referência: "
+                            + ", ".join(nomes_alvos)
+                            + ". Se houver mais de uma, represente essas pessoas juntas conforme o pedido. "
+                              "Crie uma imagem nova; não afirme que é uma fotografia real."
                         ).strip()
 
         resultados = []
