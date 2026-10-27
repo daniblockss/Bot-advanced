@@ -9466,7 +9466,7 @@ async def on_message(message):
                         f"a imagem será encaminhada ao fallback multimodal e ao fallback final VisionChat: {error}"
                     )
 
-            if transcricao_confusa_detectada and deve_responder and not txt_extraido.strip():
+            if transcricao_confusa_detectada and deve_responder:
                 await message.reply(
                     "Não entendi muito bem o áudio. 😕 Pode enviar novamente ou escrever o que foi dito?",
                     mention_author=False,
