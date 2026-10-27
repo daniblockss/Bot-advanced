@@ -8766,6 +8766,29 @@ async def on_message(message):
     if message.content.startswith("!"):
         return
 
+    # Detecta chamadas naturais pelo nome do bot, sem exigir @menção.
+    # No servidor, considera também o apelido atual do bot.
+    nome_chamada_match = None
+    nomes_bot = []
+    if bot.user:
+        nomes_bot.append(bot.user.name)
+    if message.guild and message.guild.me:
+        nomes_bot.append(message.guild.me.display_name)
+    texto_para_detectar = (message.content or "").strip()
+    for nome_bot in dict.fromkeys(n.strip() for n in nomes_bot if n and n.strip()):
+        # O nome precisa aparecer no começo da mensagem, depois de uma saudação opcional.
+        # Isso evita responder quando alguém apenas menciona o bot no meio de uma frase.
+        padrao_chamada = (
+            r"^\\s*(?:(?:ei|hey|oi|ol[aá]|opa|com licen[cç]a|desculpa)[\\s,!.:;—-]*)?"
+            + re.escape(nome_bot)
+            + r"(?=$|[\\s,!?!.:;—-])"
+        )
+        nome_chamada_match = re.match(padrao_chamada, texto_para_detectar, flags=re.IGNORECASE)
+        if nome_chamada_match:
+            break
+
+    chamou_por_nome = bool(nome_chamada_match)
+
     # Determinar se o Bot deve responder no Chat
     deve_responder = False
     if is_dm:
@@ -8774,7 +8797,7 @@ async def on_message(message):
         mencionou_bot = (bot.user in message.mentions) or (message.guild and any(role in message.role_mentions for role in message.guild.me.roles))
         mencionou_outros = len([m for m in message.mentions if m.id != bot.user.id]) > 0
 
-        if modo == "mencao" and mencionou_bot: deve_responder = True
+        if modo == "mencao" and (mencionou_bot or chamou_por_nome): deve_responder = True
         elif modo == "livre": deve_responder = True
         elif modo == "livre_sem_mencao" and not mencionou_outros: deve_responder = True
     elif modo != "nothing" and (
@@ -8985,6 +9008,11 @@ async def on_message(message):
     if deve_responder:
         async with message.channel.typing():
             txt = message.content.replace(f"<@{bot.user.id}>", "").strip() or ""
+            # Remove apenas a chamada inicial pelo nome; a pergunta segue intacta para a IA.
+            if chamou_por_nome and nome_chamada_match:
+                txt = txt[nome_chamada_match.end():].lstrip(" \\t,!:;—-").strip()
+                if not txt:
+                    txt = "Você me chamou pelo nome. Responda naturalmente e de forma breve."
 
             # Respostas encadeadas: passe à IA as três mensagens da conversa
             # (pergunta original, resposta do bot e nova mensagem do usuário).
