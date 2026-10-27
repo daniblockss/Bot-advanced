@@ -2250,9 +2250,14 @@ def transcricao_parece_misturada(texto, idioma_esperado="auto"):
     if not isinstance(texto, str) or not texto.strip():
         return False
     outro_alfabeto = bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0400-\u052f]", texto))
-    if idioma_esperado in {"pt", "en", "es", "fr", "de", "it"}:
-        return outro_alfabeto
-    return bool(re.search(r"[A-Za-zÀ-ÿ]", texto)) and outro_alfabeto and len(texto) < 1200
+    if outro_alfabeto and bool(re.search(r"[A-Za-zÀ-ÿ]", texto)):
+        return True
+    idioma_detectado = detectar_idioma_texto(texto)
+    # Em áudio comum, se a transcrição parece estar claramente em outro idioma
+    # que não o idioma recente do usuário, não a repassa como se fosse confiável.
+    if idioma_esperado in {"pt", "en", "es", "fr", "de", "it"} and idioma_detectado:
+        return idioma_detectado != idioma_esperado
+    return False
 
 def salvar_contexto_imagem(message_id, attachment_id, filename, description):
     IMAGE_CONTEXTS[str(message_id)] = {
