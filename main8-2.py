@@ -6049,15 +6049,15 @@ def _notetakers_transcrever_sync(filename, audio_bytes, content_type):
     boundary = "----DiscordBotNoteTakersBoundary7MA4YWxkTrZu0gW"
     body = b"".join([
         (
-            f"--{boundary}\\r\\nContent-Disposition: form-data; name=\\"engine\\"\\r\\n\\r\\n"
-            f"whisper\\r\\n"
-            f"--{boundary}\\r\\nContent-Disposition: form-data; name=\\"language\\"\\r\\n\\r\\n"
-            f"Portuguese\\r\\n"
-            f"--{boundary}\\r\\nContent-Disposition: form-data; name=\\"file\\"; "
-            f'filename="{filename}"\\r\\nContent-Type: {content_type}\\r\\n\\r\\n'
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"engine\"\r\n\r\n"
+            f"whisper\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\n"
+            f"Portuguese\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+            f'filename="{filename}"\r\nContent-Type: {content_type}\r\n\r\n'
         ).encode("utf-8"),
         audio_bytes,
-        f"\\r\\n--{boundary}--\\r\\n".encode(),
+        f"\r\n--{boundary}--\r\n".encode(),
     ])
     request = Request(
         "https://notetakers.vipresearch.ca/stt/v1/transcribe",
@@ -6089,7 +6089,6 @@ def _notetakers_transcrever_sync(filename, audio_bytes, content_type):
             "NoteTakers STT não retornou texto" + (f": {str(detail)[:200]}" if detail else "")
         )
     return texto
-
 
 def _groq_transcrever_sync(api_key, filename, audio_bytes, content_type):
     boundary = "----DiscordBotGroqAudioBoundary7MA4YWxkTrZu0gW"
