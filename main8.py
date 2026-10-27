@@ -5476,6 +5476,39 @@ def anexo_e_audio(anexo):
     }
 
 
+def combinar_imagens_para_analise(imagens, max_lado=1200):
+    """Combina até quatro imagens numa prancha para serviços de visão de imagem única."""
+    imagens = list(imagens or [])[:4]
+    if not imagens:
+        raise ValueError("nenhuma imagem para combinar")
+    try:
+        from PIL import Image, ImageOps, ImageDraw
+    except ImportError as error:
+        if len(imagens) > 1:
+            raise FalhaProvedor(
+                "para analisar várias imagens juntas, instale Pillow (pip install Pillow)"
+            ) from error
+        return imagens[0][0], imagens[0][1], imagens[0][2]
+
+    largura = altura = max_lado
+    tela = Image.new("RGB", (largura, altura), "white")
+    desenho = ImageDraw.Draw(tela)
+    posicoes = [(10, 10), (largura // 2 + 10, 10),
+                (10, altura // 2 + 10), (largura // 2 + 10, altura // 2 + 10)]
+    for indice, (nome, dados, mime) in enumerate(imagens):
+        with Image.open(io.BytesIO(dados)) as original:
+            original.seek(0)
+            quadro = ImageOps.exif_transpose(original).convert("RGB")
+            quadro.thumbnail((largura // 2 - 25, altura // 2 - 50))
+            x, y = posicoes[indice]
+            desenho.text((x, y), str(nome)[:55], fill="black")
+            tela.paste(quadro, (x, y + 22))
+    saida = io.BytesIO()
+    tela.save(saida, format="JPEG", quality=88, optimize=True)
+    nomes = ", ".join(str(nome) for nome, _, _ in imagens)
+    return nomes, saida.getvalue(), "image/jpeg"
+
+
 def listar_modelos_sync(provedor):
     if provedor == "blockrun":
         return list(BLOCKRUN_MODELS)
