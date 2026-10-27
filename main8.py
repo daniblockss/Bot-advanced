@@ -4488,9 +4488,12 @@ async def baixar_imagem_url(url, limite=10_000_000):
                                          trust_env=False, auto_decompress=False) as session:
             for _ in range(6):
                 validar_url_imagem(url)
+                parsed_url = urlparse(url)
                 async with session.get(url, allow_redirects=False, headers={
-                    "Accept": "image/*",
-                    "User-Agent": "BreezeMC/1.0 (Discord image downloader)",
+                    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                    "Referer": f"{parsed_url.scheme}://{parsed_url.netloc}/",
+                    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
                 }) as response:
                     if response.status in {301, 302, 303, 307, 308}:
                         from urllib.parse import urljoin
@@ -4501,6 +4504,31 @@ async def baixar_imagem_url(url, limite=10_000_000):
                         continue
                     if response.status != 200:
                         raise FalhaProvedor(f"download da imagem retornou HTTP {response.status}")
+                    tipo_resposta = response.headers.get("Content-Type", "").lower()
+                    if "text/html" in tipo_resposta or "application/xhtml" in tipo_resposta:
+                        # Links de páginas Tenor/Giphy podem não terminar em .gif; tenta obter
+                        # a URL de mídia publicada no Open Graph, em vez de enviar a página à IA.
+                        pagina = await response.content.read(2_000_001)
+                        if len(pagina) > 2_000_000:
+                            raise FalhaProvedor("a página do GIF excede o limite de leitura")
+                        html_pagina = pagina.decode("utf-8", errors="replace")
+                        candidatos_meta = []
+                        for tag in re.findall(r"<meta\\b[^>]*>", html_pagina, flags=re.IGNORECASE):
+                            attrs = {
+                                chave.lower(): html.unescape(valor)
+                                for chave, valor in re.findall(
+                                    r"""([\\w:-]+)\\s*=\\s*["']([^"']*)["']""", tag
+                                )
+                            }
+                            propriedade = (attrs.get("property") or attrs.get("name") or "").lower()
+                            conteudo = attrs.get("content", "").strip()
+                            if propriedade in {"og:image", "og:video", "twitter:image", "twitter:player:stream"} and conteudo:
+                                candidatos_meta.append(conteudo)
+                        if not candidatos_meta:
+                            raise FalhaProvedor("a página não expõe um link direto de imagem/GIF")
+                        from urllib.parse import urljoin
+                        url = urljoin(url, candidatos_meta[0])
+                        continue
                     if response.content_length is not None and response.content_length > limite:
                         raise FalhaProvedor("a imagem excede o limite de tamanho para envio")
                     data = bytearray()
