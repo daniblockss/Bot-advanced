@@ -6077,7 +6077,7 @@ def texto_transcricao(result):
     return ""
 
 
-async def transcrever_audio(audio_bytes, filename, content_type, channel_id=None):
+async def transcrever_audio(audio_bytes, filename, content_type, channel_id=None, idioma="auto"):
     if not audio_bytes or len(audio_bytes) > 25_000_000:
         raise FalhaProvedor("áudio vazio ou acima do limite de 25 MB")
     safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", os.path.basename(filename)) or "audio.bin"
@@ -6095,7 +6095,7 @@ async def transcrever_audio(audio_bytes, filename, content_type, channel_id=None
                 "audio": audio_data_url,
                 "filename": safe_name,
                 "mime": mime,
-                "language": "pt",
+                "language": idioma or "auto",
                 "model": "accurate",
             }
             result = await asyncio.to_thread(
@@ -6132,7 +6132,7 @@ async def transcrever_audio(audio_bytes, filename, content_type, channel_id=None
     for key in obter_chaves_provedor("groq"):
         try:
             texto = await asyncio.to_thread(
-                _groq_transcrever_sync, key, safe_name, audio_bytes, mime
+                _groq_transcrever_sync, key, safe_name, audio_bytes, mime, idioma
             )
             if texto:
                 return texto
@@ -6191,9 +6191,9 @@ def _notetakers_transcrever_sync(filename, audio_bytes, content_type):
         )
     return texto
 
-def _groq_transcrever_sync(api_key, filename, audio_bytes, content_type):
+def _groq_transcrever_sync(api_key, filename, audio_bytes, content_type, idioma="auto"):
     boundary = "----DiscordBotGroqAudioBoundary7MA4YWxkTrZu0gW"
-    model = SYS_CONFIGS.get("MODEL_AUDIO", "whisper-large-v3-turbo")
+    model = SYS_CONFIGS.get("MODEL_AUDIO", "whisper-large-v3")
     body = b"".join([
         (
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n"
