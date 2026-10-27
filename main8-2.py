@@ -6116,18 +6116,7 @@ async def transcrever_audio(audio_bytes, filename, content_type, channel_id=None
         falhas.append("AHM7 TranScribe está desativado neste canal")
         log_console("AVISO: AHM7 TranScribe está desativado; tentando Groq.")
 
-    # Fallback gratuito sem chave: evita depender apenas do AHM7 e da Groq.
-    # O serviço tem limite diário por IP; se ele falhar/limitar, continuamos para a Groq.
-    try:
-        texto = await asyncio.to_thread(
-            _notetakers_transcrever_sync, safe_name, audio_bytes, mime
-        )
-        if texto:
-            return texto
-        falhas.append("NoteTakers STT não retornou texto")
-    except FalhaProvedor as error:
-        falhas.append(f"NoteTakers STT: {error}")
-        log_console(f"AVISO: fallback NoteTakers falhou; tentando Groq: {error}")
+    # NoteTakers força português e já apresentou erros HTTP 500; removido do fluxo principal.
 
     for key in obter_chaves_provedor("groq"):
         try:
@@ -6200,9 +6189,10 @@ def _groq_transcrever_sync(api_key, filename, audio_bytes, content_type, idioma=
             f"{model}\r\n"
             f"--{boundary}\r\nContent-Disposition: form-data; name=\"response_format\"\r\n\r\n"
             "json\r\n"
-            f"--{boundary}\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\n"
-            "pt\r\n"
-            f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+            + (f"--{boundary}\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\n{idioma}\r\n" if idioma in {"pt", "en", "es", "fr", "de", "it"} else "")
+            + f"--{boundary}\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n"
+            + "Transcreva exatamente as palavras audíveis; não traduza nem invente palavras.\r\n"
+            + f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
             f'filename="{filename}"\r\nContent-Type: {content_type}\r\n\r\n'
         ).encode("utf-8"),
         audio_bytes,
