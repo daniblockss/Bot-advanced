@@ -4517,7 +4517,7 @@ async def baixar_imagem_url(url, limite=10_000_000):
                             attrs = {
                                 chave.lower(): html.unescape(valor)
                                 for chave, valor in re.findall(
-                                    r"""([\\w:-]+)\\s*=\\s*["']([^"']*)["']""", tag
+                                    r"""([\w:-]+)\s*=\s*["']([^"']*)["']""", tag
                                 )
                             }
                             propriedade = (attrs.get("property") or attrs.get("name") or "").lower()
