@@ -9348,6 +9348,11 @@ async def on_message(message):
     ]
     if anexos_audio and (is_dm or tipo == "chat") and modo != "nothing":
         deve_responder = True
+    anexos_imagem_detectados = [
+        attachment for attachment in message.attachments if anexo_e_imagem(attachment)
+    ]
+    if anexos_imagem_detectados and (is_dm or tipo == "chat") and modo != "nothing":
+        deve_responder = True
 
     tempo_restante = _tempo_restante_cooldown_ia()
     if (
@@ -9378,7 +9383,7 @@ async def on_message(message):
     processar_anexos = deve_responder or cid in CANAIS_CONFIGURADOS
     if processar_anexos:
         async with (message.channel.typing() if deve_responder else nullcontext()):
-            anexo_imagem = None
+            anexos_imagem = []
             for a in message.attachments:
                 if anexo_e_audio(a):
                     try:
@@ -9407,12 +9412,14 @@ async def on_message(message):
                             f"não foi possível baixar o áudio ({type(error).__name__})"
                         )
                         log_console(f"AVISO: não foi possível ler o anexo de áudio: {error}")
-                elif anexo_imagem is None and anexo_e_imagem(a):
-                    anexo_imagem = a
+                elif anexo_e_imagem(a):
+                    anexos_imagem.append(a)
                     imagem_origem = message
 
+            anexo_imagem = anexos_imagem[0] if anexos_imagem else None
+
             # Links diretos também entram no mesmo fluxo de visão dos anexos.
-            if anexo_imagem is None and not _detectar_pedidos_multimidia(message.content):
+            if not anexos_imagem and not _detectar_pedidos_multimidia(message.content):
                 links = extrair_links(message.content)
                 candidato = next((url for url in links if os.path.splitext(urlparse(url).path.lower())[1]
                                   in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".avif"}), None)
@@ -9425,12 +9432,13 @@ async def on_message(message):
                     try:
                         data, mime, filename = await baixar_imagem_url(candidato)
                         anexo_imagem = ImagemPorLink(candidato, data, mime, filename)
+                        anexos_imagem = [anexo_imagem]
                         imagem_origem = message
                     except FalhaProvedor as error:
                         erro_imagem_link = str(error)
 
             # Quando a mensagem é uma resposta, herda a imagem da mensagem respondida.
-            if anexo_imagem is None and message.reference and message.reference.message_id:
+            if not anexos_imagem and message.reference and message.reference.message_id:
                 mensagem_referenciada = message.reference.resolved
                 if not isinstance(mensagem_referenciada, discord.Message):
                     try:
@@ -9441,35 +9449,50 @@ async def on_message(message):
                         log_console(f"AVISO: não foi possível recuperar a mensagem respondida: {error}")
                         mensagem_referenciada = None
                 if mensagem_referenciada:
-                    anexo_imagem = next(
-                        (a for a in mensagem_referenciada.attachments if anexo_e_imagem(a)),
-                        None,
-                    )
+                    anexos_imagem = [
+                        item for item in mensagem_referenciada.attachments if anexo_e_imagem(item)
+                    ]
+                    anexo_imagem = anexos_imagem[0] if anexos_imagem else None
                     if anexo_imagem:
                         imagem_origem = mensagem_referenciada
 
-            if anexo_imagem:
-                img_nome = anexo_imagem.filename
+            if anexos_imagem:
+                anexo_imagem = anexos_imagem[0]
+                img_nome = ", ".join(item.filename for item in anexos_imagem[:4])
                 img_url = anexo_imagem.url
                 origem_id = imagem_origem.id if imagem_origem else message.id
                 contexto_salvo = IMAGE_CONTEXTS.get(str(origem_id), {})
                 if (
-                    contexto_salvo.get("attachment_id") == str(anexo_imagem.id)
-                    and contexto_salvo.get("filename") == img_nome
+                    len(anexos_imagem) == 1
+                    and contexto_salvo.get("attachment_id") == str(anexo_imagem.id)
+                    and contexto_salvo.get("filename") == anexo_imagem.filename
                     and contexto_salvo.get("description")
                 ):
                     img_descricao = contexto_salvo["description"]
-                elif anexo_imagem.size > 10_000_000:
-                    log_console(f"AVISO: imagem {img_nome} excede o limite do serviço de visão (10 MB).")
                 else:
-                    try:
-                        img_data = (
-                            img_nome,
-                            await anexo_imagem.read(),
-                            anexo_imagem.content_type or "image/jpeg",
-                        )
-                    except (discord.HTTPException, OSError) as error:
-                        log_console(f"AVISO: não foi possível ler a imagem {img_nome}: {error}")
+                    imagens_lidas = []
+                    for item_imagem in anexos_imagem[:4]:
+                        if item_imagem.size > 10_000_000:
+                            log_console(f"AVISO: imagem {item_imagem.filename} excede 10 MB e foi ignorada.")
+                            continue
+                        try:
+                            imagens_lidas.append((
+                                item_imagem.filename,
+                                await item_imagem.read(),
+                                item_imagem.content_type or "image/jpeg",
+                            ))
+                        except (discord.HTTPException, OSError) as error:
+                            log_console(
+                                f"AVISO: não foi possível ler a imagem {item_imagem.filename}: "
+                                f"{type(error).__name__}"
+                            )
+                    if imagens_lidas:
+                        try:
+                            img_data = await asyncio.to_thread(combinar_imagens_para_analise, imagens_lidas)
+                            img_nome = img_data[0]
+                        except (FalhaProvedor, ValueError, OSError) as error:
+                            log_console(f"AVISO: não foi possível combinar imagens: {type(error).__name__}")
+                            img_data = imagens_lidas[0]
 
             if img_data:
                 try:
@@ -9477,12 +9500,13 @@ async def on_message(message):
                         analisar_imagem_sync,
                         img_data[1],
                         img_data[2],
-                        message.content or "Descreva esta imagem.",
+                        message.content or "Analise todas as imagens fornecidas e explique o que aparece em cada uma.",
                         message.channel.id if not is_dm else None,
                     )
-                    salvar_contexto_imagem(
-                        origem_id, anexo_imagem.id, img_nome, img_descricao
-                    )
+                    if len(anexos_imagem) == 1 and anexo_imagem:
+                        salvar_contexto_imagem(
+                            origem_id, anexo_imagem.id, anexo_imagem.filename, img_descricao
+                        )
                     img_data = None
                 except FalhaProvedor as error:
                     log_console(
