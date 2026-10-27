@@ -8770,6 +8770,8 @@ async def cmd_info(ctx):
 @bot.command(name="pesquisar")
 async def cmd_pesquisar(ctx, *, consulta: str = None):
     if not is_creator(ctx): return
+    if not pesquisa_web_ativa():
+        return await ctx.reply("A pesquisa web está desativada. Use !pesquisa ativar primeiro.")
     if not consulta or len(consulta) > 240:
         return await ctx.reply("Use `!pesquisar <consulta de até 240 caracteres>`.")
     await ctx.reply("🔎 Pesquisando na web...")
