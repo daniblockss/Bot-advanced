@@ -5471,6 +5471,7 @@ async def consultar_ia_simples(pergunta):
 
 
 class _DuckDuckGoParser(HTMLParser):
+    """Parser tolerante às variações do DuckDuckGo HTML/Lite."""
     def __init__(self):
         super().__init__()
         self.resultados = []
@@ -5480,12 +5481,12 @@ class _DuckDuckGoParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
-        classes = attrs.get("class", "").split()
-        if tag == "a" and "result__a" in classes:
+        classes = attrs.get("class", "").lower().split()
+        if tag == "a" and any(c in classes for c in ("result__a", "result-link", "result-link-title")):
             self.tipo_link = "titulo"
             self.url_link = attrs.get("href", "")
             self.texto_link = []
-        elif tag == "a" and "result__snippet" in classes:
+        elif tag == "a" and any(c in classes for c in ("result__snippet", "result-snippet")):
             self.tipo_link = "resumo"
             self.url_link = ""
             self.texto_link = []
@@ -5497,7 +5498,7 @@ class _DuckDuckGoParser(HTMLParser):
     def handle_endtag(self, tag):
         if tag != "a" or not self.tipo_link:
             return
-        texto = "".join(self.texto_link).strip()
+        texto = " ".join("".join(self.texto_link).split()).strip()
         if self.tipo_link == "titulo" and texto:
             self.resultados.append({"url": self.url_link, "titulo": texto, "resumo": ""})
         elif self.tipo_link == "resumo" and texto and self.resultados:
@@ -5541,19 +5542,28 @@ def buscar_internet_sync(consulta):
             if any(normalizar(termo) in consulta_normalizada for termo in termos_mes_atual)
             else "y"
         )
-    url = "https://html.duckduckgo.com/html/?" + urlencode(
-        {"q": query, **({"df": filtro_data} if filtro_data else {})}
-    )
-    request = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)"})
-    try:
-        with urlopen(request, timeout=15) as response:
-            page = response.read(1_500_000).decode("utf-8", errors="replace")
-    except (HTTPError, URLError, TimeoutError, OSError) as error:
-        raise FalhaProvedor(f"pesquisa web indisponível ({type(error).__name__})") from error
+    parametros = {"q": query, **({"df": filtro_data} if filtro_data else {})}
     parser = _DuckDuckGoParser()
-    parser.feed(page)
+    erros = []
+    for base_url in ("https://html.duckduckgo.com/html/?", "https://lite.duckduckgo.com/lite/?"):
+        request = Request(base_url + urlencode(parametros), headers={
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+            "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.7",
+        })
+        try:
+            with urlopen(request, timeout=10) as response:
+                page = response.read(1_500_000).decode("utf-8", errors="replace")
+            parser = _DuckDuckGoParser()
+            parser.feed(page)
+            if parser.resultados:
+                break
+        except (HTTPError, URLError, TimeoutError, OSError) as error:
+            erros.append(type(error).__name__)
+    else:
+        raise FalhaProvedor("pesquisa web indisponível (" + ", ".join(erros[-2:] or ["sem resultados legíveis"]) + ")")
     resultados = []
-    for item in parser.resultados[:5]:
+    vistos_urls = set()
+    for item in parser.resultados:
         titulo = html.unescape(item.get("titulo", "")).strip()
         resumo = html.unescape(item.get("resumo", "")).strip()
         link = html.unescape(item.get("url", "")).strip()
@@ -5564,13 +5574,20 @@ def buscar_internet_sync(consulta):
                 link = unquote(destino[0])
         elif link.startswith("//"):
             link = "https:" + link
-        if titulo and link.startswith(("http://", "https://")):
-            resultados.append(f"- {titulo}\n  {resumo[:500]}\n  {link}")
+        if (titulo and link.startswith(("http://", "https://"))
+                and parsed_link.hostname
+                and parsed_link.hostname.lower() not in {"duckduckgo.com", "www.duckduckgo.com"}
+                and link not in vistos_urls):
+            vistos_urls.add(link)
+            resultados.append(f"- {titulo}\n  {resumo[:650] or 'Sem resumo fornecido pela busca.'}\n  {link}")
+        if len(resultados) >= 6:
+            break
     if not resultados:
         return "Pesquisa concluída: não foram encontrados resultados utilizáveis."
     return (
         "Pesquisa concluída; filtro de recência: "
-        f"{'último mês' if filtro_data == 'm' else 'último ano' if filtro_data == 'y' else 'sem filtro (consulta histórica)'}.\n"
+        f"{'último mês' if filtro_data == 'm' else 'último ano' if filtro_data == 'y' else 'sem filtro (consulta histórica)'}. "
+        "Resultados são pistas, não garantia de veracidade; confira a página original.\n"
         + "\n".join(resultados)
     )
 
