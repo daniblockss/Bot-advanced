@@ -9,6 +9,8 @@ import base64
 import unicodedata
 import datetime
 import asyncio
+import subprocess
+import tempfile
 import io
 import html
 import inspect
@@ -5318,6 +5320,53 @@ def anexo_e_audio(anexo):
     }
 
 
+def anexo_e_video(anexo):
+    """Identifica vídeos e GIFs; GIFs serão analisados visualmente."""
+    tipo = (anexo.content_type or "").lower()
+    extensao = os.path.splitext(anexo.filename.lower())[1]
+    return tipo.startswith("video/") or extensao in {
+        ".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v", ".mpeg", ".mpg", ".gif"
+    }
+
+
+def extrair_midia_video_sync(filename, video_bytes):
+    """Extrai áudio MP3 e até 4 frames JPG com ffmpeg, se disponível."""
+    ext = os.path.splitext(filename.lower())[1]
+    if ext not in {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v", ".mpeg", ".mpg", ".gif"}:
+        ext = ".mp4"
+    try:
+        with tempfile.TemporaryDirectory(prefix="ahm7_video_") as tmp:
+            source = os.path.join(tmp, "input" + ext)
+            with open(source, "wb") as f:
+                f.write(video_bytes)
+            audio = b""
+            audio_path = os.path.join(tmp, "audio.mp3")
+            proc_audio = subprocess.run(
+                ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", source,
+                 "-vn", "-t", "90", "-ac", "1", "-ar", "16000", "-b:a", "48k", audio_path],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35, check=False
+            )
+            if proc_audio.returncode == 0 and os.path.isfile(audio_path):
+                with open(audio_path, "rb") as f:
+                    audio = f.read()
+            frames = []
+            # 4 frames no máximo, espaçados pelo filtro fps para vídeos curtos.
+            pattern = os.path.join(tmp, "frame_%02d.jpg")
+            proc_frames = subprocess.run(
+                ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", source,
+                 "-vf", "fps=1/3,scale=640:-2", "-frames:v", "4", pattern],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35, check=False
+            )
+            if proc_frames.returncode == 0:
+                for name in sorted(os.listdir(tmp)):
+                    if name.startswith("frame_") and name.endswith(".jpg"):
+                        with open(os.path.join(tmp, name), "rb") as f:
+                            frames.append(f.read())
+            return audio, frames
+    except (OSError, subprocess.SubprocessError):
+        return b"", []
+
+
 def listar_modelos_sync(provedor):
     if provedor == "blockrun":
         return list(BLOCKRUN_MODELS)
@@ -5991,17 +6040,21 @@ async def transcrever_audio(audio_bytes, filename, content_type, channel_id=None
     if ahm7_habilitada("transcribe", channel_id):
         audio_data_url = f"data:{mime};base64,{base64.b64encode(audio_bytes).decode('ascii')}"
         try:
+            # A documentação pública do TranScribe usa /api/transcribe e recomenda
+            # language="pt" para português. Tentamos a API documentada diretamente
+            # antes do endpoint legado configurado no bot.
+            payload_transcricao = {
+                "audio": audio_data_url,
+                "filename": safe_name,
+                "mime": mime,
+                "language": "pt",
+                "model": "accurate",
+            }
             result = await asyncio.to_thread(
                 ahm7_json_sync,
                 "/transcribe",
                 None,
-                {
-                    "audio": audio_data_url,
-                    "filename": safe_name,
-                    "mime": mime,
-                    "language": "auto",
-                    "model": "turbo",
-                },
+                payload_transcricao,
                 40_000_000,
             )
             text = texto_transcricao(result)
@@ -9229,31 +9282,60 @@ async def on_message(message):
             for a in message.attachments:
                 if anexo_e_audio(a):
                     try:
-                        audio_bytes = await a.read()
-                        texto_audio = await transcrever_audio(
-                            audio_bytes,
-                            a.filename,
-                            a.content_type or "application/octet-stream",
-                            message.channel.id if not is_dm else None,
-                        )
-                        if texto_audio:
-                            txt_extraido += f" {texto_audio}"
-                            contextos_audio[str(a.id)] = f"[Áudio anexado: {a.filename}; transcrição: {texto_audio[:3000]}]"
-                            AUDIO_TRANSCRIPTIONS[str(a.id)] = texto_audio[:8000]
-                            while len(AUDIO_TRANSCRIPTIONS) > 1000:
-                                AUDIO_TRANSCRIPTIONS.pop(next(iter(AUDIO_TRANSCRIPTIONS)))
+                        media_bytes = await a.read()
+                        audio_bytes = media_bytes
+                        audio_name = a.filename
+                        audio_mime = a.content_type or "application/octet-stream"
+                        frames_video = []
+                        if anexo_e_video(a):
+                            audio_bytes, frames_video = await asyncio.to_thread(
+                                extrair_midia_video_sync, a.filename, media_bytes
+                            )
+                            if frames_video:
+                                descricoes = []
+                                for numero, frame_bytes in enumerate(frames_video, 1):
+                                    try:
+                                        descricao_frame = await asyncio.to_thread(
+                                            analisar_imagem_sync,
+                                            frame_bytes,
+                                            "image/jpeg",
+                                            f"Analise este frame {numero}/{len(frames_video)} de um vídeo/GIF. Descreva objetivamente o que aparece e as ações visíveis.",
+                                            message.channel.id if not is_dm else None,
+                                        )
+                                        descricoes.append(f"Frame {numero}: {descricao_frame[:900]}")
+                                    except FalhaProvedor as error:
+                                        log_console(f"AVISO: não foi possível analisar frame do vídeo {a.filename}: {error}")
+                                if descricoes:
+                                    resumo_frames = " ".join(descricoes)
+                                    txt_extraido += f" [Análise visual do vídeo {a.filename}: {resumo_frames}]"
+                                    contextos_audio[str(a.id)] = f"[Vídeo/GIF: {a.filename}; frames analisados: {len(descricoes)}; {resumo_frames[:2200]}]"
+                            if not audio_bytes:
+                                contextos_audio.setdefault(str(a.id), f"[Vídeo/GIF: {a.filename}; áudio não encontrado ou ffmpeg indisponível]")
+                        else:
+                            audio_name = a.filename
+                        if audio_bytes:
+                            texto_audio = await transcrever_audio(
+                                audio_bytes,
+                                audio_name if not anexo_e_video(a) else os.path.splitext(a.filename)[0] + ".mp3",
+                                "audio/mpeg" if anexo_e_video(a) else audio_mime,
+                                message.channel.id if not is_dm else None,
+                            )
+                            if texto_audio:
+                                txt_extraido += f" [Transcrição do áudio: {texto_audio}]"
+                                contextos_audio[str(a.id)] = contextos_audio.get(str(a.id), f"[Áudio anexado: {a.filename}]") + f" Transcrição: {texto_audio[:2200]}"
+                                AUDIO_TRANSCRIPTIONS[str(a.id)] = texto_audio[:8000]
+                                while len(AUDIO_TRANSCRIPTIONS) > 1000:
+                                    AUDIO_TRANSCRIPTIONS.pop(next(iter(AUDIO_TRANSCRIPTIONS)))
+                        elif not frames_video:
+                            raise FalhaProvedor("não foi possível extrair áudio ou frames; o servidor precisa ter ffmpeg instalado")
                     except FalhaProvedor as error:
                         erros_transcricao.append(str(error))
-                        contextos_audio[str(a.id)] = f"[Áudio anexado: {a.filename}; transcrição indisponível]"
-                        log_console(
-                            f"AVISO: não foi possível transcrever {a.filename}: {error}"
-                        )
+                        contextos_audio.setdefault(str(a.id), f"[Mídia: {a.filename}; análise indisponível]")
+                        log_console(f"AVISO: não foi possível analisar mídia {a.filename}: {error}")
                     except (discord.HTTPException, OSError) as error:
-                        contextos_audio[str(a.id)] = f"[Áudio anexado: {a.filename}; falha ao baixar o arquivo]"
-                        erros_transcricao.append(
-                            f"não foi possível baixar o áudio ({type(error).__name__})"
-                        )
-                        log_console(f"AVISO: não foi possível ler o anexo de áudio: {error}")
+                        contextos_audio[str(a.id)] = f"[Mídia: {a.filename}; falha ao baixar o arquivo]"
+                        erros_transcricao.append(f"não foi possível baixar a mídia ({type(error).__name__})")
+                        log_console(f"AVISO: não foi possível ler o anexo de mídia: {error}")
                 elif anexo_imagem is None and anexo_e_imagem(a):
                     anexo_imagem = a
                     imagem_origem = message
