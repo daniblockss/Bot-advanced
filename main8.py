@@ -8779,9 +8779,9 @@ async def on_message(message):
         # O nome precisa aparecer no começo da mensagem, depois de uma saudação opcional.
         # Isso evita responder quando alguém apenas menciona o bot no meio de uma frase.
         padrao_chamada = (
-            r"^\\s*(?:(?:ei|hey|oi|ol[aá]|opa|com licen[cç]a|desculpa)[\\s,!.:;—-]*)?"
+            r"^\s*(?:(?:ei|hey|oi|ol[aá]|opa|com licen[cç]a|desculpa)[\s,!.:;—-]*)?"
             + re.escape(nome_bot)
-            + r"(?=$|[\\s,!?!.:;—-])"
+            + r"(?=$|[\s,!?!.:;—-])"
         )
         nome_chamada_match = re.match(padrao_chamada, texto_para_detectar, flags=re.IGNORECASE)
         if nome_chamada_match:
