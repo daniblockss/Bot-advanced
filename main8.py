@@ -4513,7 +4513,7 @@ async def baixar_imagem_url(url, limite=10_000_000):
                             raise FalhaProvedor("a página do GIF excede o limite de leitura")
                         html_pagina = pagina.decode("utf-8", errors="replace")
                         candidatos_meta = []
-                        for tag in re.findall(r"<meta\\b[^>]*>", html_pagina, flags=re.IGNORECASE):
+                        for tag in re.findall(r"<meta\b[^>]*>", html_pagina, flags=re.IGNORECASE):
                             attrs = {
                                 chave.lower(): html.unescape(valor)
                                 for chave, valor in re.findall(
