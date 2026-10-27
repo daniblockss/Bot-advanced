@@ -2561,11 +2561,14 @@ def _extrair_pedido_memoria_explicito(texto):
     """Identifica pedidos claros para guardar uma informação."""
     texto = (texto or "").strip()
     padrao = re.compile(
-        r"(?:lembra(?:-te)?(?:\s+que)?|lembre(?:-se)?(?:\s+que)?|"
-        r"guarda(?:r)?(?:\s+na\s+mem[oó]ria)?|guarde(?:\s+na\s+mem[oó]ria)?|"
-        r"salva(?:r)?(?:\s+na\s+mem[oó]ria)?|salve(?:\s+na\s+mem[oó]ria)?|"
+        r"(?:lembra(?:-te)?(?:\s+(?:que|de\s+que|disso))?|"
+        r"lembre(?:-se)?(?:\s+(?:que|de\s+que|disso))?|"
+        r"guarda(?:r)?(?:\s+(?:isso|isto|que|disso))?(?:\s+na\s+mem[oó]ria)?|"
+        r"guarde(?:\s+(?:isso|isto|que|disso))?(?:\s+na\s+mem[oó]ria)?|"
+        r"salva(?:r)?(?:\s+(?:isso|isto|que|disso))?(?:\s+na\s+mem[oó]ria)?|"
+        r"salve(?:\s+(?:isso|isto|que|disso))?(?:\s+na\s+mem[oó]ria)?|"
         r"anota(?:r)?|anote|n[aã]o\s+esquece(?:\s+que)?)"
-        r"\s*(?:isso|disso|isto|que)?\s*[:,-]?\s*(.*)$",
+        r"\s*[:,-]?\s*(.*)$",
         re.IGNORECASE | re.DOTALL,
     )
     correspondencia = padrao.search(texto)
