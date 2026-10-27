@@ -5721,7 +5721,7 @@ async def perguntar_ia(chave_contexto, user_id, user_name, pergunta, bot_instanc
                 falhas.append(f"{provedor} ({rotulo}): {erro_cooldown}")
                 continue
             try:
-                for rodada_tool in range(4):
+                for rodada_tool in range(6):
                     resposta = await requisitar_provedor(
                         provedor,
                         chave,
@@ -5738,8 +5738,8 @@ async def perguntar_ia(chave_contexto, user_id, user_name, pergunta, bot_instanc
                             log_console("AVISO: o modelo emitiu uma diretiva AHM7 inválida; conteúdo ocultado.")
                             resposta = "Não consegui executar a ferramenta solicitada com segurança. Tente reformular o pedido."
                         break
-                    if rodada_tool == 3:
-                        raise FalhaProvedor("o modelo excedeu o limite de 3 chamadas AHM7")
+                    if rodada_tool == 5:
+                        raise FalhaProvedor("o modelo excedeu o limite de 5 chamadas AHM7")
                     if not ahm7_tool_runner:
                         raise FalhaProvedor("o executor das ferramentas AHM7 não está disponível")
                     tool_name, tool_args = tool_call
@@ -5753,9 +5753,9 @@ async def perguntar_ia(chave_contexto, user_id, user_name, pergunta, bot_instanc
                         if chave_tool in resultados_ferramentas:
                             tool_result = resultados_ferramentas[chave_tool]
                         else:
-                            if len(resultados_ferramentas) >= 3:
+                            if len(resultados_ferramentas) >= 5:
                                 raise FalhaProvedor(
-                                    "o limite de 3 chamadas AHM7 por mensagem foi atingido"
+                                    "o limite de 5 chamadas AHM7 por mensagem foi atingido"
                                 )
                             tool_result = await ahm7_tool_runner(tool_name, tool_args)
                             resultados_ferramentas[chave_tool] = tool_result
