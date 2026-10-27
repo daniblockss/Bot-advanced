@@ -4619,85 +4619,50 @@ def _limpar_resposta_estruturada(resposta):
 
 
 def _interpretar_chamada_ahm7(resposta):
+    """Parse tool directives without depending on a greedy regex over nested JSON."""
     texto = _limpar_resposta_estruturada(resposta)
     if not texto:
         return None
-
-    padrao_expresso = r"\[(?:AHM7_TOOL|[A-Za-z][A-Za-z0-9 _-]{1,40})\s*:\s*(\{.*\})\s*\]"
-    chamada = re.search(padrao_expresso, texto, flags=re.IGNORECASE | re.DOTALL)
-    if chamada:
-        payload = chamada.group(1)
-        try:
-            dados = json.loads(payload)
-        except json.JSONDecodeError:
-            return None
-        if isinstance(dados, dict):
-            nome = dados.get("tool")
-            argumentos = dados.get("args", {})
-            if isinstance(nome, str) and nome in AHM7_TOOL_PARAMETERS and isinstance(argumentos, dict):
-                return nome, argumentos
-        nome_exibido = re.search(r"\[(?:AHM7_TOOL|([A-Za-z][A-Za-z0-9 _-]{1,40}))\s*:", texto, flags=re.IGNORECASE)
-        if nome_exibido:
-            nome_exibido = nome_exibido.group(1) or "AHM7_TOOL"
-            if nome_exibido.upper() == "AHM7_TOOL":
-                return None
-            nomes_ferramentas = {
-                normalizar(chave): chave
-                for chave in AHM7_TOOLS
-            }
-            nomes_ferramentas.update({
-                normalizar(nome): chave
-                for chave, (_, nome) in AHM7_TOOLS.items()
-            })
-            nome = nomes_ferramentas.get(normalizar(nome_exibido))
-            if isinstance(nome, str) and nome in AHM7_TOOL_PARAMETERS:
-                try:
-                    argumentos = json.loads(payload)
-                except json.JSONDecodeError:
-                    return None
-                if isinstance(argumentos, dict):
-                    return nome, argumentos
-        return None
-
-    chamada = re.search(
-        r"\[(?:AHM7_TOOL|[A-Za-z][A-Za-z0-9 _-]{1,40})\s*:\s*(\{.*\})\s*\]",
+    marcador = re.search(
+        r"\[\s*(AHM7_TOOL|[A-Za-z][A-Za-z0-9 _-]{1,40})\s*:",
         texto,
-        flags=re.IGNORECASE | re.DOTALL,
+        flags=re.IGNORECASE,
     )
-    if not chamada:
+    if not marcador:
+        return None
+    inicio_json = texto.find("{", marcador.end())
+    if inicio_json < 0:
         return None
     try:
-        dados = json.loads(chamada.group(1))
-    except json.JSONDecodeError:
+        dados, tamanho = json.JSONDecoder().raw_decode(texto[inicio_json:])
+    except (json.JSONDecodeError, TypeError, ValueError):
         return None
-    if not isinstance(dados, dict):
+    resto = texto[inicio_json + tamanho:].lstrip()
+    if not resto.startswith("]") or not isinstance(dados, dict):
         return None
-    nome = dados.get("tool")
-    argumentos = dados.get("args", {})
-    if isinstance(nome, str) and nome in AHM7_TOOL_PARAMETERS and isinstance(argumentos, dict):
-        return nome, argumentos
 
-    nome_exibido = re.search(r"\[(?:AHM7_TOOL|([A-Za-z][A-Za-z0-9 _-]{1,40}))\s*:", texto, flags=re.IGNORECASE)
-    if not nome_exibido:
-        return None
-    nome_exibido = nome_exibido.group(1) or "AHM7_TOOL"
-    if nome_exibido.upper() == "AHM7_TOOL":
-        return None
-    nomes_ferramentas = {
-        normalizar(chave): chave
-        for chave in AHM7_TOOLS
-    }
-    nomes_ferramentas.update({
-        normalizar(nome): chave
-        for chave, (_, nome) in AHM7_TOOLS.items()
-    })
-    nome = nomes_ferramentas.get(normalizar(nome_exibido))
-    if not isinstance(nome, str) or nome not in AHM7_TOOL_PARAMETERS:
-        return None
-    if not isinstance(argumentos, dict):
+    marcador_nome = marcador.group(1)
+    nome = dados.get("tool")
+    if isinstance(nome, str):
+        argumentos = dados.get("args", {})
+        if not isinstance(argumentos, dict):
+            return None
+    else:
+        if marcador_nome.upper() == "AHM7_TOOL":
+            return None
+        nomes_ferramentas = {
+            normalizar(chave): chave for chave in AHM7_TOOL_PARAMETERS
+        }
+        nomes_ferramentas.update({
+            normalizar(rotulo): chave
+            for chave, (_, rotulo) in AHM7_TOOLS.items()
+        })
+        nome = nomes_ferramentas.get(normalizar(marcador_nome))
+        argumentos = dados
+
+    if nome not in AHM7_TOOL_PARAMETERS or not isinstance(argumentos, dict):
         return None
     return nome, argumentos
-
 
 def _detectar_pedidos_multimidia(pergunta):
     texto = pergunta.strip()
@@ -5574,9 +5539,12 @@ def buscar_internet_sync(consulta):
                 link = unquote(destino[0])
         elif link.startswith("//"):
             link = "https:" + link
+        # Reparse the destination after unwrapping DuckDuckGo's redirect URL.
+        parsed_link = urlparse(link)
+        host_final = (parsed_link.hostname or "").lower().rstrip(".")
         if (titulo and link.startswith(("http://", "https://"))
-                and parsed_link.hostname
-                and parsed_link.hostname.lower() not in {"duckduckgo.com", "www.duckduckgo.com"}
+                and host_final
+                and host_final not in {"duckduckgo.com", "www.duckduckgo.com"}
                 and link not in vistos_urls):
             vistos_urls.add(link)
             resultados.append(f"- {titulo}\n  {resumo[:650] or 'Sem resumo fornecido pela busca.'}\n  {link}")
@@ -5673,6 +5641,9 @@ async def perguntar_ia(chave_contexto, user_id, user_name, pergunta, bot_instanc
             'Sem filtros retorna mensagens recentes. limite padrão 5, máximo 10; offset pagina resultados. '
             'Use listar_canais com args={} para descobrir IDs/finalidades. '
             'Use ler_canal com args={"canal_id":"ID"} apenas se precisar ler mensagens recentes diretamente do Discord. '
+            'Se o usuário pedir regras ou o conteúdo de um canal específico, use pesquisar_canais com canal_id desse canal; '
+            'a busca direta inclui mensagens e embeds recentes, e para obter regras completas prefira limite=10. '
+            'Se uma busca por palavra não achar nada em um canal de regras, use o retorno de mensagens recentes desse canal. '
             'Não carregue canais inteiros quando a busca bastar. Até 3 chamadas por pergunta. '
             'Cite o canal de origem. Resultados são trechos dos arquivos locais, não histórico completo; '
             'não invente o ano de registros antigos sem ano. '
@@ -7884,6 +7855,129 @@ def pesquisar_arquivos_canais(canais, argumentos):
     return "\n".join(saida)
 
 
+async def _pesquisar_canal_discord_ao_vivo(canal, argumentos):
+    """Search visible live Discord messages and embed text in a specific channel."""
+    permitidos = set(AHM7_TOOL_PARAMETERS["pesquisar_canais"])
+    if set(argumentos) - permitidos:
+        return "Filtro desconhecido na pesquisa de canais."
+    limite = argumentos.get("limite", 5)
+    offset = argumentos.get("offset", 0)
+    if type(limite) is not int or not 1 <= limite <= 10 or type(offset) is not int or not 0 <= offset <= 2000:
+        return "Use limite de 1 a 10 e offset de 0 a 2000."
+    for campo in ("palavras", "data", "hora", "hora_inicio", "hora_fim"):
+        valor = argumentos.get(campo, "")
+        if not isinstance(valor, str) or len(valor) > 200:
+            return f"O filtro {campo} precisa ser texto de até 200 caracteres."
+    termos = _normalizar_busca_canal(argumentos.get("palavras", "")).split()
+    data_texto = argumentos.get("data", "").strip().lower()
+    data_filtro = None
+    if data_texto:
+        try:
+            if data_texto in {"hoje", "ontem"}:
+                dia = obter_agora().date() - datetime.timedelta(days=(data_texto == "ontem"))
+                data_filtro = (dia.day, dia.month, dia.year)
+            elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", data_texto):
+                dia = datetime.datetime.strptime(data_texto, "%Y-%m-%d").date()
+                data_filtro = (dia.day, dia.month, dia.year)
+            elif re.fullmatch(r"\d{1,2}/\d{1,2}(?:/\d{4})?", data_texto):
+                partes = [int(p) for p in data_texto.split("/")]
+                datetime.date(partes[2] if len(partes) == 3 else 2000, partes[1], partes[0])
+                data_filtro = (partes[0], partes[1], partes[2] if len(partes) == 3 else None)
+            else:
+                raise ValueError()
+        except ValueError:
+            return "Data inválida. Use DD/MM, DD/MM/AAAA, AAAA-MM-DD, hoje ou ontem."
+
+    def minuto(campo):
+        valor = argumentos.get(campo, "").strip()
+        if not valor:
+            return None
+        if not re.fullmatch(r"\d{2}:\d{2}", valor):
+            raise ValueError()
+        h, m = map(int, valor.split(":"))
+        if h > 23 or m > 59:
+            raise ValueError()
+        return h * 60 + m
+    try:
+        hora_exata = minuto("hora")
+        hora_inicio = minuto("hora_inicio")
+        hora_fim = minuto("hora_fim")
+        if hora_exata is not None and (hora_inicio is not None or hora_fim is not None):
+            raise ValueError()
+    except ValueError:
+        return "Use horários HH:MM válidos: hora exata OU hora_inicio/hora_fim (UTC-3)."
+
+    encontrados = []
+    try:
+        async for msg in canal.history(limit=500, oldest_first=False):
+            partes = [msg.content or ""]
+            for embed in getattr(msg, "embeds", []):
+                partes.extend([getattr(embed, "title", "") or "", getattr(embed, "description", "") or ""])
+                for field in getattr(embed, "fields", []):
+                    partes.extend([getattr(field, "name", "") or "", getattr(field, "value", "") or ""])
+            corpo = "\n".join(p for p in partes if p).strip()
+            if not corpo:
+                continue
+            local = msg.created_at - datetime.timedelta(hours=3)
+            if data_filtro:
+                d, m, a = data_filtro
+                if (local.day, local.month) != (d, m) or (a is not None and local.year != a):
+                    continue
+            minutos_msg = local.hour * 60 + local.minute
+            if hora_exata is not None and minutos_msg != hora_exata:
+                continue
+            if hora_inicio is not None and hora_fim is not None:
+                dentro = hora_inicio <= minutos_msg <= hora_fim if hora_inicio <= hora_fim else minutos_msg >= hora_inicio or minutos_msg <= hora_fim
+                if not dentro:
+                    continue
+            elif hora_inicio is not None and minutos_msg < hora_inicio:
+                continue
+            elif hora_fim is not None and minutos_msg > hora_fim:
+                continue
+            normalizado = _normalizar_busca_canal(corpo)
+            if not all(termo in normalizado for termo in termos):
+                continue
+            encontrados.append((msg, local, corpo))
+    except (discord.HTTPException, AttributeError, TypeError) as error:
+        log_console(f"AVISO: pesquisa ao vivo no canal {getattr(canal, 'id', '?')} falhou: {type(error).__name__}")
+        return "Não consegui ler as mensagens recentes desse canal. Verifique View Channel e Read Message History."
+
+    fallback_regras = False
+    nome_canal = _normalizar_busca_canal(getattr(canal, "name", ""))
+    if not encontrados and termos and any(t in nome_canal for t in ("regra", "rules")) and any(t in termos for t in ("regra", "regras", "rule", "rules")):
+        fallback_regras = True
+        try:
+            async for msg in canal.history(limit=min(10, max(limite, 5)), oldest_first=False):
+                partes = [msg.content or ""]
+                for embed in getattr(msg, "embeds", []):
+                    partes.extend([getattr(embed, "title", "") or "", getattr(embed, "description", "") or ""])
+                    for field in getattr(embed, "fields", []):
+                        partes.extend([getattr(field, "name", "") or "", getattr(field, "value", "") or ""])
+                corpo = "\n".join(p for p in partes if p).strip()
+                if corpo:
+                    local = msg.created_at - datetime.timedelta(hours=3)
+                    encontrados.append((msg, local, corpo))
+        except (discord.HTTPException, AttributeError, TypeError):
+            pass
+    if not encontrados:
+        return f"Nenhuma mensagem correspondente encontrada em #{getattr(canal, 'name', 'canal')} nas últimas 500 mensagens."
+    encontrados.sort(key=lambda item: item[0].created_at, reverse=True)
+    pagina = encontrados[offset:offset + limite]
+    if not pagina:
+        return f"Sem mais resultados. Foram encontrados {len(encontrados)} resultados antes da paginação."
+    saida = []
+    if fallback_regras:
+        saida.append("Não houve correspondência literal com o termo; mostrando mensagens recentes do canal de regras.")
+    saida.append(f"Pesquisa ao vivo em #{getattr(canal, 'name', 'canal')} — {len(encontrados)} resultado(s), mostrando {len(pagina)}:")
+    for msg, local, corpo in pagina:
+        trecho = corpo[:850]
+        if len(corpo) > 850:
+            trecho += "…"
+        saida.append(f"[{local.strftime('%d/%m/%Y %H:%M')}] {msg.author.display_name}: {trecho}\n{msg.jump_url}")
+    resultado = "\n\n".join(saida)
+    return resultado[:5600]
+
+
 def criar_executor_ferramentas_ahm7(message):
     async def executar(tool_name, tool_args):
         if tool_name in {"listar_canais", "ler_canal", "pesquisar_canais"}:
@@ -7891,6 +7985,23 @@ def criar_executor_ferramentas_ahm7(message):
                 return "Os argumentos precisam ser um objeto JSON."
             if not message.guild:
                 return "Não há canais de servidor disponíveis nesta conversa."
+            if not ahm7_habilitada(tool_name, message.channel.id):
+                return f"A ferramenta {tool_name} está desativada neste canal."
+            if tool_name == "pesquisar_canais" and tool_args.get("canal_id") is not None:
+                cid = tool_args.get("canal_id")
+                if not isinstance(cid, (str, int)) or isinstance(cid, bool) or not str(cid).isdigit():
+                    return "canal_id precisa ser um ID numérico do Discord."
+                canal_direto = message.guild.get_channel(int(cid))
+                if canal_direto is None:
+                    try:
+                        canal_direto = await message.guild.fetch_channel(int(cid))
+                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+                        canal_direto = None
+                if canal_direto is None or not getattr(canal_direto, "guild", None) or canal_direto.guild.id != message.guild.id:
+                    return "Não encontrei esse canal neste servidor."
+                if not _pode_consultar_canal(canal_direto, message.guild, message.author):
+                    return "Não tenho permissão para ler esse canal, ou você não tem acesso a ele."
+                return await _pesquisar_canal_discord_ao_vivo(canal_direto, tool_args)
             canais = [
                 (cid, info, canal) for cid, info, canal in
                 _canais_configurados_da_guild(message.guild.id, message.guild)
@@ -8681,22 +8792,40 @@ async def cmd_provedor(ctx, provedor: str = None):
 
 
 @bot.command(name="pesquisa")
-async def cmd_pesquisa_toggle(ctx, modo: str = None):
+async def cmd_pesquisa_toggle(ctx, alvo_ou_modo: str = None, modo: str = None):
     if not is_creator(ctx):
         return
-    modo = (modo or "status").strip().lower()
+    primeiro = (alvo_ou_modo or "").strip().lower()
+    alvo = primeiro if primeiro in {"web", "internet", "canais", "canal", "discord"} else "web"
+    escolhido = modo if alvo != "web" or primeiro in {"web", "internet", "canais", "canal", "discord"} else alvo_ou_modo
+    escolhido = (escolhido or "status").strip().lower()
     aliases = {"on": "ativar", "ligar": "ativar", "enable": "ativar",
                "off": "desativar", "desligar": "desativar", "disable": "desativar",
                "estado": "status"}
-    modo = aliases.get(modo, modo)
-    if modo not in {"ativar", "desativar", "status"}:
-        return await ctx.reply("Use !pesquisa ativar, !pesquisa desativar ou !pesquisa status.")
-    if modo != "status":
-        config["web_search_enabled"] = (modo == "ativar")
+    escolhido = aliases.get(escolhido, escolhido)
+    if escolhido not in {"ativar", "desativar", "status"}:
+        return await ctx.reply(
+            "Uso: !pesquisa ativar/desativar/status (web) ou "
+            "!pesquisa canais ativar/desativar/status (pesquisa nos canais do Discord)."
+        )
+    if alvo in {"canais", "canal", "discord"}:
+        atual = AI_CONFIG.setdefault("ahm7_tools", {}).get("pesquisar_canais", True) is True
+        if escolhido != "status":
+            AI_CONFIG["ahm7_tools"]["pesquisar_canais"] = escolhido == "ativar"
+            salvar_config(config)
+            atual = escolhido == "ativar"
+        estado = "ATIVADA" if atual else "DESATIVADA"
+        return await ctx.reply(
+            f"Pesquisa nos canais do Discord: {estado}. "
+            "Uso: !pesquisa canais ativar/desativar/status."
+        )
+    atual = pesquisa_web_ativa()
+    if escolhido != "status":
+        config["web_search_enabled"] = escolhido == "ativar"
         salvar_config(config)
-    estado = "ATIVADA" if pesquisa_web_ativa() else "DESATIVADA"
+        atual = escolhido == "ativar"
+    estado = "ATIVADA" if atual else "DESATIVADA"
     await ctx.reply(f"Pesquisa web: {estado}. Uso: !pesquisa ativar/desativar/status.")
-
 
 def _formatar_duracao(segundos):
     segundos = max(0, int(segundos))
@@ -8769,7 +8898,8 @@ async def cmd_info(ctx):
                 f"Ligado há: {uptime}\n"
                 f"Latência: {gateway:.0f} ms\n"
                 f"Servidores: {len(bot.guilds)} | usuários em cache: {total_membros}\n"
-                f"Pesquisa web: {pesquisa}"
+                f"Pesquisa web: {pesquisa}\n"
+                f"Pesquisa nos canais: {'ativada' if AI_CONFIG.get('ahm7_tools', {}).get('pesquisar_canais', True) else 'desativada'}"
             ),
         )
         return await ctx.reply(embed=embed)
@@ -8789,7 +8919,8 @@ async def cmd_info(ctx):
             f"Ligado há: {uptime}\nGateway: {gateway:.0f} ms\n"
             f"Servidores: {len(bot.guilds)} | usuários em cache: {total_membros}\n"
             f"Python: {__import__('sys').version.split()[0]} | discord.py: {getattr(discord, '__version__', 'desconhecido')}\n"
-            f"Pesquisa web: {pesquisa}"
+            f"Pesquisa web: {pesquisa}\n"
+            f"Pesquisa nos canais: {'ativada' if AI_CONFIG.get('ahm7_tools', {}).get('pesquisar_canais', True) else 'desativada'}"
         ),
     )
     embed.add_field(name="APIs (teste do endpoint)", value="\n".join(linhas)[:1024], inline=False)
