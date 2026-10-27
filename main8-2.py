@@ -2206,6 +2206,54 @@ MAX_CHANNEL_IMPORT_MEDIA = 20
 MAX_CHANNEL_READ_MEDIA = 10
 AUDIO_TRANSCRIPTIONS = {}
 
+# Idioma recente por usuário, válido por 30 minutos.
+IDIOMAS_USUARIO = {}
+IDIOMA_USUARIO_TTL = 1800
+_PISTAS_IDIOMA = {
+    "pt": {"de", "que", "não", "uma", "para", "você", "com", "isso", "mas", "está", "também", "porque"},
+    "en": {"the", "and", "you", "this", "that", "with", "what", "hello", "thanks", "please", "because"},
+    "es": {"hola", "gracias", "pero", "como", "está", "una", "con", "porque", "quiero", "tengo"},
+    "fr": {"bonjour", "merci", "avec", "pour", "mais", "une", "des", "vous", "je", "suis"},
+    "de": {"hallo", "danke", "und", "nicht", "mit", "ich", "der", "die", "das", "ist"},
+    "it": {"ciao", "grazie", "per", "con", "non", "una", "sono", "questo", "come"},
+}
+
+def detectar_idioma_texto(texto):
+    if not isinstance(texto, str):
+        return None
+    palavras = re.findall(r"[a-záàâãéêíóôõúüçñ]+", texto.lower())
+    if len(palavras) < 4:
+        return None
+    contagem = {idioma: sum(p in pistas for p in palavras) for idioma, pistas in _PISTAS_IDIOMA.items()}
+    ordenados = sorted(contagem.items(), key=lambda item: item[1], reverse=True)
+    if ordenados[0][1] < 2 or ordenados[0][1] - ordenados[1][1] < 1:
+        return None
+    return ordenados[0][0]
+
+def atualizar_idioma_usuario(user_id, texto):
+    idioma = detectar_idioma_texto(texto)
+    if idioma:
+        IDIOMAS_USUARIO[str(user_id)] = (idioma, time.time())
+    return idioma
+
+def obter_idioma_usuario(user_id):
+    registro = IDIOMAS_USUARIO.get(str(user_id))
+    if not registro:
+        return "auto"
+    idioma, momento = registro
+    if time.time() - momento > IDIOMA_USUARIO_TTL:
+        IDIOMAS_USUARIO.pop(str(user_id), None)
+        return "auto"
+    return idioma
+
+def transcricao_parece_misturada(texto, idioma_esperado="auto"):
+    if not isinstance(texto, str) or not texto.strip():
+        return False
+    outro_alfabeto = bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0400-\u052f]", texto))
+    if idioma_esperado in {"pt", "en", "es", "fr", "de", "it"}:
+        return outro_alfabeto
+    return bool(re.search(r"[A-Za-zÀ-ÿ]", texto)) and outro_alfabeto and len(texto) < 1200
+
 def salvar_contexto_imagem(message_id, attachment_id, filename, description):
     IMAGE_CONTEXTS[str(message_id)] = {
         "attachment_id": str(attachment_id),
