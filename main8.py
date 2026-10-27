@@ -9160,6 +9160,7 @@ async def on_message(message):
     )
     if chamou_por_nome or mencionou_bot_para_lembrete:
         texto_pedido_lembrete = texto_para_detectar[nome_chamada_match.end():].strip(" ,:—-") if nome_chamada_match else texto_para_detectar
+        texto_pedido_lembrete = re.sub(r"<@!?\d+>", " ", texto_pedido_lembrete).strip()
         pedido_lembrete = _parsear_pedido_lembrete(texto_pedido_lembrete)
         if pedido_lembrete is not None:
             descricao_lembrete, vencimento_lembrete, erro_lembrete = pedido_lembrete
