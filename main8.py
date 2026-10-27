@@ -6158,6 +6158,7 @@ def _groq_transcrever_sync(api_key, filename, audio_bytes, content_type):
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.presences = True
 intents.voice_states = True
 
 
@@ -6484,6 +6485,258 @@ async def slash_ajuda(interaction: discord.Interaction):
         "`/reset` — limpar sua conversa.\n`/memoria` — suas memórias pessoais.\n"
         "`/ahm7` — ferramentas.\nConverse com a IA por DM ou mencione o bot no servidor.")
 
+# ==========================
+# Lembretes pessoais persistentes
+# ==========================
+REMINDERS_DB_FILE = os.path.join(BASE_DIR, "reminders.sqlite3")
+LEMBRETE_TZ = datetime.timezone(datetime.timedelta(hours=-3))
+
+
+def _inicializar_banco_lembretes():
+    with sqlite3.connect(REMINDERS_DB_FILE, timeout=10) as db:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS lembretes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                guild_id INTEGER,
+                descricao TEXT NOT NULL,
+                due_at REAL NOT NULL,
+                status TEXT NOT NULL DEFAULT 'scheduled',
+                next_attempt REAL,
+                created_at REAL NOT NULL,
+                dm_message_id INTEGER,
+                updated_at REAL NOT NULL
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_lembretes_due ON lembretes(status, due_at, next_attempt)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_lembretes_user ON lembretes(user_id, guild_id, status)")
+
+
+def _agora_lembretes():
+    return datetime.datetime.now(datetime.timezone.utc).timestamp()
+
+
+def _hora_local_lembretes():
+    return datetime.datetime.now(LEMBRETE_TZ)
+
+
+def _parsear_pedido_lembrete(texto):
+    """Retorna (descrição, epoch, erro) para pedidos explícitos de lembrete em português."""
+    original = (texto or "").strip()
+    normal = normalizar(original)
+    if not re.search(r"\b(me lembra(?:r)?|me lembre|lembra-me|lembre-me|pode me lembrar|pode lembrar|me avisa|me avise|pode me avisar|lembrete)\b", normal):
+        return None
+
+    agora_local = _hora_local_lembretes()
+    data = None
+    trecho_data = None
+
+    m = re.search(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b", normal)
+    if m:
+        dia, mes = int(m.group(1)), int(m.group(2))
+        ano = int(m.group(3)) if m.group(3) else agora_local.year
+        if ano < 100:
+            ano += 2000
+        try:
+            data = datetime.date(ano, mes, dia)
+        except ValueError:
+            return ("", 0, "A data informada não existe. Confere o dia e o mês.")
+        trecho_data = m.group(0)
+        if not m.group(3) and data < agora_local.date():
+            try:
+                data = data.replace(year=agora_local.year + 1)
+            except ValueError:
+                return ("", 0, "Essa data não existe no próximo ano.")
+    else:
+        m_rel = re.search(r"\b(depois de amanha|amanha|hoje)\b", normal)
+        if m_rel:
+            delta = 2 if m_rel.group(1) == "depois de amanha" else (1 if m_rel.group(1) == "amanha" else 0)
+            data = agora_local.date() + datetime.timedelta(days=delta)
+            trecho_data = m_rel.group(0)
+        else:
+            dias = {
+                "segunda": 0, "segunda-feira": 0, "terca": 1, "terca-feira": 1,
+                "quarta": 2, "quarta-feira": 2, "quinta": 3, "quinta-feira": 3,
+                "sexta": 4, "sexta-feira": 4, "sabado": 5, "domingo": 6,
+            }
+            m_dia = re.search(r"\b(?:na|nesta|proxima)?\s*(segunda-feira|terca-feira|quarta-feira|quinta-feira|sexta-feira|segunda|terca|quarta|quinta|sexta|sabado|domingo)\b", normal)
+            if m_dia:
+                nome_dia = normalizar(m_dia.group(1))
+                alvo = dias[nome_dia]
+                delta = (alvo - agora_local.weekday()) % 7
+                if delta == 0:
+                    delta = 7
+                data = agora_local.date() + datetime.timedelta(days=delta)
+                trecho_data = m_dia.group(0)
+
+    # Horários aceitos: "às 15h", "15:30", "15h30", "às 15 horas".
+    m_hora = re.search(
+        r"\b(?:as|a)\s*(\d{1,2})(?:\s*:\s*(\d{2})|\s*h\s*(\d{0,2})|\s+horas?)?\b"
+        r"|\b(\d{1,2})\s*:\s*(\d{2})\b"
+        r"|\b(\d{1,2})h(\d{2})?\b",
+        normal,
+    )
+    if not data:
+        return ("", 0, "Não consegui identificar o dia. Usa, por exemplo, amanhã às 15h ou 30/10 às 15h.")
+    if not m_hora:
+        return ("", 0, "Faltou a hora. Diz, por exemplo, amanhã às 15h.")
+
+    if m_hora.group(1) is not None:
+        hora = int(m_hora.group(1))
+        minuto = int(m_hora.group(2) or m_hora.group(3) or 0)
+    elif m_hora.group(4) is not None:
+        hora, minuto = int(m_hora.group(4)), int(m_hora.group(5))
+    else:
+        hora, minuto = int(m_hora.group(6)), int(m_hora.group(7) or 0)
+    if not (0 <= hora <= 23 and 0 <= minuto <= 59):
+        return ("", 0, "Esse horário não é válido. Usa uma hora entre 00:00 e 23:59.")
+
+    horario_local = datetime.datetime.combine(data, datetime.time(hora, minuto), tzinfo=LEMBRETE_TZ)
+    timestamp = horario_local.timestamp()
+    if timestamp <= _agora_lembretes():
+        return ("", 0, "Esse horário já passou. Escolhe uma data e hora futuras.")
+
+    descricao = original
+    if trecho_data:
+        descricao = re.sub(re.escape(trecho_data), " ", descricao, count=1, flags=re.IGNORECASE)
+    descricao = re.sub(
+        r"\b(?:as|a)\s*\d{1,2}(?:\s*:\s*\d{2}|\s*h\s*\d{0,2}|\s+horas?)?\b|\b\d{1,2}\s*:\s*\d{2}\b|\b\d{1,2}h\d{0,2}\b",
+        " ", descricao, flags=re.IGNORECASE,
+    )
+    descricao = re.sub(
+        r"\b(?:por favor|pode me lembrar|pode lembrar|me lembra(?:r)?|me lembre|lembra-me|lembre-me|me avisa|me avise|pode me avisar|lembrete|eu tenho uma coisa para fazer|tenho uma coisa para fazer|eu tenho que|tenho que|eu preciso|preciso)\b",
+        " ", descricao, flags=re.IGNORECASE,
+    )
+    descricao = re.sub(r"\b(?:dia|em|no dia|na|nesta|proxima)\b", " ", descricao, flags=re.IGNORECASE)
+    descricao = re.sub(r"\s+", " ", descricao).strip(" ,.!?:;-")
+    if not descricao or len(descricao) < 2:
+        descricao = "a tarefa que você pediu para lembrar"
+    return (descricao[:300], timestamp, None)
+
+
+def _criar_lembrete(user_id, guild_id, descricao, due_at):
+    agora = _agora_lembretes()
+    with sqlite3.connect(REMINDERS_DB_FILE, timeout=10) as db:
+        cur = db.execute(
+            "INSERT INTO lembretes(user_id,guild_id,descricao,due_at,status,next_attempt,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+            (int(user_id), int(guild_id) if guild_id else None, descricao, float(due_at), "scheduled", float(due_at), agora, agora),
+        )
+        return cur.lastrowid
+
+
+def _atualizar_lembrete(lembrete_id, status, next_attempt=None, dm_message_id=None):
+    with sqlite3.connect(REMINDERS_DB_FILE, timeout=10) as db:
+        db.execute(
+            "UPDATE lembretes SET status=?, next_attempt=?, dm_message_id=COALESCE(?,dm_message_id), updated_at=? WHERE id=? AND status!='done'",
+            (status, next_attempt, dm_message_id, _agora_lembretes(), int(lembrete_id)),
+        )
+
+
+def _lembretes_vencidos_para_usuario(user_id, guild_id=None):
+    with sqlite3.connect(REMINDERS_DB_FILE, timeout=10) as db:
+        db.row_factory = sqlite3.Row
+        if guild_id is None:
+            rows = db.execute(
+                "SELECT * FROM lembretes WHERE user_id=? AND due_at<=? AND status NOT IN ('done','scheduled') ORDER BY due_at",
+                (int(user_id), _agora_lembretes()),
+            ).fetchall()
+        else:
+            rows = db.execute(
+                "SELECT * FROM lembretes WHERE user_id=? AND guild_id=? AND due_at<=? AND status!='done' ORDER BY due_at",
+                (int(user_id), int(guild_id), _agora_lembretes()),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+
+async def _processar_interacao_lembretes(message):
+    """DM com resposta encerra lembrete; mensagem em servidor dispara aviso vencido."""
+    try:
+        if isinstance(message.channel, discord.DMChannel):
+            with sqlite3.connect(REMINDERS_DB_FILE, timeout=5) as db:
+                db.execute(
+                    "UPDATE lembretes SET status='done', next_attempt=NULL, updated_at=? "
+                    "WHERE user_id=? AND status IN ('dm1','dm2','wait_online','wait_channel') AND due_at<=?",
+                    (_agora_lembretes(), message.author.id, _agora_lembretes()),
+                )
+            return
+        if not message.guild or not hasattr(message.channel, "send"):
+            return
+        rows = _lembretes_vencidos_para_usuario(message.author.id, message.guild.id)
+        for row in rows:
+            try:
+                await message.channel.send(
+                    f"Eita {message.author.mention}, só passando pra lembrar que já deu a hora de **{row['descricao']}**, tá?",
+                    allowed_mentions=discord.AllowedMentions(users=[message.author]),
+                )
+                _atualizar_lembrete(row["id"], "done")
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+    except sqlite3.Error as error:
+        log_console(f"AVISO: não foi possível consultar lembretes ({type(error).__name__}).")
+
+
+@tasks.loop(minutes=1)
+async def verificar_lembretes_pendentes():
+    if not bot.is_ready():
+        return
+    agora = _agora_lembretes()
+    try:
+        with sqlite3.connect(REMINDERS_DB_FILE, timeout=10) as db:
+            db.row_factory = sqlite3.Row
+            rows = [dict(row) for row in db.execute(
+                "SELECT * FROM lembretes WHERE due_at<=? AND status!='done' AND "
+                "((status='scheduled' AND COALESCE(next_attempt, due_at)<=?) OR "
+                "(status='dm1' AND COALESCE(next_attempt,0)<=?)) ORDER BY due_at LIMIT 100",
+                (agora, agora, agora),
+            ).fetchall()]
+        for row in rows:
+            try:
+                user = bot.get_user(row["user_id"]) or await bot.fetch_user(row["user_id"])
+                if row["status"] == "scheduled":
+                    texto = f"⏰ Oi! Você me pediu para lembrar: **{row['descricao']}**. Já chegou a hora! Se responder a esta DM, considero o lembrete confirmado."
+                    status = "dm1"
+                    next_attempt = agora + 15 * 60
+                else:
+                    texto = f"🔔 Passando de novo para lembrar: **{row['descricao']}**. Quando puder, responde a esta DM; depois aguardo você ficar online."
+                    status = "wait_online"
+                    next_attempt = None
+                msg = await user.send(texto)
+                _atualizar_lembrete(row["id"], status, next_attempt, msg.id)
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                _atualizar_lembrete(row["id"], "wait_online", None)
+            except Exception as error:
+                log_console(f"AVISO: falha no envio de lembrete ({type(error).__name__}).")
+    except sqlite3.Error as error:
+        log_console(f"AVISO: banco de lembretes indisponível ({type(error).__name__}).")
+
+
+@bot.event
+async def on_presence_update(before, after):
+    if before.status != discord.Status.offline or after.status == discord.Status.offline:
+        return
+    agora = _agora_lembretes()
+    try:
+        with sqlite3.connect(REMINDERS_DB_FILE, timeout=10) as db:
+            db.row_factory = sqlite3.Row
+            rows = [dict(row) for row in db.execute(
+                "SELECT * FROM lembretes WHERE user_id=? AND status='wait_online' AND due_at<=? ORDER BY due_at LIMIT 20",
+                (after.id, agora),
+            ).fetchall()]
+        for row in rows:
+            try:
+                msg = await after.send(
+                    f"👋 Vi que você ficou online! Lembrando mais uma vez: **{row['descricao']}**. Se não responder, deixo quieto; se falar em um canal do servidor, também posso te avisar por lá."
+                )
+                _atualizar_lembrete(row["id"], "wait_channel", None, msg.id)
+            except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                _atualizar_lembrete(row["id"], "wait_channel", None)
+    except sqlite3.Error as error:
+        log_console(f"AVISO: não foi possível processar presença para lembretes ({type(error).__name__}).")
+
+
+_inicializar_banco_lembretes()
+
+
 @bot.event
 async def on_ready():
     DISCORD_LOGS.start(bot)
@@ -6494,6 +6747,8 @@ async def on_ready():
         log_console(f"AVISO: sincronização dos comandos públicos falhou (HTTP {error.status}).")
     if not escanear_canais_interessantes.is_running():
         escanear_canais_interessantes.start()
+    if not verificar_lembretes_pendentes.is_running():
+        verificar_lembretes_pendentes.start()
     log_console(f"🌪️ Conectado como {bot.user}! Permissões restritas online.")
 
 @bot.event
@@ -8809,6 +9064,9 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    # Um lembrete vencido pode ser entregue no primeiro canal em que a pessoa falar.
+    await _processar_interacao_lembretes(message)
+
     # Comandos administrativos nunca são enviados à IA nem registrados no histórico.
     if message.content.startswith("!"):
         await bot.process_commands(message)
@@ -8885,6 +9143,47 @@ async def on_message(message):
             break
 
     chamou_por_nome = bool(nome_chamada_match)
+
+    # Pedidos de lembrete são tratados sem depender da resposta da IA.
+    mencionou_bot_para_lembrete = bool(
+        bot.user and (
+            bot.user in message.mentions
+            or (message.guild and message.guild.me and any(role in message.role_mentions for role in message.guild.me.roles))
+        )
+    )
+    if chamou_por_nome or mencionou_bot_para_lembrete:
+        texto_pedido_lembrete = texto_para_detectar[nome_chamada_match.end():].strip(" ,:—-") if nome_chamada_match else texto_para_detectar
+        pedido_lembrete = _parsear_pedido_lembrete(texto_pedido_lembrete)
+        if pedido_lembrete is not None:
+            descricao_lembrete, vencimento_lembrete, erro_lembrete = pedido_lembrete
+            if erro_lembrete:
+                await message.reply(
+                    f"Consigo! {erro_lembrete}\nExemplo: Breeze, lembra de entregar o trabalho amanhã às 15h.",
+                    mention_author=False,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return
+            try:
+                id_lembrete = _criar_lembrete(
+                    message.author.id,
+                    message.guild.id if message.guild else None,
+                    descricao_lembrete,
+                    vencimento_lembrete,
+                )
+                data_lembrete = datetime.datetime.fromtimestamp(vencimento_lembrete, LEMBRETE_TZ)
+                await message.reply(
+                    f"Fechado! Guardei o lembrete #{id_lembrete}: {descricao_lembrete}, em {data_lembrete.strftime('%d/%m/%Y às %H:%M')}. Vou tentar te avisar por DM; se não responder, tento de novo, aguardo você ficar online e, se você falar no servidor depois do horário, aviso no canal.",
+                    mention_author=False,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            except (sqlite3.Error, discord.HTTPException) as error:
+                log_console(f"AVISO: não foi possível criar lembrete ({type(error).__name__}).")
+                await message.reply(
+                    "Não consegui registrar o lembrete agora. Tenta novamente daqui a pouco.",
+                    mention_author=False,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+            return
 
     # Determinar se o Bot deve responder no Chat
     deve_responder = False
