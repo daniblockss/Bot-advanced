@@ -9340,7 +9340,7 @@ async def on_message(message):
                                   in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".avif"}), None)
                 if candidato is None and links and (
                     message.content.strip().strip("<>") == links[0]
-                    or re.search(r"\b(imagem|foto|print|analise|analisa|descreva)\b", message.content, re.I)
+                    or re.search(r"\b(imagem|foto|print|gif|gifs|figurinha|sticker|tenor|giphy|analise|analisa|descreva|olha isso|o que tem)\b", message.content, re.I)
                 ):
                     candidato = links[0]
                 if candidato:
