@@ -6524,7 +6524,7 @@ def _parsear_pedido_lembrete(texto):
     """Retorna (descrição, epoch, erro) para pedidos explícitos de lembrete em português."""
     original = (texto or "").strip()
     normal = normalizar(original)
-    if not re.search(r"\b(me lembra(?:r)?|me lembre|lembra-me|lembre-me|pode me lembrar|pode lembrar|me avisa|me avise|pode me avisar|lembrete)\b", normal):
+    if not re.search(r"\b(me lembra(?:r)?|me lembre|lembra(?:r)?(?:-me)?|lembre-me|pode me lembrar|pode lembrar|me avisa|me avise|pode me avisar|lembrete)\b", normal):
         return None
 
     agora_local = _hora_local_lembretes()
@@ -6611,7 +6611,7 @@ def _parsear_pedido_lembrete(texto):
         " ", descricao, flags=re.IGNORECASE,
     )
     descricao = re.sub(
-        r"\b(?:por favor|pode me lembrar|pode lembrar|me lembra(?:r)?|me lembre|lembra-me|lembre-me|me avisa|me avise|pode me avisar|lembrete|eu tenho uma coisa para fazer|tenho uma coisa para fazer|eu tenho que|tenho que|eu preciso|preciso)\b",
+        r"\b(?:por favor|pode me lembrar|pode lembrar|me lembra(?:r)?|me lembre|lembra(?:r)?(?:-me)?|lembra-me|lembre-me|me avisa|me avise|pode me avisar|lembrete|eu tenho uma coisa para fazer|tenho uma coisa para fazer|eu tenho que|tenho que|eu preciso|preciso)\b",
         " ", descricao, flags=re.IGNORECASE,
     )
     descricao = re.sub(r"\b(?:dia|em|no dia|na|nesta|proxima)\b", " ", descricao, flags=re.IGNORECASE)
