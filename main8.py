@@ -6449,9 +6449,41 @@ bot = BreezeBot(command_prefix="!", intents=intents, help_command=None)
 
 @bot.check
 async def somente_criadores_prefixo(ctx):
-    if getattr(ctx, "command", None) and ctx.command.name == "raiz":
+    comando = getattr(ctx, "command", None)
+    if comando and comando.name in {"ping", "info"}:
+        return True
+    if comando and comando.name == "raiz":
         return raiz_autorizado(ctx.author.id, ctx.guild)
     return is_creator(ctx.author)
+
+
+@bot.command(name="ping")
+async def prefix_ping(ctx):
+    latencia_ms = round(bot.latency * 1000)
+    await ctx.reply(
+        f"🏓 Pong! Latência: **{latencia_ms} ms**",
+        mention_author=False,
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
+
+
+@bot.command(name="info")
+async def prefix_info(ctx):
+    guildas = len(bot.guilds)
+    usuarios = sum((guild.member_count or 0) for guild in bot.guilds)
+    embed = discord.Embed(
+        title="ℹ️ Informações do Breeze MC",
+        description="Assistente de IA e bot de comunidade.",
+        color=discord.Color.blurple(),
+    )
+    if bot.user:
+        embed.set_thumbnail(url=bot.user.display_avatar.url)
+        embed.add_field(name="Bot", value=f"{bot.user.name} (`{bot.user.id}`)", inline=False)
+    embed.add_field(name="Servidores", value=str(guildas), inline=True)
+    embed.add_field(name="Usuários aproximados", value=str(usuarios), inline=True)
+    embed.add_field(name="Latência", value=f"{round(bot.latency * 1000)} ms", inline=True)
+    embed.set_footer(text="Breeze MC")
+    await ctx.reply(embed=embed, mention_author=False, allowed_mentions=discord.AllowedMentions.none())
 
 
 @bot.command(name="canal")
