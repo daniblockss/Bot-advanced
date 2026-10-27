@@ -1968,7 +1968,7 @@ def carregar_configs_txt():
         "STREAM=NO\n"
         "MODEL=llama-3.3-70b-versatile\n"
         "MODEL_VISION=qwen/qwen3.6-27b\n"
-        "MODEL_AUDIO=whisper-large-v3-turbo\n"
+        "MODEL_AUDIO=whisper-large-v3\n"
     )
     
     if not os.path.exists(CONFIGS_TXT_FILE):
@@ -1983,7 +1983,7 @@ def carregar_configs_txt():
         "SLASH_COMMANDS": "NO",
         "MODEL": "llama-3.3-70b-versatile",
         "MODEL_VISION": "qwen/qwen3.6-27b",
-        "MODEL_AUDIO": "whisper-large-v3-turbo"
+        "MODEL_AUDIO": "whisper-large-v3"
     }
 
     try:
@@ -3410,7 +3410,7 @@ class ModalConfigsModelos(CreatorModal, title="🧠 Configuração dos Modelos (
         super().__init__()
         self.modelo = discord.ui.TextInput(label="Modelo Texto", default=SYS_CONFIGS.get("MODEL", "llama-3.3-70b-versatile"), required=True)
         self.modelo_visao = discord.ui.TextInput(label="Modelo Visão (Imagens)", default=SYS_CONFIGS.get("MODEL_VISION", "qwen/qwen3.6-27b"), required=True)
-        self.modelo_audio = discord.ui.TextInput(label="Modelo Áudio (Transcrição)", default=SYS_CONFIGS.get("MODEL_AUDIO", "whisper-large-v3-turbo"), required=True)
+        self.modelo_audio = discord.ui.TextInput(label="Modelo Áudio (Transcrição)", default=SYS_CONFIGS.get("MODEL_AUDIO", "whisper-large-v3"), required=True)
         
         self.add_item(self.modelo)
         self.add_item(self.modelo_visao)
@@ -3723,7 +3723,7 @@ def _salvar_todas_configs_txt():
         f"STREAM={SYS_CONFIGS.get('STREAM', 'NO')}\n"
         f"MODEL={SYS_CONFIGS.get('MODEL', 'llama-3.3-70b-versatile')}\n"
         f"MODEL_VISION={SYS_CONFIGS.get('MODEL_VISION', 'qwen/qwen3.6-27b')}\n"
-        f"MODEL_AUDIO={SYS_CONFIGS.get('MODEL_AUDIO', 'whisper-large-v3-turbo')}\n"
+        f"MODEL_AUDIO={SYS_CONFIGS.get('MODEL_AUDIO', 'whisper-large-v3')}\n"
     )
     with open(CONFIGS_TXT_FILE, "w", encoding="utf-8") as f:
         f.write(txt)
@@ -9279,6 +9279,9 @@ async def on_message(message):
     ):
         deve_responder = True
 
+    atualizar_idioma_usuario(message.author.id, message.content)
+    idioma_usuario = obter_idioma_usuario(message.author.id)
+
     anexos_audio = [
         attachment
         for attachment in message.attachments
@@ -9305,6 +9308,7 @@ async def on_message(message):
     # 3. Processar mídia para resposta ou registro silencioso do canal.
     txt_extraido = ""
     erros_transcricao = []
+    transcricao_confusa_detectada = False
     contextos_audio = {}
     img_url = None
     img_data = None
@@ -9357,8 +9361,13 @@ async def on_message(message):
                                 audio_name if not anexo_e_video(a) else os.path.splitext(a.filename)[0] + ".mp3",
                                 "audio/mpeg" if anexo_e_video(a) else audio_mime,
                                 message.channel.id if not is_dm else None,
+                                "auto" if anexo_e_video(a) else idioma_usuario,
                             )
-                            if texto_audio:
+                            if texto_audio and transcricao_parece_misturada(texto_audio, "auto" if anexo_e_video(a) else idioma_usuario):
+                                transcricao_confusa_detectada = True
+                                erros_transcricao.append("Não entendi muito bem o áudio; a transcrição parece misturar idiomas. Pode enviar novamente ou escrever a frase?")
+                                contextos_audio[str(a.id)] = f"[Mídia: {a.filename}; transcrição confusa, não usada]"
+                            elif texto_audio:
                                 txt_extraido += f" [Transcrição do áudio: {texto_audio}]"
                                 contextos_audio[str(a.id)] = contextos_audio.get(str(a.id), f"[Áudio anexado: {a.filename}]") + f" Transcrição: {texto_audio[:2200]}"
                                 AUDIO_TRANSCRIPTIONS[str(a.id)] = texto_audio[:8000]
@@ -9456,6 +9465,14 @@ async def on_message(message):
                         f"AVISO: VisionChat AHM7 falhou para {img_nome}; "
                         f"a imagem será encaminhada ao fallback multimodal e ao fallback final VisionChat: {error}"
                     )
+
+            if transcricao_confusa_detectada and deve_responder and not txt_extraido.strip():
+                await message.reply(
+                    "Não entendi muito bem o áudio. 😕 Pode enviar novamente ou escrever o que foi dito?",
+                    mention_author=False,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return
 
             # 4. Moderação do Áudio Transcrito (Evitar burlar filtro falando áudio)
             if txt_extraido and await verificar_palavrao_ia(txt_extraido, message.author, is_criador):
