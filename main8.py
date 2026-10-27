@@ -8406,12 +8406,49 @@ def criar_executor_ferramentas_ahm7(message):
                 candidatos = [item for item in candidatos if anexo_e_imagem(item)]
             elif tool_name == "transcribe":
                 candidatos = [item for item in candidatos if anexo_e_audio(item)]
+
+            # Se a mensagem atual responde a outra com imagem, use a original como referência.
+            if tool_name in {"pixelster", "visionchat"} and not candidatos:
+                referencia = getattr(message, "reference", None)
+                mensagem_referenciada = getattr(referencia, "resolved", None) if referencia else None
+                if not isinstance(mensagem_referenciada, discord.Message) and referencia and referencia.message_id:
+                    try:
+                        mensagem_referenciada = await message.channel.fetch_message(referencia.message_id)
+                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+                        mensagem_referenciada = None
+                if isinstance(mensagem_referenciada, discord.Message):
+                    candidatos = [
+                        item for item in mensagem_referenciada.attachments if anexo_e_imagem(item)
+                    ]
+
             if candidatos:
                 args["anexo"] = candidatos[0]
             elif tool_name in {"pixelster", "visionchat"} and not args.get("imagem_url"):
                 links = extrair_links(message.content)
                 if links:
                     args["imagem_url"] = links[0]
+
+            # Pedido de geração baseado na foto de perfil: avatar público do usuário mencionado,
+            # ou do próprio autor quando ele pede uma imagem/foto de si mesmo.
+            if tool_name == "pixelster" and not candidatos and not args.get("imagem_url"):
+                texto_pedido = (message.content or "").lower()
+                quer_avatar = bool(re.search(
+                    r"\b(minha foto|foto minha|meu avatar|meu perfil|foto de perfil|foto do perfil|"
+                    r"imagem minha|foto do @?\w+)\b",
+                    texto_pedido,
+                    flags=re.IGNORECASE,
+                ))
+                if quer_avatar:
+                    alvos = list(getattr(message, "mentions", []))
+                    alvo = alvos[0] if alvos else message.author
+                    avatar = getattr(alvo, "display_avatar", None)
+                    if avatar:
+                        args["imagem_url"] = str(avatar.with_size(1024).url)
+                        args["consulta"] = (
+                            str(args.get("consulta", "")).strip()
+                            + " Use a foto de perfil como referência visual para a pessoa; "
+                              "crie uma nova imagem conforme o pedido, sem afirmar que é uma foto real."
+                        ).strip()
 
         resultados = []
 
