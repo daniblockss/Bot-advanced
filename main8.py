@@ -8428,6 +8428,29 @@ def criar_executor_ferramentas_ahm7(message):
 
             if candidatos:
                 args["anexo"] = candidatos[0]
+                if tool_name == "pixelster" and len(candidatos) > 1:
+                    referencias_lidas = []
+                    for item in candidatos[:4]:
+                        try:
+                            if item.size <= 10_000_000:
+                                referencias_lidas.append((
+                                    item.filename,
+                                    await item.read(),
+                                    item.content_type or "image/jpeg",
+                                ))
+                        except (discord.HTTPException, OSError):
+                            continue
+                    if len(referencias_lidas) > 1:
+                        try:
+                            nome_prancha, bytes_prancha, mime_prancha = await asyncio.to_thread(
+                                combinar_imagens_para_analise, referencias_lidas
+                            )
+                            args["anexo"] = ImagemPorLink(
+                                candidatos[0].url, bytes_prancha, mime_prancha,
+                                "referencias-multiplas.jpg",
+                            )
+                        except (FalhaProvedor, ValueError, OSError) as error:
+                            log_console(f"AVISO: não foi possível combinar imagens de referência ({type(error).__name__}); usando a primeira.")
             elif tool_name in {"pixelster", "visionchat"} and not args.get("imagem_url"):
                 links = extrair_links(message.content)
                 if links:
@@ -8478,8 +8501,9 @@ def criar_executor_ferramentas_ahm7(message):
                                 args["imagem_url"] = referencias_avatar[0][3]
                         else:
                             args["imagem_url"] = referencias_avatar[0][3]
+                        consulta_limpa = re.sub(r"<@!?\d+>", "", str(args.get("consulta", ""))).strip()
                         args["consulta"] = (
-                            str(args.get("consulta", "")).strip()
+                            consulta_limpa
                             + " Use a(s) foto(s) de perfil como referência visual. Pessoas de referência: "
                             + ", ".join(nomes_alvos)
                             + ". Se houver mais de uma, represente essas pessoas juntas conforme o pedido. "
