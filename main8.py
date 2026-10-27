@@ -2557,6 +2557,43 @@ def ler_txt(caminho):
             return ""
     return ""
 
+def _extrair_pedido_memoria_explicito(texto):
+    """Identifica pedidos claros para guardar uma informação."""
+    texto = (texto or "").strip()
+    padrao = re.compile(
+        r"(?:lembra(?:-te)?(?:\s+que)?|lembre(?:-se)?(?:\s+que)?|"
+        r"guarda(?:r)?(?:\s+na\s+mem[oó]ria)?|guarde(?:\s+na\s+mem[oó]ria)?|"
+        r"salva(?:r)?(?:\s+na\s+mem[oó]ria)?|salve(?:\s+na\s+mem[oó]ria)?|"
+        r"anota(?:r)?|anote|n[aã]o\s+esquece(?:\s+que)?)"
+        r"\s*(?:isso|disso|isto|que)?\s*[:,-]?\s*(.*)$",
+        re.IGNORECASE | re.DOTALL,
+    )
+    correspondencia = padrao.search(texto)
+    if not correspondencia:
+        return None
+    conteudo = (correspondencia.group(1) or "").strip(" \t\r\n:,-")
+    if not conteudo:
+        return ("", "")
+    arquivo = "geral" if "memoria geral" in normalizar(texto) else "importantes"
+    return arquivo, conteudo[:1500]
+
+
+def _salvar_memoria_persistente(arquivo, conteudo, guild_id=None):
+    """Grava, força a escrita no disco e verifica o conteúdo salvo."""
+    if arquivo not in {"geral", "importantes"}:
+        raise ValueError("Categoria de memória inválida")
+    nome_base = MEMORIA_GERAL_FILE if arquivo == "geral" else IMPORTANTE_FILE
+    caminho = obter_arquivo_guild(nome_base, guild_id)
+    registro = f"- [{obter_agora().strftime('%d/%m/%Y %H:%M')}] {conteudo.strip()}\n"
+    with open(caminho, "a", encoding="utf-8") as f:
+        f.write(registro)
+        f.flush()
+        os.fsync(f.fileno())
+    if registro.strip() not in ler_txt(caminho):
+        raise OSError("A verificação de gravação da memória falhou")
+    return caminho
+
+
 def salvar_historico_chat(caminho, mensagem):
     linhas = []
     if os.path.exists(caminho):
@@ -9139,6 +9176,59 @@ async def on_message(message):
                 contexto_conversa = await _montar_contexto_conversa_recente(message)
                 if contexto_conversa:
                     txt = f"{contexto_conversa}\n\n[MENSAGEM ATUAL DE {message.author.display_name}]\n{txt}"
+
+            # Gravação determinística: não depende da IA emitir uma tag de memória.
+            if (
+                not is_dm
+                and tipo == "chat"
+                and (chamou_por_nome or (bot.user and bot.user in message.mentions))
+            ):
+                pedido_memoria = _extrair_pedido_memoria_explicito(txt)
+                if pedido_memoria is not None:
+                    categoria_memoria, conteudo_memoria = pedido_memoria
+                    if not conteudo_memoria and message.reference and message.reference.message_id:
+                        try:
+                            msg_referenciada = message.reference.resolved
+                            if not isinstance(msg_referenciada, discord.Message):
+                                msg_referenciada = await message.channel.fetch_message(
+                                    message.reference.message_id
+                                )
+                            conteudo_memoria = (msg_referenciada.content or "").strip()[:1500]
+                        except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+                            conteudo_memoria = ""
+                    if not conteudo_memoria:
+                        await message.reply(
+                            "O que exatamente queres que eu guarde? Escreve a informação depois de 'lembra que'.",
+                            mention_author=False,
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
+                        return
+                    if categoria_memoria == "geral" and not is_creator(message.author):
+                        await message.reply(
+                            "A memória geral é reservada aos criadores. Posso guardar essa informação nos importantes se pedires.",
+                            mention_author=False,
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
+                        return
+                    try:
+                        _salvar_memoria_persistente(categoria_memoria, conteudo_memoria, guild_id)
+                    except (OSError, ValueError) as error:
+                        log_console(
+                            f"ERRO: não foi possível persistir memória explícita: {type(error).__name__}"
+                        )
+                        await message.reply(
+                            "Não consegui confirmar a gravação da memória no arquivo. Não vou dizer que salvei.",
+                            mention_author=False,
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
+                        return
+                    nome_arquivo_memoria = "memoria_geral.txt" if categoria_memoria == "geral" else "importantes.txt"
+                    await message.reply(
+                        f"Salvei e confirmei a gravação em {nome_arquivo_memoria}: {conteudo_memoria[:900]}",
+                        mention_author=False,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    return
 
             if erro_imagem_link:
                 txt += f"\n[Não foi possível ler a imagem por link: {erro_imagem_link}. Informe a falha sem inventar o conteúdo.]"
