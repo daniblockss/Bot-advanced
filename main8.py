@@ -8432,14 +8432,17 @@ def criar_executor_ferramentas_ahm7(message):
             # ou do próprio autor quando ele pede uma imagem/foto de si mesmo.
             if tool_name == "pixelster" and not candidatos and not args.get("imagem_url"):
                 texto_pedido = (message.content or "").lower()
+                alvos = [
+                    membro for membro in getattr(message, "mentions", [])
+                    if not bot.user or membro.id != bot.user.id
+                ]
                 quer_avatar = bool(re.search(
                     r"\b(minha foto|foto minha|meu avatar|meu perfil|foto de perfil|foto do perfil|"
                     r"imagem minha|foto do @?\w+)\b",
                     texto_pedido,
                     flags=re.IGNORECASE,
-                ))
+                )) or bool(alvos)
                 if quer_avatar:
-                    alvos = list(getattr(message, "mentions", []))
                     alvo = alvos[0] if alvos else message.author
                     avatar = getattr(alvo, "display_avatar", None)
                     if avatar:
@@ -9493,6 +9496,8 @@ async def on_message(message):
                     if anexo_imagem:
                         imagem_origem = mensagem_referenciada
 
+            imagens_lidas = []
+            falha_prancha = False
             if anexos_imagem:
                 anexo_imagem = anexos_imagem[0]
                 img_nome = ", ".join(item.filename for item in anexos_imagem[:4])
@@ -9529,17 +9534,32 @@ async def on_message(message):
                             img_nome = img_data[0]
                         except (FalhaProvedor, ValueError, OSError) as error:
                             log_console(f"AVISO: não foi possível combinar imagens: {type(error).__name__}")
+                            falha_prancha = len(imagens_lidas) > 1
                             img_data = imagens_lidas[0]
 
             if img_data:
                 try:
-                    img_descricao = await asyncio.to_thread(
-                        analisar_imagem_sync,
-                        img_data[1],
-                        img_data[2],
-                        message.content or "Analise todas as imagens fornecidas e explique o que aparece em cada uma.",
-                        message.channel.id if not is_dm else None,
-                    )
+                    if falha_prancha and len(imagens_lidas) > 1:
+                        descricoes_imagens = []
+                        for indice, (nome_imagem, bytes_imagem, mime_imagem) in enumerate(imagens_lidas, 1):
+                            descricao_individual = await asyncio.to_thread(
+                                analisar_imagem_sync,
+                                bytes_imagem,
+                                mime_imagem,
+                                f"Analise a imagem {indice} de {len(imagens_lidas)} ({nome_imagem}). "
+                                + (message.content or "Descreva o que aparece nesta imagem."),
+                                message.channel.id if not is_dm else None,
+                            )
+                            descricoes_imagens.append(f"Imagem {indice} — {nome_imagem}:\n{descricao_individual}")
+                        img_descricao = "\n\n".join(descricoes_imagens)
+                    else:
+                        img_descricao = await asyncio.to_thread(
+                            analisar_imagem_sync,
+                            img_data[1],
+                            img_data[2],
+                            message.content or "Analise todas as imagens fornecidas e explique o que aparece em cada uma.",
+                            message.channel.id if not is_dm else None,
+                        )
                     if len(anexos_imagem) == 1 and anexo_imagem:
                         salvar_contexto_imagem(
                             origem_id, anexo_imagem.id, anexo_imagem.filename, img_descricao
