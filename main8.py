@@ -5984,6 +5984,28 @@ async def perguntar_ia(chave_contexto, user_id, user_name, pergunta, bot_instanc
     return "😵 *Todos os provedores de IA estão indisponíveis ou sem chave configurada. Tente novamente em alguns minutos.*"
 
 
+def _preparar_imagem_para_fallback(image_bytes, content_type):
+    """Cria uma data URL local para evitar que provedores precisem baixar links do Discord/GIF."""
+    mime = content_type if isinstance(content_type, str) and content_type.startswith("image/") else "image/jpeg"
+    dados = image_bytes
+    # Muitos provedores de visão não aceitam GIF animado. Quando Pillow estiver disponível,
+    # envia o primeiro quadro como PNG, sem exigir dependência obrigatória.
+    if mime == "image/gif":
+        try:
+            from PIL import Image
+            with Image.open(io.BytesIO(image_bytes)) as imagem:
+                imagem.seek(0)
+                quadro = imagem.convert("RGB")
+                saida = io.BytesIO()
+                quadro.save(saida, format="PNG")
+                dados = saida.getvalue()
+                mime = "image/png"
+        except (ImportError, OSError, ValueError, EOFError):
+            # O endpoint primário pode aceitar GIF; mantém os bytes originais se Pillow não existir.
+            pass
+    return f"data:{mime};base64,{base64.b64encode(dados).decode('ascii')}"
+
+
 def analisar_imagem_sync(image_bytes, content_type, pergunta, channel_id=None):
     if not ahm7_habilitada("visionchat", channel_id):
         raise FalhaProvedor("VisionChat está desativado nas configurações")
@@ -9361,6 +9383,14 @@ async def on_message(message):
                         f"AVISO: VisionChat AHM7 falhou para {img_nome}; "
                         f"a imagem será encaminhada ao fallback multimodal e ao fallback final VisionChat: {error}"
                     )
+
+            # Se a análise visual primária falhar, envie os próprios bytes à IA multimodal.
+            # Isso evita HTTP 403 quando o provedor tenta buscar URLs do Discord/hosts de GIF.
+            if img_data and not img_descricao:
+                try:
+                    img_url = _preparar_imagem_para_fallback(img_data[1], img_data[2])
+                except (ValueError, OSError, TypeError) as error:
+                    log_console(f"AVISO: não foi possível preparar imagem para fallback ({type(error).__name__}).")
 
             # 4. Moderação do Áudio Transcrito (Evitar burlar filtro falando áudio)
             if txt_extraido and await verificar_palavrao_ia(txt_extraido, message.author, is_criador):
