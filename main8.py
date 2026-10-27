@@ -4815,8 +4815,14 @@ def _detectar_pedidos_multimidia(pergunta):
             normalizada,
         )
         or re.search(
-            r"^\s*(?:(?:oi|ola|ei)\s+bot[,!:]?\s*)?"
-            r"(?:fale|fala|diga|diz)\s+\S+",
+            r"\b(?:fale|fala|diga|diz|leia)\b.{0,45}"
+            r"\b(?:em audio|em voz alta|por audio|num audio|um audio|"
+            r"audio|voz|mp3)\b",
+            normalizada,
+        )
+        or re.search(
+            r"\b(?:mande|manda|envie|envia|gere|gera|crie|cria|produza)"
+            r"\b.{0,45}\b(?:audio|voz|mp3)\b",
             normalizada,
         )
         or re.search(r"\bleia\s+em\s+voz\s+alta\b", normalizada)
