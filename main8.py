@@ -4794,8 +4794,13 @@ def _detectar_pedidos_multimidia(pergunta):
         )
         or re.search(
             r"\b(?:imagem|foto|ilustracao|desenho|arte)\b.{0,35}"
-            r"\b(?:gere|gerar|crie|criar|cria|faz|faca|fazer|"
+            r"\b(?:gere|gerar|gera|crie|criar|cria|faz|faca|fazer|"
             r"desenha|desenhar|desenhe|produza|produzir|produz)\b",
+            normalizada,
+        )
+        or re.search(
+            r"\b(?:pode|poderia|consegue|manda|mandar|me manda|envia|enviar)\b"
+            r".{0,70}\b(?:imagem|foto|ilustracao|desenho|arte)\b",
             normalizada,
         )
     )
