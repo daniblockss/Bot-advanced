@@ -5786,7 +5786,9 @@ async def perguntar_ia(chave_contexto, user_id, user_name, pergunta, bot_instanc
             + (", ".join(ferramentas_ativas) if ferramentas_ativas else "nenhuma")
             + ". Use uma ferramenta quando o usuário pedir uma ação que ela realiza "
             "ou quando ela for necessária para responder. Não invente resultados. "
-            "Para chamar uma, responda somente neste formato: "
+            "A sintaxe de chamada é um protocolo INTERNO: nunca mostre, cite, explique ou "
+            "copie [AHM7_TOOL:...] na resposta visível ao usuário. Quando precisar de ferramenta, "
+            "emita somente a chamada no formato interno: "
             '[AHM7_TOOL:{"tool":"chave","args":{"consulta":"...","voz":1}}]. '
             "Use somente argumentos da lista; anexo é detectado automaticamente e não deve "
             "ser incluído no JSON. Se o usuário pedir uma voz pelo nome, consulte as vozes "
@@ -5924,6 +5926,17 @@ async def perguntar_ia(chave_contexto, user_id, user_name, pergunta, bot_instanc
                     )
                     if re.fullmatch(r"\s*\[PESQUISAR:.*\]\s*", resposta, flags=re.IGNORECASE | re.DOTALL):
                         raise FalhaProvedor("o modelo repetiu a solicitação de pesquisa sem responder")
+                # Nunca deixe o protocolo interno de ferramentas escapar para o chat,
+                # mesmo se um modelo devolver uma chamada malformada que o parser não reconheça.
+                if re.search(r"\[\s*AHM7_TOOL\s*:", resposta, flags=re.IGNORECASE):
+                    log_console(
+                        f"AVISO: resposta do provedor {provedor} continha protocolo interno "
+                        "de ferramenta; resposta ocultada."
+                    )
+                    resposta = (
+                        "Não consegui concluir essa ação agora. "
+                        "Tente pedir novamente de forma direta."
+                    )
                 if memory_generation != FORMAT_GENERATION:
                     return "A memória foi formatada durante esta solicitação. Envie uma nova mensagem."
                 historico_canal.extend([
