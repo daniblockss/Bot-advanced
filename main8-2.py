@@ -7896,6 +7896,45 @@ def criar_executor_ferramentas_ahm7(message):
                 _canais_configurados_da_guild(message.guild.id, message.guild)
                 if _pode_consultar_canal(canal, message.guild, message.author)
             ]
+            # Allow reading an explicitly named channel even when it is not in the
+            # optional channel directory, provided both the bot and requester can read it.
+            cid_solicitado = tool_args.get("canal_id") if tool_name in {"pesquisar_canais", "ler_canal"} else None
+            if cid_solicitado is not None:
+                if not isinstance(cid_solicitado, (str, int)) or isinstance(cid_solicitado, bool) or not str(cid_solicitado).isdigit():
+                    return "canal_id precisa ser um ID de canal válido."
+                cid_solicitado = str(cid_solicitado)
+                canal_direto = message.guild.get_channel(int(cid_solicitado))
+                if canal_direto is None or not _pode_consultar_canal(canal_direto, message.guild, message.author):
+                    return "Não consigo acessar esse canal. Verifique se o bot e você têm permissão para ver o canal e ler o histórico."
+                if tool_name == "ler_canal":
+                    if set(tool_args) != {"canal_id"}:
+                        return "Informe somente canal_id para ler um canal."
+                    mensagens = []
+                    async for item in canal_direto.history(limit=50, oldest_first=False):
+                        conteudo = (item.content or "").strip()
+                        anexos = " ".join(a.filename for a in item.attachments)
+                        if conteudo or anexos:
+                            mensagens.append(f"[{item.created_at.strftime('%d/%m/%Y %H:%M UTC')}] {item.author.display_name}: {(conteudo + (' [anexos: ' + anexos + ']' if anexos else '')).strip()[:700]}")
+                    mensagens.reverse()
+                    return f"Canal consultado: #{canal_direto.name} (ID {canal_direto.id})\n" + ("\n".join(mensagens) if mensagens else "Não encontrei mensagens legíveis no histórico recente.")
+                palavras = tool_args.get("palavras", "")
+                if not isinstance(palavras, str):
+                    return "palavras precisa ser texto."
+                termos = [normalizar(t) for t in palavras.split() if t.strip()]
+                limite = tool_args.get("limite", 10)
+                if isinstance(limite, bool) or not isinstance(limite, int):
+                    limite = 10
+                limite = max(1, min(limite, 10))
+                encontrados = []
+                async for item in canal_direto.history(limit=100, oldest_first=False):
+                    conteudo = (item.content or "").strip()
+                    if termos and not all(t in normalizar(conteudo) for t in termos):
+                        continue
+                    if conteudo:
+                        encontrados.append(f"[#{canal_direto.name} | {item.created_at.strftime('%d/%m/%Y %H:%M UTC')}] {item.author.display_name}: {conteudo[:700]}")
+                    if len(encontrados) >= limite:
+                        break
+                return "\n".join(encontrados) if encontrados else f"Não encontrei mensagens recentes correspondentes em #{canal_direto.name}."
             if tool_name == "pesquisar_canais":
                 cid = tool_args.get("canal_id")
                 if cid is not None:
