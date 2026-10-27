@@ -6209,6 +6209,9 @@ def _groq_transcrever_sync(api_key, filename, audio_bytes, content_type, idioma=
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": f"multipart/form-data; boundary={boundary}",
+            # Groq/Cloudflare can block Python's default urllib User-Agent (403/1010).
+            "User-Agent": "AHM7DiscordBot/1.1 (speech-to-text)",
+            "Accept": "application/json",
         },
         method="POST",
     )
@@ -6217,6 +6220,8 @@ def _groq_transcrever_sync(api_key, filename, audio_bytes, content_type, idioma=
             data = json.loads(response.read(2_000_000).decode("utf-8"))
     except HTTPError as error:
         detail = _detalhe_http_error(error)
+        if error.code == 403 and "1010" in detail:
+            detail = "Groq/Cloudflare bloqueou a assinatura do cliente (1010); enviado User-Agent próprio, verifique se o host ainda está bloqueado"
         raise FalhaProvedor(f"Groq STT HTTP {error.code}: {detail}") from error
     except (URLError, TimeoutError, OSError) as error:
         raise FalhaProvedor(f"Groq STT conexão ({type(error).__name__})") from error
