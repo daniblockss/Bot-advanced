@@ -2281,8 +2281,10 @@ def garantir_arquivos(guild_id=None):
 garantir_arquivos()
 
 config = carregar_config()
+config.setdefault("web_search_enabled", True)
 salvar_config(config)
 SYS_CONFIGS = carregar_configs_txt()
+BOT_START_TIME = time.monotonic()
 
 TOKEN = os.getenv("DISCORD_TOKEN", config.get("discord_token", "")).strip()
 AI_CONFIG = config["ai"]
@@ -11578,8 +11580,10 @@ def registrar_raiz(app):
                     await ctx.send("Revise a proposta acima. Nenhuma alteração foi aplicada.", view=view)
                     return
                 except (app["FalhaProvedor"], ValueError, TypeError, KeyError) as error:
-                    falhas.append(type(error).__name__)
-        diagnostico = ", ".join(dict.fromkeys(falhas[-3:])) or "nenhum provedor respondeu"
+                    mensagem_erro = re.sub(r"(?i)(bearer\\s+)[^\\s,;]+", r"\\1[oculto]", str(error))
+                    falhas.append(f"{type(error).__name__}: {mensagem_erro[:140]}")
+                    log_console(f"!raiz provedor {provedor} falhou: {type(error).__name__}: {mensagem_erro[:300]}")
+        diagnostico = " | ".join(dict.fromkeys(falhas[-3:])) or "nenhum provedor respondeu"
         await ctx.send(
             "Não consegui obter uma proposta válida. Nada foi alterado. "
             "Tente um pedido mais específico ou novamente em instantes. "
