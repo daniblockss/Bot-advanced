@@ -5316,7 +5316,7 @@ def anexo_e_audio(anexo):
     extensao = os.path.splitext(anexo.filename.lower())[1]
     return tipo.startswith(("audio/", "video/")) or extensao in {
         ".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus",
-        ".mp4", ".mov", ".webm", ".mkv",
+        ".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v", ".mpeg", ".mpg", ".gif",
     }
 
 
