@@ -8985,6 +8985,53 @@ async def on_message(message):
     if deve_responder:
         async with message.channel.typing():
             txt = message.content.replace(f"<@{bot.user.id}>", "").strip() or ""
+
+            # Respostas encadeadas: passe à IA as três mensagens da conversa
+            # (pergunta original, resposta do bot e nova mensagem do usuário).
+            if message.reference and message.reference.message_id:
+                try:
+                    mensagem_anterior = message.reference.resolved
+                    if not isinstance(mensagem_anterior, discord.Message):
+                        mensagem_anterior = await message.channel.fetch_message(
+                            message.reference.message_id
+                        )
+
+                    if mensagem_anterior and mensagem_anterior.author.bot:
+                        referencia_original = mensagem_anterior.reference
+                        if referencia_original and referencia_original.message_id:
+                            mensagem_original = referencia_original.resolved
+                            if not isinstance(mensagem_original, discord.Message):
+                                mensagem_original = await message.channel.fetch_message(
+                                    referencia_original.message_id
+                                )
+
+                            if mensagem_original:
+                                conteudo_original = (mensagem_original.content or "").strip()
+                                conteudo_resposta_bot = (mensagem_anterior.content or "").strip()
+                                if conteudo_original or conteudo_resposta_bot:
+                                    txt = (
+                                        "[CONTEXTO DA RESPOSTA — considere estas três mensagens como uma única conversa]\n"
+                                        f"1. Mensagem original de {mensagem_original.author.display_name}: "
+                                        f"{conteudo_original[:2500] or '[sem texto]'}\n"
+                                        f"2. Resposta anterior do bot: "
+                                        f"{conteudo_resposta_bot[:2500] or '[sem texto]'}\n"
+                                        f"3. Nova mensagem de {message.author.display_name}: "
+                                        f"{txt or '[sem texto]'}\n"
+                                        "[Responda à terceira mensagem levando em conta as duas anteriores. "
+                                        "Não repita o contexto; continue a conversa naturalmente.]"
+                                    )
+                        else:
+                            # Se a resposta do bot não estiver ligada a uma mensagem original,
+                            # ainda inclua a mensagem respondida e a nova mensagem.
+                            if mensagem_anterior.content:
+                                txt = (
+                                    "[CONTEXTO DA RESPOSTA]\n"
+                                    f"1. Mensagem anterior do bot: {mensagem_anterior.content[:2500]}\n"
+                                    f"2. Nova mensagem do usuário: {txt or '[sem texto]'}\n"
+                                    "[Responda considerando o contexto anterior.]"
+                                )
+                except (discord.HTTPException, discord.NotFound, discord.Forbidden) as error:
+                    log_console(f"AVISO: não foi possível montar contexto da resposta encadeada: {error}")
             if erro_imagem_link:
                 txt += f"\n[Não foi possível ler a imagem por link: {erro_imagem_link}. Informe a falha sem inventar o conteúdo.]"
             
