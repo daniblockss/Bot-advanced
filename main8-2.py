@@ -8641,6 +8641,132 @@ async def cmd_provedor(ctx, provedor: str = None):
     )
 
 
+@bot.command(name="pesquisa")
+async def cmd_pesquisa_toggle(ctx, modo: str = None):
+    if not is_creator(ctx):
+        return
+    modo = (modo or "status").strip().lower()
+    aliases = {"on": "ativar", "ligar": "ativar", "enable": "ativar",
+               "off": "desativar", "desligar": "desativar", "disable": "desativar",
+               "estado": "status"}
+    modo = aliases.get(modo, modo)
+    if modo not in {"ativar", "desativar", "status"}:
+        return await ctx.reply("Use !pesquisa ativar, !pesquisa desativar ou !pesquisa status.")
+    if modo != "status":
+        config["web_search_enabled"] = (modo == "ativar")
+        salvar_config(config)
+    estado = "ATIVADA" if pesquisa_web_ativa() else "DESATIVADA"
+    await ctx.reply(f"Pesquisa web: {estado}. Uso: !pesquisa ativar/desativar/status.")
+
+
+def _formatar_duracao(segundos):
+    segundos = max(0, int(segundos))
+    dias, resto = divmod(segundos, 86400)
+    horas, resto = divmod(resto, 3600)
+    minutos, segundos = divmod(resto, 60)
+    partes = []
+    if dias:
+        partes.append(f"{dias}d")
+    if horas or dias:
+        partes.append(f"{horas}h")
+    if minutos or horas or dias:
+        partes.append(f"{minutos}m")
+    partes.append(f"{segundos}s")
+    return " ".join(partes)
+
+
+def _testar_api_sync(provedor):
+    """Testa endpoint de catálogo; não envia prompts nem consome tokens."""
+    urls = {
+        "chatgpt": "https://api.openai.com/v1/models",
+        "openrouter": "https://openrouter.ai/api/v1/models",
+        "groq": "https://api.groq.com/openai/v1/models",
+        "blockrun": "https://blockrun.ai/api/v1/models",
+        "llm7": "https://api.llm7.io/v1/models",
+    }
+    chaves = obter_chaves_provedor(provedor)
+    chave = next((k for k in chaves if k and k != "auto-generated"), None)
+    if provedor == "blockrun":
+        chave = None
+    elif not chave:
+        return "sem chave configurada; não testada"
+    headers = {"User-Agent": "Bot-advanced-health-check/1.0", "Accept": "application/json"}
+    if chave:
+        headers["Authorization"] = f"Bearer {chave}"
+    try:
+        request = Request(urls[provedor], headers=headers, method="GET")
+        with urlopen(request, timeout=4) as response:
+            return "respondendo" if response.status == 200 else f"HTTP {response.status}"
+    except HTTPError as error:
+        if error.code in (401, 403):
+            return f"endpoint acessível, autorização recusada (HTTP {error.code})"
+        if error.code == 429:
+            return "endpoint acessível, limite/quota atingido (HTTP 429)"
+        return f"HTTP {error.code}"
+    except (URLError, TimeoutError, OSError) as error:
+        return f"sem resposta ({type(error).__name__})"
+
+
+@bot.command(name="ping")
+async def cmd_ping(ctx):
+    inicio = time.monotonic()
+    mensagem = await ctx.reply("Pong! Medindo latência...")
+    resposta_ms = max(0, (time.monotonic() - inicio) * 1000)
+    gateway_ms = max(0, bot.latency * 1000) if bot.latency is not None else 0
+    await mensagem.edit(content=f"Pong! Gateway: {gateway_ms:.0f} ms | resposta do bot: {resposta_ms:.0f} ms")
+
+
+@bot.command(name="info")
+async def cmd_info(ctx):
+    uptime = _formatar_duracao(time.monotonic() - BOT_START_TIME)
+    gateway = max(0, bot.latency * 1000) if bot.latency is not None else 0
+    total_membros = sum(g.member_count or 0 for g in bot.guilds)
+    pesquisa = "ativada" if pesquisa_web_ativa() else "desativada"
+    if not is_creator(ctx):
+        embed = discord.Embed(
+            title=f"Informações de {bot.user.name if bot.user else 'Bot'}",
+            color=discord.Color.blurple(),
+            description=(
+                f"Ligado há: {uptime}\n"
+                f"Latência: {gateway:.0f} ms\n"
+                f"Servidores: {len(bot.guilds)} | usuários em cache: {total_membros}\n"
+                f"Pesquisa web: {pesquisa}"
+            ),
+        )
+        return await ctx.reply(embed=embed)
+    await ctx.reply("Verificando endpoints das APIs (sem enviar prompts)...")
+    verificacoes = await asyncio.gather(
+        *(asyncio.to_thread(_testar_api_sync, p) for p in AI_PROVIDER_NAMES),
+        return_exceptions=True,
+    )
+    linhas = []
+    for provedor, resultado in zip(AI_PROVIDER_NAMES, verificacoes):
+        status = str(resultado) if not isinstance(resultado, BaseException) else f"erro ({type(resultado).__name__})"
+        linhas.append(f"{provedor}: {status}; {obter_status_chaves_provedor(provedor)}")
+    embed = discord.Embed(
+        title=f"Informações de {bot.user.name if bot.user else 'Bot'}",
+        color=discord.Color.blurple(),
+        description=(
+            f"Ligado há: {uptime}\nGateway: {gateway:.0f} ms\n"
+            f"Servidores: {len(bot.guilds)} | usuários em cache: {total_membros}\n"
+            f"Python: {__import__('sys').version.split()[0]} | discord.py: {getattr(discord, '__version__', 'desconhecido')}\n"
+            f"Pesquisa web: {pesquisa}"
+        ),
+    )
+    embed.add_field(name="APIs (teste do endpoint)", value="\n".join(linhas)[:1024], inline=False)
+    embed.add_field(
+        name="Serviços locais",
+        value=(
+            f"Gateway Discord: {'conectado' if bot.is_ready() else 'desconectado'}\n"
+            f"Banco de memória: {'arquivo presente' if os.path.exists(MEMORY_DB_FILE) else 'ainda não criado'}\n"
+            f"Configuração: {'presente' if os.path.exists(CONFIG_FILE) else 'ausente'}\n"
+            f"Histórico de imagens: {'presente' if os.path.exists(IMAGE_HISTORY_FILE) else 'ainda não criado'}"
+        ),
+        inline=False,
+    )
+    await ctx.reply(embed=embed)
+
+
 @bot.command(name="pesquisar")
 async def cmd_pesquisar(ctx, *, consulta: str = None):
     if not is_creator(ctx): return
