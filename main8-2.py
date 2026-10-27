@@ -11892,7 +11892,16 @@ def registrar_raiz(app):
         for provedor in app["obter_ordem_provedores"]():
             for chave in app["obter_chaves_provedor"](provedor):
                 try:
-                    resposta = await app["requisitar_provedor"](provedor, chave, mensagens)
+                    modelo_raiz = (
+                        app["selecionar_modelo_blockrun"](
+                            "Organize a estrutura deste servidor Discord e retorne uma proposta JSON válida.",
+                            tem_imagem=False,
+                        )
+                        if provedor == "blockrun" else None
+                    )
+                    resposta = await app["requisitar_provedor"](
+                        provedor, chave, mensagens, modelo_override=modelo_raiz
+                    )
                     resposta = (resposta or "").strip()
                     # Providers often wrap JSON in markdown or add a short preamble.
                     resposta = re.sub(r"^\s*```(?:json)?\s*", "", resposta, flags=re.IGNORECASE)
