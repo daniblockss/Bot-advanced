@@ -9138,7 +9138,7 @@ async def on_message(message):
             if pede_contexto_conversa:
                 contexto_conversa = await _montar_contexto_conversa_recente(message)
                 if contexto_conversa:
-                    txt = f"{contexto_conversa}\\n\\n[MENSAGEM ATUAL DE {message.author.display_name}]\\n{txt}"
+                    txt = f"{contexto_conversa}\n\n[MENSAGEM ATUAL DE {message.author.display_name}]\n{txt}"
 
             if erro_imagem_link:
                 txt += f"\n[Não foi possível ler a imagem por link: {erro_imagem_link}. Informe a falha sem inventar o conteúdo.]"
