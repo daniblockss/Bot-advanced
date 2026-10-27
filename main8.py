@@ -6599,8 +6599,15 @@ def _parsear_pedido_lembrete(texto):
     descricao = original
     if trecho_data:
         descricao = re.sub(re.escape(trecho_data), " ", descricao, count=1, flags=re.IGNORECASE)
+    # Também remove a grafia original com acentos (amanhã/às), pois a busca usa texto normalizado.
     descricao = re.sub(
-        r"\b(?:as|a)\s*\d{1,2}(?:\s*:\s*\d{2}|\s*h\s*\d{0,2}|\s+horas?)?\b|\b\d{1,2}\s*:\s*\d{2}\b|\b\d{1,2}h\d{0,2}\b",
+        r"\b(?:depois\s+de\s+amanh[aã]|amanh[aã]|hoje)\b|"
+        r"\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|"
+        r"\b(?:na|nesta|pr[oó]xima|proxima)?\s*(?:segunda(?:-feira)?|ter[cç]a(?:-feira)?|quarta(?:-feira)?|quinta(?:-feira)?|sexta(?:-feira)?|s[aá]bado|domingo)\b",
+        " ", descricao, flags=re.IGNORECASE,
+    )
+    descricao = re.sub(
+        r"\b(?:as|às|a)\s*\d{1,2}(?:\s*:\s*\d{2}|\s*h\s*\d{0,2}|\s+horas?)?\b|\b\d{1,2}\s*:\s*\d{2}\b|\b\d{1,2}h\d{0,2}\b",
         " ", descricao, flags=re.IGNORECASE,
     )
     descricao = re.sub(
