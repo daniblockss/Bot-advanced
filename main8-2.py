@@ -6015,6 +6015,19 @@ async def transcrever_audio(audio_bytes, filename, content_type, channel_id=None
         falhas.append("AHM7 TranScribe está desativado neste canal")
         log_console("AVISO: AHM7 TranScribe está desativado; tentando Groq.")
 
+    # Fallback gratuito sem chave: evita depender apenas do AHM7 e da Groq.
+    # O serviço tem limite diário por IP; se ele falhar/limitar, continuamos para a Groq.
+    try:
+        texto = await asyncio.to_thread(
+            _notetakers_transcrever_sync, safe_name, audio_bytes, mime
+        )
+        if texto:
+            return texto
+        falhas.append("NoteTakers STT não retornou texto")
+    except FalhaProvedor as error:
+        falhas.append(f"NoteTakers STT: {error}")
+        log_console(f"AVISO: fallback NoteTakers falhou; tentando Groq: {error}")
+
     for key in obter_chaves_provedor("groq"):
         try:
             texto = await asyncio.to_thread(
@@ -6029,6 +6042,53 @@ async def transcrever_audio(audio_bytes, filename, content_type, channel_id=None
     if not any(falha.startswith("Groq STT") for falha in falhas):
         falhas.append("nenhuma chave Groq configurada para fallback de transcrição")
     raise FalhaProvedor("não foi possível transcrever o áudio: " + " | ".join(falhas))
+
+
+def _notetakers_transcrever_sync(filename, audio_bytes, content_type):
+    """Transcreve via NoteTakers STT, sem API key (limite diário por IP)."""
+    boundary = "----DiscordBotNoteTakersBoundary7MA4YWxkTrZu0gW"
+    body = b"".join([
+        (
+            f"--{boundary}\\r\\nContent-Disposition: form-data; name=\\"engine\\"\\r\\n\\r\\n"
+            f"whisper\\r\\n"
+            f"--{boundary}\\r\\nContent-Disposition: form-data; name=\\"language\\"\\r\\n\\r\\n"
+            f"Portuguese\\r\\n"
+            f"--{boundary}\\r\\nContent-Disposition: form-data; name=\\"file\\"; "
+            f'filename="{filename}"\\r\\nContent-Type: {content_type}\\r\\n\\r\\n'
+        ).encode("utf-8"),
+        audio_bytes,
+        f"\\r\\n--{boundary}--\\r\\n".encode(),
+    ])
+    request = Request(
+        "https://notetakers.vipresearch.ca/stt/v1/transcribe",
+        data=body,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "AHM7DiscordBot/1.0",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=120) as response:
+            data = json.loads(response.read(2_000_000).decode("utf-8"))
+    except HTTPError as error:
+        detail = _detalhe_http_error(error)
+        raise FalhaProvedor(f"NoteTakers STT HTTP {error.code}: {detail}") from error
+    except (URLError, TimeoutError, OSError) as error:
+        raise FalhaProvedor(f"NoteTakers STT conexão ({type(error).__name__})") from error
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise FalhaProvedor("NoteTakers STT retornou JSON inválido") from error
+
+    texto = texto_transcricao(data)
+    if not texto:
+        detail = ""
+        if isinstance(data, dict):
+            detail = data.get("error") or data.get("message") or ""
+        raise FalhaProvedor(
+            "NoteTakers STT não retornou texto" + (f": {str(detail)[:200]}" if detail else "")
+        )
+    return texto
 
 
 def _groq_transcrever_sync(api_key, filename, audio_bytes, content_type):
