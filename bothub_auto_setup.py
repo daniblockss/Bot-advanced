@@ -51,7 +51,8 @@ def main():
         print("Configure API_KEY no início do arquivo.")
         return
 
-    email = input(f"E-mail [{EMAIL_PADRAO}]: ").strip() or EMAIL_PADRAO
+    email = EMAIL_PADRAO
+    print(f"E-mail configurado automaticamente: {email}")
     senha = getpass.getpass("Senha Firebase (entrada oculta): ")
     if not senha:
         print("Senha vazia.")
