@@ -878,10 +878,6 @@ def main():
             for raw_id,b in queue.items():
                 if not isinstance(b,dict) or not b.get("enabled",True):
                     continue
-                auto_start=b.get("autoStart",True) is not False
-                start_requested=float(b.get("startRequestedAt") or 0)
-                if not auto_start and start_requested <= WORKER_STARTED*1000:
-                    continue
                 k=sid(raw_id)
                 secret=str(b.get("token") or "").strip()
                 if not secret:
@@ -900,6 +896,10 @@ def main():
                     print("[BotHub] parado para evitar instância duplicada:",k,flush=True)
             for k,b in desired.items():
                 if k not in PROCS or PROCS[k].poll() is not None:
+                    auto_start=b.get("autoStart",True) is not False
+                    start_requested=float(b.get("startRequestedAt") or 0)
+                    if not auto_start and start_requested <= WORKER_STARTED*1000:
+                        continue
                     try:start(k,b)
                     except Exception as e:print("[BotHub] falha no bot",k,str(e)[:220],flush=True)
             try:
