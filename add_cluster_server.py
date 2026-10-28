@@ -120,7 +120,7 @@ def main():
         print("[BotHub] Não consegui criar o ambiente virtual. Em Debian/Ubuntu: sudo apt install python3-venv")
         return 2
     run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"])
-    run([str(venv_python), "-m", "pip", "install", "--upgrade", "discord.py", "aiohttp", "requests", "psutil"])
+    run([str(venv_python), "-m", "pip", "install", "--upgrade", "discord.py", "aiohttp", "requests"])
     download(CLUSTER_URL, CLUSTER)
     START.write_text(START_TEMPLATE, encoding="utf-8")
     try: START.chmod(0o700)
