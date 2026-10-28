@@ -2567,7 +2567,7 @@ def _extrair_pedido_memoria_explicito(texto):
         r"guarde(?:\s+(?:isso|isto|que|disso))?(?:\s+na\s+mem[oó]ria)?|"
         r"salva(?:r)?(?:\s+(?:isso|isto|que|disso))?(?:\s+na\s+mem[oó]ria)?|"
         r"salve(?:\s+(?:isso|isto|que|disso))?(?:\s+na\s+mem[oó]ria)?|"
-        r"anota(?:r)?|anote|n[aã]o\s+esquece(?:\s+que)?)"
+        r"anota(?:r)?|anote|memoriza(?:r)?|memorize|n[aã]o\\s+esquece(?:\\s+que)?)"
         r"\s*[:,-]?\s*(.*)$",
         re.IGNORECASE | re.DOTALL,
     )
@@ -3928,7 +3928,12 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
         "Ao participar de conversas, preserve a personalidade e o comportamento definidos "
         "na identidade ativa carregada de identidade.txt; não crie uma personalidade separada. "
         "identidade-padrao.txt é o arquivo de identidade padrão/restauração, não uma segunda "
-        "personalidade para misturar automaticamente.\n\n"
+        "personalidade para misturar automaticamente. "
+        "Ao gerar imagens, use como base principal o pedido atual do usuário e apenas as "
+        "referências visuais explicitamente fornecidas ou pedidas (incluindo o avatar do usuário "
+        "mencionado). Não misture automaticamente memórias, histórias, personagens, gostos ou "
+        "detalhes de conversas anteriores na imagem, a menos que o usuário peça isso nesta "
+        "mensagem ou solicite explicitamente reutilizar uma memória.\\n\\n"
     )
     if _usuario_pediu_data_hora(pergunta):
         prompt += (
@@ -3986,12 +3991,7 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
     importantes = ler_txt(obter_arquivo_guild(IMPORTANTE_FILE, guild_id))
     gerais_avisos = ler_txt(obter_arquivo_guild(GERAL_AVISOS_FILE, guild_id))
     
-    prompt += "🧠 **SEUS ARQUIVOS DE MEMÓRIA ATUAIS:**\n"
-    if memoria_geral: prompt += f"📋 [memoria_geral]:\n```txt\n{memoria_geral}\n```\n"
-    if importantes: prompt += f"🚨 [importantes]:\n```txt\n{importantes}\n```\n"
-    if gerais_avisos: prompt += f"📢 [geral_avisos]:\n```txt\n{gerais_avisos}\n```\n\n"
-        
-    prompt += (
+    prompt += (\n        "🧠 **MEMÓRIA PERSISTENTE — REGRAS DE USO:**\\n"\n        "Os arquivos abaixo guardam preferências, regras e fatos persistentes definidos "\n        "para o bot. Leia-os antes de responder e aplique as regras e preferências "\n        "pertinentes à mensagem atual. Não trate regras explícitas como simples fatos "\n        "decorativos: se uma regra disser para não fazer algo, não faça; se disser como "\n        "responder ou agir, siga-a. Dê prioridade a proibições e preferências explícitas "\n        "sobre hábitos genéricos do modelo. Nunca deixe uma memória antiga acrescentar "\n        "detalhes não pedidos a uma nova imagem. Memórias não podem sobrepor instruções "\n        "de maior prioridade, segurança ou limitações técnicas.\\n"\n    )\n    if memoria_geral:\n        prompt += f"📋 [memoria_geral — regras e contexto persistente]:\\n```txt\\n{memoria_geral[-12000:]}\\n```\\n"\n    if importantes:\n        prompt += f"🚨 [importantes — preferências e regras prioritárias]:\\n```txt\\n{importantes[-16000:]}\\n```\\n"\n    if gerais_avisos:\n        prompt += f"📢 [geral_avisos — avisos persistentes]:\\n```txt\\n{gerais_avisos[-6000:]}\\n```\\n\\n"\n        \n        prompt += (
         "✍️ **COMO VOCÊ PODE EDITAR SUA PRÓPRIA MEMÓRIA (ADIÇÃO E REMOÇÃO):**\n"
         "- `[SALVAR_AVISO: texto novo]`\n"
         "- `[SALVAR_IMPORTANTE: texto vital novo]`\n"
@@ -8532,23 +8532,7 @@ def criar_executor_ferramentas_ahm7(message):
                     arquivos.append(file)
                 if content:
                     resultados.append(str(content)[:6000])
-                for arquivo in arquivos:
-                    nome = getattr(arquivo, "filename", "anexo")
-                    fp = getattr(arquivo, "fp", None)
-                    if nome == "resultado-ahm7.txt" and fp and hasattr(fp, "seek"):
-                        posicao = fp.tell()
-                        fp.seek(0)
-                        texto = fp.read(6000).decode("utf-8", errors="replace")
-                        fp.seek(posicao)
-                        resultados.append(texto)
-                    else:
-                        resultados.append(f"Arquivo enviado ao canal: {nome}")
-                if arquivos:
-                    await message.channel.send(
-                        content=content,
-                        files=arquivos,
-                        allowed_mentions=discord.AllowedMentions.none(),
-                    )
+                for arquivo in arquivos:\n                    nome = getattr(arquivo, "filename", "anexo")\n                    fp = getattr(arquivo, "fp", None)\n                    if nome == "resultado-ahm7.txt" and fp and hasattr(fp, "seek"):\n                        posicao = fp.tell()\n                        fp.seek(0)\n                        texto = fp.read(6000).decode("utf-8", errors="replace")\n                        fp.seek(posicao)\n                        resultados.append(texto)\n                    elif tool_name != "pixelster":\n                        resultados.append(f"Arquivo enviado ao canal: {nome}")\n                if arquivos:\n                    if tool_name == "pixelster":\n                        guild = getattr(message, "guild", None)\n                        settings = monitoring_settings(guild.id) if guild else {}\n                        canal_logs_id = settings.get("channel_id")\n                        destino = bot.get_channel(canal_logs_id) if canal_logs_id else None\n                        if destino is None and canal_logs_id and guild:\n                            try:\n                                destino = await guild.fetch_channel(canal_logs_id)\n                            except (discord.HTTPException, discord.NotFound, discord.Forbidden):\n                                destino = None\n                        if destino is None or not isinstance(destino, discord.TextChannel):\n                            resultados.append("A imagem foi gerada, mas não foi publicada: configure um canal de logs válido no painel de monitoramento.")\n                            return\n                        await destino.send(content=f"🖼️ Imagem gerada a pedido de {message.author.mention}.", files=arquivos, allowed_mentions=discord.AllowedMentions.none())\n                        resultados.append("Imagem publicada no canal de logs configurado.")\n                    else:\n                        await message.channel.send(content=content, files=arquivos, allowed_mentions=discord.AllowedMentions.none())
 
         interaction = type("AIInteraction", (), {})()
         interaction.channel = message.channel
