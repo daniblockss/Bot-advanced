@@ -9,7 +9,7 @@ ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
 TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
-DB="https://bothub-bca02-default-rtdb.firebaseio.com/teste2"
+DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 
