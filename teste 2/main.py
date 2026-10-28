@@ -8130,32 +8130,40 @@ async def executar_ahm7(
                     data, _, filename = await baixar_imagem_url(url, limite=limite_envio)
                     arquivos.append(discord.File(io.BytesIO(data), filename=f"gerada-{indice}-{filename}"))
                 guild = getattr(interaction, "guild", None)
+                # A imagem vai para o canal onde o usuário pediu; logs são opcionais
+                # e, quando configurados, recebem apenas detalhes técnicos.
+                destino_imagem = getattr(interaction, "channel", None)
+                if destino_imagem is None or not hasattr(destino_imagem, "send"):
+                    raise FalhaProvedor("não encontrei um canal válido para publicar a imagem")
+                await destino_imagem.send(
+                    content=f"🖼️ Imagem gerada para {interaction.user.mention}.",
+                    files=arquivos,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+
                 settings = monitoring_settings(guild.id) if guild else {}
                 canal_logs_id = settings.get("channel_id")
-                destino = bot.get_channel(canal_logs_id) if canal_logs_id else None
-                if destino is None and canal_logs_id and guild:
+                destino_logs = bot.get_channel(canal_logs_id) if canal_logs_id else None
+                if destino_logs is None and canal_logs_id and guild:
                     try:
-                        destino = await guild.fetch_channel(canal_logs_id)
+                        destino_logs = await guild.fetch_channel(canal_logs_id)
                     except (discord.HTTPException, discord.NotFound, discord.Forbidden):
-                        destino = None
-                if destino is None or not isinstance(destino, discord.TextChannel):
-                    await interaction.followup.send(
-                        "A imagem foi gerada, mas não foi publicada: configure um canal "
-                        "de logs válido no painel de monitoramento.",
-                        ephemeral=True,
-                        allowed_mentions=NO_MENTIONS,
-                    )
-                else:
-                    await destino.send(
-                        content=f"🖼️ Imagem gerada a pedido de {interaction.user.mention}.",
-                        files=arquivos,
-                        allowed_mentions=discord.AllowedMentions.none(),
-                    )
-                    await interaction.followup.send(
-                        "Imagem publicada no canal de logs configurado.",
-                        ephemeral=True,
-                        allowed_mentions=NO_MENTIONS,
-                    )
+                        destino_logs = None
+                if isinstance(destino_logs, discord.TextChannel):
+                    try:
+                        await destino_logs.send(
+                            f"🧾 Geração de imagem concluída. Solicitante: {interaction.user} "
+                            f"(ID {interaction.user.id}); canal de origem: "
+                            f"{getattr(interaction.channel, 'id', 'desconhecido')}; "
+                            f"proporção: {proporcao_atual}; imagens: {len(arquivos)}."
+                        )
+                    except (discord.HTTPException, discord.Forbidden):
+                        log_console("AVISO: imagem gerada, mas não foi possível registrar os detalhes no canal de logs.")
+                await interaction.followup.send(
+                    "Imagem gerada e enviada neste canal.",
+                    ephemeral=True,
+                    allowed_mentions=NO_MENTIONS,
+                )
             finally:
                 for arquivo in arquivos:
                     arquivo.close()
