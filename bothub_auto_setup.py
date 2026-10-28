@@ -118,6 +118,47 @@ def main():
         except OSError:
             pass
         print("Credenciais salvas localmente em cluster_config.json (não compartilhe esse arquivo).")
+        # Se start.py já existir ao lado do diagnóstico, atualiza sua configuração
+        # para reutilizar as credenciais salvas e pedir apenas o segredo do cluster.
+        start_path = config_path.parent / "start.py"
+        if start_path.exists():
+            start_text = start_path.read_text(encoding="utf-8")
+            begin = start_text.find('    if not CFG.get("secret") or not CFG.get("admin_token") or not CFG.get("firebase_email") or not CFG.get("firebase_password"):')
+            end = start_text.find('    try:\n        auth()\n        register_server(CFG)', begin)
+            if begin >= 0 and end > begin:
+                replacement = '''    if not CFG.get("firebase_email") or not CFG.get("firebase_password"):
+        print("\\n=== Credenciais Firebase do nó BotHub P2P ===")
+        email = input("E-mail da conta Firebase deste servidor: ").strip()
+        password = getpass("Senha Firebase: ").strip()
+        if not email or not password:
+            print("[BotHub] E-mail/senha vazios.")
+            return 2
+        CFG["firebase_email"] = email
+        CFG["firebase_password"] = password
+    if not CFG.get("secret"):
+        secret = getpass("Segredo compartilhado do cluster (mínimo 32 caracteres; igual em todos os nós): ").strip()
+        if len(secret) < 32:
+            print("[BotHub] Segredo curto; use pelo menos 32 caracteres.")
+            return 2
+        CFG["secret"] = secret
+    if not CFG.get("admin_token"):
+        CFG["admin_token"] = secrets.token_urlsafe(32)
+        print("[BotHub] Token administrativo local (guarde-o):")
+        print(CFG["admin_token"])
+    CFG.setdefault("peers", {})
+    try:
+        auth(force=True)
+    except Exception as e:
+        print("[BotHub] Falha no login Firebase. Confira usuário, senha e Email/Password habilitado:", str(e)[:220])
+        return 2
+'''
+                start_text = start_text[:begin] + replacement + start_text[end:]
+                start_path.write_text(start_text, encoding="utf-8")
+                try:
+                    start_path.chmod(0o700)
+                except OSError:
+                    pass
+                print("start.py atualizado para reutilizar as credenciais salvas.")
     except Exception as exc:
         print("AVISO: login correto, mas não consegui salvar as credenciais:", str(exc))
     print("Login realizado.")
