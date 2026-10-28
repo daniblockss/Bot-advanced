@@ -9672,11 +9672,9 @@ async def on_message(message):
     ]
     if anexos_audio and (is_dm or tipo == "chat") and modo != "nothing":
         deve_responder = True
-    anexos_imagem_detectados = [
-        attachment for attachment in message.attachments if anexo_e_imagem(attachment)
-    ]
-    if anexos_imagem_detectados and (is_dm or tipo == "chat") and modo != "nothing":
-        deve_responder = True
+    # Imagens anexadas não acionam uma resposta sozinhas.
+    # O bot ainda pode ler/processar a imagem para contexto, mas só responde
+    # se o modo do canal já permitir resposta (livre) ou se for chamado/mencionado.
 
     tempo_restante = _tempo_restante_cooldown_ia()
     if (
