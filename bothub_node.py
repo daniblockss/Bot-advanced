@@ -101,7 +101,7 @@ def main():
  if sys.version_info<(3,9): raise SystemExit("Python 3.9+ é necessário.")
  ROOT.mkdir(parents=True,exist_ok=True)
  if not PY.exists(): run([sys.executable,"-m","venv",ROOT/"venv"])
- req=ROOT/"requirements.txt"; req.write_text("requests>=2.31,<3\npsutil>=5.9,<8\n",encoding="utf-8")
+ req=ROOT/"requirements.txt"; req.write_text("requests>=2.31,<3\npsutil>=5.9,<8\ndiscord.py>=2.4,<3\naiohttp>=3.9,<4\nPillow>=10,<13\n",encoding="utf-8")
  run([PY,"-m","pip","install","--disable-pip-version-check","--upgrade","pip"])
  run([PY,"-m","pip","install","-r",req])
  old={}
