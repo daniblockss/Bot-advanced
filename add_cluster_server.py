@@ -30,6 +30,7 @@ CLUSTER = ROOT / "bothub_cluster.py"
 PYTHON = ROOT / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 API_KEY = "AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB = "https://bothub-bca02-default-rtdb.firebaseio.com"
+DEFAULT_EMAIL = "daniblocks100@gmail.com"
 PORT = int(os.getenv("BOTHUB_CLUSTER_PORT", "47800"))
 _session = {"token": "", "expires": 0, "uid": ""}
 
@@ -109,6 +110,8 @@ def register_server(cfg):
     cfg["node_id"] = node
     cfg["firebase_uid"] = uid
     write_config(cfg)
+    print("[BotHub] Firebase: ONLINE ✓")
+    print("[BotHub] Status publicado: clusterServers/" + node + "/status = online")
     print("[BotHub] ID automático registrado no Firebase:", node)
     print("[BotHub] Endereço anunciado:", url)
     if pub:
@@ -122,8 +125,9 @@ def heartbeat_loop(node):
             now = int(time.time() * 1000)
             fb("PUT", "clusterServers/" + node + "/last_seen", token, now)
             fb("PUT", "clusterServers/" + node + "/status", token, "online")
+            print("[BotHub] Firebase: ONLINE ✓ (heartbeat atualizado)", flush=True)
         except Exception as e:
-            print("[BotHub] Aviso: heartbeat Firebase:", str(e)[:160], flush=True)
+            print("[BotHub] AVISO: não consegui atualizar o status online no Firebase:", str(e)[:220], flush=True)
         time.sleep(15)
 
 def main():
@@ -135,16 +139,19 @@ def main():
     if CONFIG.exists():
         try: CFG = json.loads(CONFIG.read_text(encoding="utf-8"))
         except Exception: CFG = {}
-    if not CFG.get("firebase_email") or not CFG.get("firebase_password"):
-        print("\n=== Credenciais Firebase do nó BotHub P2P ===")
-        print("Execute bothub_auto_setup.py para validar e salvar as credenciais, ou informe-as agora.")
-        email = input("E-mail da conta Firebase deste servidor: ").strip()
-        password = getpass("Senha Firebase: ").strip()
-        if not email or not password:
-            print("[BotHub] E-mail/senha vazios.")
+    # O e-mail padrão já fica definido; só pede a senha na primeira execução.
+    # Se cluster_config.json já tiver outro e-mail, preserva-o.
+    if not CFG.get("firebase_email"):
+        CFG["firebase_email"] = DEFAULT_EMAIL
+    if not CFG.get("firebase_password"):
+        print("\\n=== Login Firebase do BotHub ===")
+        print("E-mail:", CFG["firebase_email"])
+        password = getpass("Digite a senha Firebase (será salva localmente): ").strip()
+        if not password:
+            print("[BotHub] Senha vazia.")
             return 2
-        CFG["firebase_email"] = email
         CFG["firebase_password"] = password
+        write_config(CFG)
     if not CFG.get("secret"):
         # Gera um segredo forte automaticamente para não travar a inicialização.
         CFG["secret"] = secrets.token_urlsafe(48)
