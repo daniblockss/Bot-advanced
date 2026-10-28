@@ -12,7 +12,7 @@ Arquitetura correta: o painel HTML central controla os dispositivos pela Firebas
 1. No Firebase Console do projeto `bothub-bca02`, ative Authentication > Sign-in method > Email/Password.
 2. Crie um usuário admin e um usuário Firebase separado para cada dispositivo (worker). Não use a conta pessoal principal para os workers.
 3. Copie o UID do admin e de cada worker na página Authentication.
-4. Em Realtime Database, importe `firebase_database.rules.json` como regras. O arquivo deixa todas as rotas privadas por padrão.
+4. Em Realtime Database, importe `firebase_database.rules.json` como regras. As rotas do painel continuam privadas; `clusterServers` permite que usuários autenticados descubram nós e cada conta só pode atualizar os campos do próprio nó.
 5. Em Realtime Database > Data, crie manualmente:
    - `admins/UID_DO_ADMIN` = `true`
    - `workerUids/ID_DO_DISPOSITIVO` = `UID_DO_USUARIO_WORKER`
@@ -35,5 +35,5 @@ Na primeira execução, informe o ID único do dispositivo e as credenciais do u
 ## Segurança e limitações desta primeira versão
 - Tokens Discord ficam em `bots/{id}/token` e são copiados para `workerTasks/{deviceId}` do worker escolhido. As regras permitem ler tarefas somente ao admin e ao UID associado ao próprio worker.
 - O painel é um cliente web; a redistribuição automática enquanto o painel está aberto depende da sessão administrativa conectada. Para reatribuição garantida mesmo quando o painel está fechado, implemente Cloud Functions/Cloud Run com privilégios de servidor.
-- Firebase precisa de internet. Esta versão não implementa coordenação offline pela LAN; o cluster LAN separado não é integrado ao Firebase ainda.
+- O diretório P2P usa Firebase para descobrir membros, mas a comunicação entre nós ainda exige conectividade direta na porta configurada (47800 por padrão). Para acesso pela internet, configure encaminhamento de porta/firewall ou use uma hospedagem com porta pública. Registros antigos permanecem na lista de membros e devem ser removidos do nó `clusterServers` pelo Console quando um servidor for definitivamente desativado; manter membros antigos faz o cluster falhar fechado em vez de reduzir o quórum.
 - Configure os dispositivos apenas com contas de worker próprias. Não exponha senhas/tokens, e teste primeiro com bots de teste.
