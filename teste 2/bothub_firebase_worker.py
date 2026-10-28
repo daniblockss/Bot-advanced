@@ -119,6 +119,39 @@ def stats(cfg):
             available=mem.get("MemAvailable",mem.get("MemFree",0)+mem.get("Buffers",0)+mem.get("Cached",0))
             x.update(ramFreeBytes=available,ramTotalBytes=total,cpuPercent=0,cpuCount=os.cpu_count() or 1)
         except Exception:x.update(ramFreeBytes=0,ramTotalBytes=0,cpuPercent=0,cpuCount=os.cpu_count() or 1)
+    # Battery telemetry is optional: desktops and Raspberry Pis often have no battery.
+    battery = None
+    try:
+        import psutil
+        battery = psutil.sensors_battery()
+    except Exception:
+        battery = None
+    if battery is not None:
+        x.update(batteryPresent=True,
+                 batteryPercent=max(0,min(100,int(round(battery.percent)))),
+                 batteryPlugged=battery.power_plugged,
+                 batteryStatus=("charging" if battery.power_plugged else "discharging"))
+    else:
+        # Linux fallback for devices exposing a battery through power_supply sysfs.
+        try:
+            for supply in Path("/sys/class/power_supply").iterdir():
+                kind=(supply/"type").read_text(encoding="utf-8").strip().lower()
+                if kind != "battery":
+                    continue
+                raw=(supply/"capacity").read_text(encoding="utf-8").strip()
+                percent=max(0,min(100,int(float(raw))))
+                try: status=(supply/"status").read_text(encoding="utf-8").strip().lower()
+                except Exception: status="unknown"
+                x.update(batteryPresent=True,batteryPercent=percent,
+                         batteryPlugged=status in ("charging","full"),
+                         batteryStatus=status)
+                break
+            else:
+                x.update(batteryPresent=False,batteryPercent=None,
+                         batteryPlugged=None,batteryStatus="unavailable")
+        except Exception:
+            x.update(batteryPresent=False,batteryPercent=None,
+                     batteryPlugged=None,batteryStatus="unavailable")
     return x
 
 def sid(v):
