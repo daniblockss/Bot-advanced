@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # BotHub Firebase worker: auto-registers this device using Firebase Anonymous Auth.
-import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid
+import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,signal,atexit
 from pathlib import Path
 import requests
 
@@ -134,6 +134,30 @@ def stop(k):
         try:l.close()
         except Exception:pass
 
+def child_parent_death_signal():
+    """Linux: encerra o bot se o controlador morrer abruptamente."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+        libc = ctypes.CDLL(None)
+        PR_SET_PDEATHSIG = 1
+        libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+        # Fecha a pequena janela em que o pai pode morrer antes de prctl.
+        if os.getppid() == 1:
+            os.kill(os.getpid(), signal.SIGTERM)
+    except Exception:
+        pass
+
+def cleanup_children():
+    for key in list(PROCS):
+        stop(key)
+
+def handle_shutdown_signal(signum, frame):
+    print("[BotHub] Controlador sendo desligado; encerrando todos os main.py...", flush=True)
+    cleanup_children()
+    raise SystemExit(0)
+
 def start(k,b):
     folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main.py"
     if not script.exists():
@@ -145,8 +169,11 @@ def start(k,b):
     cp=folder/"config.json";save_json(cp,cfg)
     if k in PROCS and PROCS[k].poll() is None:return
     log=open(folder/"bot.log","ab",buffering=0)
+    popen_kwargs = {}
+    if sys.platform.startswith("linux"):
+        popen_kwargs["preexec_fn"] = child_parent_death_signal
     p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
-        stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"))
+        stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),**popen_kwargs)
     PROCS[k]=p;LOGS[k]=log
     print("[BotHub] iniciado",b.get("name",k),"PID",p.pid,flush=True)
 
@@ -453,6 +480,9 @@ def main():
     if lock_handle is None:
         print("[BotHub] Já existe um controlador rodando nesta pasta. Este processo será encerrado para evitar bots duplicados.", flush=True)
         return
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
+    atexit.register(cleanup_children)
     print("[BotHub] Worker iniciado sem pedir ID, e-mail ou senha.",flush=True)
     while True:
         try:
@@ -497,7 +527,7 @@ def main():
         except KeyboardInterrupt:break
         except Exception as e:print("[BotHub] erro Firebase/worker:",str(e)[:300],flush=True)
         time.sleep(max(10,int(os.getenv("BOTHUB_POLL_SECONDS","15"))))
-    for k in list(PROCS):stop(k)
+    cleanup_children()
 
 if __name__=="__main__":
     try:main()
