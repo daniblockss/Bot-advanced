@@ -321,7 +321,13 @@ def start_task(t):
         p = PROCS.get(tid)
         if p and p.poll() is None: return
         log = open(folder / "bot.log", "ab", buffering=0)
-        p = subprocess.Popen([sys.executable, "-u", str(script)], cwd=str(folder),
+        bot_env = os.environ.copy()
+        # Do not expose Firebase login credentials or cluster administration secrets to bot code.
+        for key in ("BOTHUB_FIREBASE_EMAIL", "BOTHUB_FIREBASE_PASSWORD", "BOTHUB_FIREBASE_API_KEY",
+                    "BOTHUB_FIREBASE_DB", "BOTHUB_CLUSTER_SECRET", "BOTHUB_ADMIN_TOKEN",
+                    "BOTHUB_FIREBASE_TOKEN"):
+            bot_env.pop(key, None)
+        p = subprocess.Popen([sys.executable, "-u", str(script)], cwd=str(folder), env=bot_env,
                              stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                              start_new_session=(os.name != "nt"))
         PROCS[tid], LOGS[tid] = p, log
