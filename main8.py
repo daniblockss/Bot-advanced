@@ -828,6 +828,15 @@ class VoiceSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
+        # O dono do servidor que adicionou o bot recebe acesso supremo neste servidor.
+        # A autorização é por servidor; isso não promove o dono globalmente.
+        try:
+            owners = config.setdefault("criadores_supremos_guild", {})
+            owners[str(guild.id)] = int(guild.owner_id)
+            salvar_config(config)
+            log_console(f"Criador supremo do servidor {guild.id} registrado: {guild.owner_id}")
+        except Exception as error:
+            log_console(f"Não foi possível registrar o dono do servidor {guild.id}: {type(error).__name__}")
         await self.sync_commands(guild)
 
     @tasks.loop(minutes=5)
@@ -2644,9 +2653,15 @@ def tem_perm(message):
     return "!perm" in conteudo or ":perm:" in conteudo
 
 def is_creator(user_or_message):
-    """Autoriza somente a lista persistida de criadores e o criador principal."""
+    """Autoriza o dono do servidor atual e os criadores globais persistidos."""
     user = getattr(user_or_message, "author", user_or_message)
-    return bool(user and user.id in obter_ids_criadores())
+    if not user:
+        return False
+    # O dono só ganha poderes administrativos dentro da própria comunidade.
+    guild = getattr(user_or_message, "guild", None) or getattr(user, "guild", None)
+    if guild and getattr(guild, "owner_id", None) == user.id:
+        return True
+    return user.id in obter_ids_criadores()
 
 
 def obter_ids_criadores():
@@ -6620,7 +6635,7 @@ async def prefix_bot_cargo(ctx, cargo: discord.Role = None):
 
 
 async def resolver_usuario_criador(ctx, alvo: str):
-    """Resolve menção, ID ou nome exato no servidor."""
+    """Resolve menção @usuário, ID ou nome/@arroba exato no servidor."""
     alvo = (alvo or "").strip()
     match = re.fullmatch(r"<@!?(\d{15,22})>", alvo)
     if match:
@@ -6633,14 +6648,16 @@ async def resolver_usuario_criador(ctx, alvo: str):
     if not ctx.guild:
         return None
     termo = alvo.lstrip("@").casefold()
+    membros = {m.id: m for m in ctx.guild.members}
+    # Tenta buscar a lista completa para não depender apenas do cache local.
     try:
-        membros = list(ctx.guild.members)
-        if not membros:
-            membros = [m async for m in ctx.guild.fetch_members(limit=None)]
+        async for membro in ctx.guild.fetch_members(limit=None):
+            membros[membro.id] = membro
     except (discord.Forbidden, discord.HTTPException):
-        membros = list(ctx.guild.members)
-    exatos = [m for m in membros if termo and (
+        pass
+    exatos = [m for m in membros.values() if termo and (
         m.name.casefold() == termo or m.display_name.casefold() == termo
+        or str(m).casefold() == termo
     )]
     unicos = {m.id: m for m in exatos}
     return next(iter(unicos.values())) if len(unicos) == 1 else None
@@ -6649,12 +6666,12 @@ async def resolver_usuario_criador(ctx, alvo: str):
 @bot.command(name="add-criador")
 async def prefix_add_criador(ctx, *, alvo: str):
     if not is_creator(ctx):
-        return await ctx.reply("Acesso restrito aos criadores atuais do bot.")
+        return await ctx.reply("Acesso restrito ao dono desta comunidade e aos criadores autorizados do bot.")
     usuario = await resolver_usuario_criador(ctx, alvo)
     if usuario is None:
         return await ctx.reply(
-            "Não encontrei um usuário único. Use a menção @usuário ou o ID numérico. "
-            "A busca pelo arroba precisa corresponder exatamente a um nome único neste servidor."
+            "Não encontrei um usuário único. Use uma menção real do Discord (@usuário), "
+            "o ID numérico ou o nome/@arroba exato de alguém desta comunidade."
         )
     if usuario.bot:
         return await ctx.reply("Selecione uma pessoa, não um bot.")
