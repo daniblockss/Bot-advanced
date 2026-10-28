@@ -7,6 +7,7 @@
 <section id="login" class="card"><h2>Entrar no BotHub</h2><div class="hint">Entre com sua conta administradora do Firebase.</div><label>E-mail</label><input id="email" type="email" autocomplete="username" value="daniblocks100@gmail.com"><label>Senha do Firebase</label><input id="password" type="password" autocomplete="current-password" placeholder="Senha da conta Firebase"><button id="loginBtn">Entrar no painel</button><div id="loginMsg" class="error"></div></section>
 <div id="dashboard" class="hidden">
 <section class="card"><h2>Controlador do cluster</h2><p class="hint">Atualiza o instalador e o worker a partir do GitHub. Cada worker usa um processo auxiliar para encerrar o controlador antigo, substituir os arquivos e iniciar a versão nova.</p><div class="actions"><button id="updateCluster">Atualizar arquivos do Cefilu</button></div><div id="clusterUpdateMsg" class="hint"></div></section>
+<section class="card"><h2>Atualizar main.py dos bots</h2><p class="hint">Publica uma atualização para os bots individuais. A atualização obrigatória é instalada automaticamente; a opcional avisa o criador e só instala quando ele digitar <code>!update</code> na conversa privada com o bot.</p><label>Tipo de atualização</label><select id="mainUpdateType"><option value="optional">Opcional — o criador decide</option><option value="mandatory">Obrigatória — instalar automaticamente</option></select><label>Descrição da atualização</label><textarea id="mainUpdateDescription" rows="3" maxlength="1500" placeholder="Descreva as correções e melhorias do main.py"></textarea><div class="actions"><button id="publishMainUpdate">Publicar atualização do main.py</button></div><div id="mainUpdateMsg" class="hint"></div></section>
 <section class="grid"><div class="card"><div class="muted">Dispositivos online</div><div id="online" class="metric">0</div></div><div class="card"><div class="muted">Com capacidade</div><div id="capacity" class="metric">0</div></div><div class="card"><div class="muted">Bots realmente ligados</div><div id="active" class="metric">0</div></div><div class="card"><div class="muted">Na fila</div><div id="queued" class="metric">0</div></div><div class="card"><div class="muted">RAM disponível total</div><div id="ramFreeTotal" class="metric">—</div><div id="ramTotalLabel" class="hint">RAM total: —</div></div><div class="card"><div class="muted">Armazenamento livre total</div><div id="diskFreeTotal" class="metric">—</div><div id="diskTotalLabel" class="hint">Capacidade total: —</div></div><div class="card"><div class="muted">CPU média dos online</div><div id="cpuAvg" class="metric">—</div></div><div class="card"><div class="muted">Tempo online do worker mais antigo</div><div id="longestUptime" class="metric">—</div></div><div class="card"><div class="muted">Bateria média dos dispositivos</div><div id="batteryAvg" class="metric">—</div><div id="batteryCount" class="hint">Aguardando dados</div></div></section>
 <section class="layout"><div class="card"><h2>Dispositivos / workers</h2><div id="workers"><span class="muted">Aguardando workers…</span></div><p class="hint">Os dispositivos executam os bots. O painel distribui automaticamente até 3 bots por worker elegível, priorizando o maior espaço livre. “Vagas estimadas” é uma estimativa pelo limite atual, não uma garantia: o consumo de RAM e disco varia conforme cada bot.</p></div>
 <div class="card"><h2>Cadastrar bot Discord</h2><label>Nome</label><input id="botName" maxlength="100" placeholder="Meu bot"><label>Token do bot</label><input id="botToken" type="password" autocomplete="off" placeholder="Token privado"><button id="createBot">Cadastrar e distribuir</button><div id="createMsg" class="hint"></div><p class="hint">O token é salvo no Firebase com regras privadas; ele não fica no código HTML. Use apenas bots que você controla.</p></div></section>
@@ -175,7 +176,23 @@ $("restartFileBot").onclick=async()=>{
   catch(e){status.className="error";status.textContent=e.message||String(e)}
 };
 function start(){stopSubs();$('login').classList.add('hidden');$('dashboard').classList.remove('hidden');$('logout').classList.remove('hidden');$('connection').textContent='Conectando…';$('connection').className='badge';watch('workers',v=>{workerData=v;cleanupStaleWorkers();drawWorkers();rebalance().then(drawBots)});watch('bots',v=>{botData=v;drawBots();rebalance()});$('connection').textContent='Conectado';$('connection').className='badge'}
-$('updateCluster').onclick=async()=>{
+$('publishMainUpdate').onclick=async()=>{
+   const msg=$('mainUpdateMsg');msg.className='hint';
+   const type=$('mainUpdateType').value,description=$('mainUpdateDescription').value.trim();
+   if(!description){msg.className='error';msg.textContent='Escreva uma descrição para a atualização.';return}
+   const label=type==='mandatory'?'OBRIGATÓRIA':'OPCIONAL';
+   if(!confirm('Publicar atualização '+label+' do main.py para os bots individuais?'))return;
+   msg.textContent='Publicando atualização…';
+   try{
+     const updateId='main-'+Date.now()+'-'+crypto.randomUUID().slice(0,8);
+     await set(testRef('botHubUpdates/current'),{
+       updateId,type,description,clusterOnly:false,
+       requestedAt:Date.now(),requestedBy:auth.currentUser?.uid||'admin'
+     });
+     msg.className='ok';msg.textContent='Atualização '+label+' publicada. Os workers vão processar a solicitação.';
+   }catch(e){msg.className='error';msg.textContent='Não foi possível publicar a atualização: '+e.message}
+ };
+ $('updateCluster').onclick=async()=>{
   const msg=$('clusterUpdateMsg');
   if(!confirm('Solicitar atualização do controlador em todos os workers conectados? Os workers vão reiniciar o controlador e manter os bots/memórias no Firebase.'))return;
   msg.className='hint';msg.textContent='Publicando solicitação de atualização…';
