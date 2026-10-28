@@ -150,6 +150,11 @@ def bot_folder(bot_id):
         raise ValueError("ID de bot inválido.")
     return base
 
+def private_file_name(name):
+    lower=str(name).lower()
+    return lower in BLOCKED_NAMES or any(part in lower for part in
+        ("token","secret","credential","apikey","api_key","private_key","password")) or lower.endswith(".env")
+
 def safe_file_path(bot_id, relative, allow_directory=False):
     base=bot_folder(bot_id)
     raw=str(relative or "").replace("\\\\","/")
@@ -161,7 +166,7 @@ def safe_file_path(bot_id, relative, allow_directory=False):
     path=base.joinpath(*parts).resolve()
     if path!=base and base not in path.parents:
         raise ValueError("Caminho fora da pasta do bot.")
-    if path.name.lower() in BLOCKED_NAMES:
+    if private_file_name(path.name):
         raise ValueError("Esse arquivo contém dados privados e não pode ser aberto pelo painel.")
     if path.is_file() or (not path.exists() and not allow_directory):
         if path.suffix.lower() not in EDITABLE_EXTS:
@@ -178,7 +183,7 @@ def file_command(cmd):
         if not path.is_dir(): raise ValueError("O caminho não é uma pasta.")
         items=[]
         for p in sorted(path.iterdir(),key=lambda x:(not x.is_dir(),x.name.lower())):
-            if p.name.startswith(".") or p.name.lower() in BLOCKED_NAMES or p.name in BLOCKED_DIRS: continue
+            if p.name.startswith(".") or private_file_name(p.name) or p.name in BLOCKED_DIRS: continue
             if p.is_file() and p.suffix.lower() not in EDITABLE_EXTS: continue
             try:
                 items.append({"name":p.name,"path":p.relative_to(base).as_posix(),"directory":p.is_dir(),
