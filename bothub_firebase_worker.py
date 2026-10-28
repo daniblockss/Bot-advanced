@@ -39,8 +39,23 @@ def stats(cfg):
   x["publicIp"]=S.get("https://api.ipify.org?format=json",timeout=4).json().get("ip","")
  except Exception:x["publicIp"]=""
  try:
-  import psutil;m=psutil.virtual_memory();x.update(ramFreeBytes=m.available,ramTotalBytes=m.total,cpuPercent=psutil.cpu_percent(.1))
- except Exception:x.update(ramFreeBytes=0,ramTotalBytes=0,cpuPercent=0)
+  import psutil
+  m=psutil.virtual_memory()
+  x.update(ramFreeBytes=m.available,ramTotalBytes=m.total,cpuPercent=psutil.cpu_percent(.1))
+ except Exception:
+  # Android/Termux may not support psutil; use Linux procfs when available.
+  try:
+   mem={}
+   for line in Path("/proc/meminfo").read_text().splitlines():
+    key, value = line.split(":", 1)
+    parts = value.strip().split()
+    if parts and parts[0].isdigit():
+     mem[key] = int(parts[0]) * (1024 if len(parts) > 1 and parts[1].lower() == "kb" else 1)
+   total = mem.get("MemTotal", 0)
+   available = mem.get("MemAvailable", mem.get("MemFree", 0) + mem.get("Buffers", 0) + mem.get("Cached", 0))
+   x.update(ramFreeBytes=available, ramTotalBytes=total, cpuPercent=0)
+  except Exception:
+   x.update(ramFreeBytes=0, ramTotalBytes=0, cpuPercent=0)
  return x
 def sid(v):return "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or "bot"
 def stop(k):
@@ -71,7 +86,10 @@ def main():
  if not vp.exists():
   subprocess.check_call([sys.executable,"-m","venv",str(v)])
   subprocess.check_call([str(vp),"-m","pip","install","--upgrade","pip"])
-  subprocess.check_call([str(vp),"-m","pip","install","requests","psutil","discord.py","aiohttp","Pillow"])
+  packages=["requests","discord.py","aiohttp","Pillow"]
+  if "ANDROID_ROOT" not in os.environ and "com.termux" not in str(Path.home()) and "termux" not in os.environ.get("PREFIX",""):
+   packages.append("psutil")
+  subprocess.check_call([str(vp),"-m","pip","install",*packages])
   os.execv(str(vp),[str(vp),str(Path(__file__).resolve())])
  print("[BotHub] Worker Firebase ativo:",cfg["device_id"],flush=True)
  while True:
