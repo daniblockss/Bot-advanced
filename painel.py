@@ -11,6 +11,7 @@ BOTS = ROOT / "bots"
 VENV = ROOT / ".venv"
 STATE = ROOT / "painel_bots.json"
 URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/refs/heads/main/main8.py"
+URL_PAINEL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/refs/heads/main/painel.py"
 INTERVALO_ATUALIZACAO = 300
 PACOTES = ["discord.py", "aiohttp", "requests"]
 
@@ -555,8 +556,50 @@ class Painel:
                         print(f"\n⚠️ ERRO DETECTADO — {nome}. Verificar agora.\n⚠️ Erro detectado no painel: bots/{nome}/bot.log")
                         time.sleep(0.35)
 
+    def verificar_atualizacao_painel(self):
+        """Atualiza o próprio painel a partir do GitHub e reinicia o processo."""
+        caminho = Path(__file__).resolve()
+        temporario = caminho.with_suffix(".py.update.tmp")
+        backup = caminho.with_suffix(".py.previous")
+        try:
+            resposta = requests.get(
+                URL_PAINEL,
+                headers={"User-Agent": "BotAdvancedPanel/1.0", "Cache-Control": "no-cache"},
+                timeout=30,
+            )
+            resposta.raise_for_status()
+            novo = resposta.content
+            if len(novo) < 3000:
+                raise RuntimeError("O arquivo remoto parece incompleto.")
+            codigo = novo.decode("utf-8")
+            compile(codigo, str(caminho), "exec")
+            atual = caminho.read_bytes()
+            if hashlib.sha256(atual).hexdigest() == hashlib.sha256(novo).hexdigest():
+                print("[Painel] O painel já está atualizado.")
+                return False
+            temporario.write_bytes(novo)
+            # Confirma que o arquivo temporário contém Python sintaticamente válido.
+            compile(temporario.read_text(encoding="utf-8"), str(temporario), "exec")
+            shutil.copy2(caminho, backup)
+            temporario.replace(caminho)
+            print("[Painel] Nova versão instalada. Reiniciando o painel...")
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.execv(sys.executable, [sys.executable, str(caminho), *sys.argv[1:]])
+            return True
+        except Exception as e:
+            try:
+                if temporario.exists():
+                    temporario.unlink()
+            except OSError:
+                pass
+            print(f"[Painel] Atualização automática do próprio painel falhou: {type(e).__name__}: {e}")
+            return False
+
     def atualizador(self):
         while not self.parar_atualizador.wait(INTERVALO_ATUALIZACAO):
+            if self.verificar_atualizacao_painel():
+                return
             self.verificar_atualizacao()
 
     def encerrar(self):
@@ -567,6 +610,7 @@ class Painel:
         print("Todos os bots iniciados por este painel foram encerrados.")
 
     def executar(self):
+        self.verificar_atualizacao_painel()
         self.verificar_atualizacao()
         threading.Thread(target=self.atualizador, daemon=True).start()
         for nome, info in self.estado["bots"].items():
