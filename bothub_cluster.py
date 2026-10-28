@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """BotHub peer cluster: LAN task replication, majority leases and private local admin.
 
-All trusted nodes share BOTHUB_CLUSTER_SECRET and a static peer map. This is a
-small-cluster implementation, not a substitute for a mature consensus system.
+All trusted nodes share BOTHUB_CLUSTER_SECRET and discover members through the Firebase registry.
+This is a small-cluster implementation, not a substitute for a mature consensus system.
 Keep clocks synchronized. Every node stores replicated bot tokens, so only enroll
 devices you fully trust.
 """
@@ -65,6 +65,8 @@ def refresh_firebase_peers(force=False):
         discovered = dict(FALLBACK_PEERS)
         for node_id, record in records.items():
             if not isinstance(record, dict) or node_id == NODE_ID:
+                continue
+            if record.get("cluster_id") != hashlib.sha256(SECRET).hexdigest()[:16]:
                 continue
             peer_url = str(record.get("url", "")).strip()
             if peer_url.startswith(("http://", "https://")):
