@@ -219,9 +219,17 @@ def kill_bot_processes_under_root():
         print("[BotHub] Processos main.py encerrados:", ", ".join(map(str, sorted(set(candidates)))), flush=True)
 
 def cleanup_children():
-    # Primeiro encerra os processos que este worker iniciou.
+    # Encerra primeiro os processos para que o snapshot SQLite final seja consistente.
     for key in list(PROCS):
         stop(key)
+        try:
+            sync_bot_state(key, 'push', CURRENT_FIREBASE_TOKEN, CURRENT_DEVICE_ID)
+        except Exception:
+            pass
+        try:
+            release_bot_lease(key, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN)
+        except Exception:
+            pass
     # Depois encontra e encerra processos órfãos que sobreviveram a uma execução anterior.
     kill_bot_processes_under_root()
 
