@@ -3933,7 +3933,7 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
         "referências visuais explicitamente fornecidas ou pedidas (incluindo o avatar do usuário "
         "mencionado). Não misture automaticamente memórias, histórias, personagens, gostos ou "
         "detalhes de conversas anteriores na imagem, a menos que o usuário peça isso nesta "
-        "mensagem ou solicite explicitamente reutilizar uma memória.\\n\\n"
+        "mensagem ou solicite explicitamente reutilizar uma memória.\n\n"
     )
     if _usuario_pediu_data_hora(pergunta):
         prompt += (
@@ -4009,7 +4009,7 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
     if gerais_avisos:
         prompt += f"📢 [geral_avisos — avisos persistentes]:\n```txt\n{gerais_avisos[-6000:]}\n```\n\n"
         
-        prompt += (
+    prompt += (
         "✍️ **COMO VOCÊ PODE EDITAR SUA PRÓPRIA MEMÓRIA (ADIÇÃO E REMOÇÃO):**\n"
         "- `[SALVAR_AVISO: texto novo]`\n"
         "- `[SALVAR_IMPORTANTE: texto vital novo]`\n"
