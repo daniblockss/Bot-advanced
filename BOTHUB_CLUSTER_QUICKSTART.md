@@ -6,6 +6,22 @@ Este agente é uma implementação inicial de cluster sem líder fixo. Cada nó 
 
 É uma versão inicial para teste, não um consenso industrialmente auditado. Cada nó confiável recebe cópias dos tokens Discord dos bots. Use somente dispositivos sob seu controle, mantenha relógios sincronizados e não exponha a porta 47800 à internet. Em partições, a maioria estática deve ficar disponível; caso contrário, novas leases falham fechadas. Teste com bots descartáveis antes de qualquer uso real.
 
+## Instalação automática e painel HTML
+
+O instalador tenta detectar o ambiente, instalar Python quando possível, criar um ambiente virtual, instalar as dependências que faltarem, baixar o agente e o painel, e pedir os dados de configuração. Não precisa editar o código manualmente.
+
+Baixe e execute o instalador (execute o arquivo baixado, em vez de usar `curl | bash`, para que os prompts interativos funcionem):
+
+```bash
+mkdir -p ~/bothub-setup && cd ~/bothub-setup
+curl -fLsS https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/install_bothub.sh -o install_bothub.sh
+bash install_bothub.sh
+```
+
+O instalador inicia o nó depois de configurar. No próprio dispositivo, abra `http://127.0.0.1:47800/admin/ui` no navegador e informe o token administrativo que ele exibiu. O painel permite ver nós/recursos, cadastrar bots e desativá-los. A página HTML fica em `bothub_panel.html`.
+
+O painel administrativo é limitado a loopback por segurança: não o abra diretamente para a rede nem encaminhe a porta 47800 à internet. O segredo e o token ficam no arquivo `bothub.env` com permissões restritas; não faça commit nem compartilhe esse arquivo. Para adicionar outros dispositivos, execute o instalador em cada um e configure o mesmo segredo/token, IDs únicos e listas de pares simétricas. O segredo precisa ser compartilhado apenas com dispositivos sob seu controle.
+
 ## Instalação em cada nó
 
 **Não rode este agente junto com o antigo `bothub_node.py` para os mesmos bots**, pois isso pode iniciar processos duplicados. Primeiro teste com bots descartáveis e pare o worker antigo para os bots que migrar.
