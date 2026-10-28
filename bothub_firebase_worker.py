@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 # BotHub Firebase worker: auto-registers this device using Firebase Anonymous Auth.
-import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,signal
+import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid
 from pathlib import Path
-try:
-    import fcntl
-except ImportError:
-    fcntl=None
 import requests
 
 ROOT=Path(__file__).resolve().parent
@@ -14,8 +10,7 @@ CFGFILE=ROOT/"worker.json"
 TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
-PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time();WORKER_LOCK_HANDLE=None
-LOCKFILE=ROOT/".bothub-worker.lock"
+PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time()
 
 def save_json(path,data):
     tmp=path.with_suffix(path.suffix+".tmp")
@@ -118,22 +113,10 @@ def sid(v):
 def stop(k):
     p=PROCS.pop(k,None);l=LOGS.pop(k,None)
     if p and p.poll() is None:
-        try:
-            if os.name!="nt" and getattr(p,"pid",None):
-                os.killpg(p.pid,signal.SIGTERM)
-            else:
-                p.terminate()
-            p.wait(timeout=5)
+        try:p.terminate();p.wait(timeout=5)
         except Exception:
-            try:
-                if os.name!="nt" and getattr(p,"pid",None):
-                    os.killpg(p.pid,signal.SIGKILL)
-                else:
-                    p.kill()
+            try:p.kill()
             except Exception:pass
-    try:
-        (ROOT/"bots"/sid(k)/".bothub.pid").unlink(missing_ok=True)
-    except Exception:pass
     if l:
         try:l.close()
         except Exception:pass
@@ -152,8 +135,6 @@ def start(k,b):
     p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
         stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"))
     PROCS[k]=p;LOGS[k]=log
-    try:(folder/".bothub.pid").write_text(str(p.pid),encoding="utf-8")
-    except OSError:pass
     print("[BotHub] iniciado",b.get("name",k),"PID",p.pid,flush=True)
 
 
@@ -292,19 +273,7 @@ def process_worker_commands(cfg,tok,did,queue):
         except Exception as e:
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
-def acquire_single_worker():
-    global WORKER_LOCK_HANDLE
-    LOCKFILE.parent.mkdir(parents=True,exist_ok=True)
-    WORKER_LOCK_HANDLE=LOCKFILE.open("a+")
-    if fcntl is not None:
-        try:
-            fcntl.flock(WORKER_LOCK_HANDLE.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
-        except BlockingIOError:
-            print("[BotHub] Já existe um worker nesta pasta; encerrando para evitar processos duplicados.",flush=True)
-            raise SystemExit(73)
-
 def main():
-    acquire_single_worker()
     cfg=setup()
     v=ROOT/"venv";vp=v/("Scripts/python.exe" if os.name=="nt" else "bin/python")
     if not vp.exists():
