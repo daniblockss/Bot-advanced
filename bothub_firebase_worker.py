@@ -424,9 +424,30 @@ def main():
             fb("PUT","workers/"+did,t,stats(cfg))
             queue=fb("GET","workerTasks/"+did,t) or {}
             process_worker_commands(cfg,t,did,queue)
-            desired={sid(k):b for k,b in queue.items() if isinstance(b,dict) and b.get("enabled",True)}
+            # Uma conta Discord (token) só pode ter uma instância ativa neste worker.
+            # Se o painel atribuir o mesmo token a IDs/pastas diferentes, manter apenas a primeira.
+            desired={}
+            token_owner={}
+            duplicate_ids=set()
+            for raw_id,b in queue.items():
+                if not isinstance(b,dict) or not b.get("enabled",True):
+                    continue
+                k=sid(raw_id)
+                secret=str(b.get("token") or "").strip()
+                if not secret:
+                    print("[BotHub] bot sem token ignorado:",k,flush=True)
+                    continue
+                if secret in token_owner:
+                    duplicate_ids.add(k)
+                    print("[BotHub] token duplicado detectado; não inicia a segunda pasta:",k,
+                          "(a conta já está atribuída a",token_owner[secret]+")",flush=True)
+                    continue
+                token_owner[secret]=k
+                desired[k]=b
             for k in list(PROCS):
-                if k not in desired:stop(k);print("[BotHub] parado",k,flush=True)
+                if k not in desired or k in duplicate_ids:
+                    stop(k)
+                    print("[BotHub] parado para evitar instância duplicada:",k,flush=True)
             for k,b in desired.items():
                 if k not in PROCS or PROCS[k].poll() is not None:
                     try:start(k,b)
