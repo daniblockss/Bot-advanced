@@ -6556,6 +6556,14 @@ async def somente_criadores_prefixo(ctx):
         return True
     if comando and comando.name == "raiz":
         return raiz_autorizado(ctx.author.id, ctx.guild)
+    if comando and comando.name == "update":
+        try:
+            info = await bot.application_info()
+            owner_id = getattr(getattr(info, "owner", None), "id", None)
+            if owner_id == ctx.author.id:
+                return True
+        except Exception:
+            pass
     return is_creator(ctx.author)
 
 
@@ -7005,7 +7013,9 @@ async def on_command_error(ctx, error):
         return
 
     if isinstance(error, commands.CommandNotFound):
-        await ctx.reply("❌ Comando não encontrado! Digite `!painel` ou `!help`.")
+        # Em um servidor com vários bots, cada instância recebe o mesmo comando.
+        # Não responder evita mensagens duplicadas para comandos que este bot não possui.
+        return
     elif isinstance(error, commands.MissingRequiredArgument):
         await ctx.reply("⚠️ Faltam argumentos para este comando!")
     elif isinstance(error, commands.BadArgument):
