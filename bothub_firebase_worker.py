@@ -332,6 +332,7 @@ def process_release_updates(tok, queue):
         request_file=folder/".bothub_update_request"
         mandatory=release.get("type")=="mandatory"
         accepted=request_file.exists()
+        if state.get("updateId")==update_id and state.get("updated"):continue
         if not mandatory and not accepted:continue
         try:
             stop(bid)
