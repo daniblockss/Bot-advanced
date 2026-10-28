@@ -286,6 +286,67 @@ def process_worker_commands(cfg,tok,did,queue):
         except Exception as e:
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
+def download_latest_main(folder):
+    url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py")
+    response=S.get(url,timeout=45);response.raise_for_status()
+    data=response.content
+    if len(data)<10000: raise RuntimeError("main.py baixado está incompleto.")
+    compile(data.decode("utf-8"),"main.py","exec")
+    target=folder/"main.py";tmp=folder/"main.py.update.tmp"
+    tmp.write_bytes(data);tmp.replace(target)
+    return len(data)
+
+def notify_update(bot_id, bot_cfg, update):
+    token_value=bot_cfg.get("token")
+    if not token_value:return
+    try:
+        app_info=discord_api(token_value,"GET","/applications/@me",None)
+        owner=(app_info.get("owner") or {}).get("id")
+        if not owner:return
+        channel=discord_api(token_value,"POST","/users/@me/channels",{"recipient_id":str(owner)})
+        mode="OBRIGATÓRIA" if update.get("type")=="mandatory" else "OPCIONAL"
+        description=str(update.get("description") or "Melhorias e correções.")[:1500]
+        content=("📦 **Atualização BotHub disponível — "+mode+"**\n"+description+
+                 ("\n\nEsta atualização será instalada automaticamente." if mode=="OBRIGATÓRIA"
+                  else "\n\nPara instalar, digite !update neste chat com o bot."))
+        discord_api(token_value,"POST","/channels/"+str(channel["id"])+"/messages",
+                    {"content":content,"allowed_mentions":{"parse":[]}})
+    except Exception as e:
+        print("[BotHub] Não foi possível avisar o criador de",bot_id,":",str(e)[:180],flush=True)
+
+def process_release_updates(tok, queue):
+    release=fb("GET","botHubUpdates/current",tok)
+    if not isinstance(release,dict) or not release.get("updateId"):return
+    for raw_id,bot_cfg in list(queue.items()):
+        if not isinstance(bot_cfg,dict) or not bot_cfg.get("enabled",True):continue
+        bid=sid(raw_id);folder=ROOT/"bots"/bid
+        if not folder.exists():continue
+        state_file=folder/".bothub_update_state.json"
+        try:state=json.loads(state_file.read_text(encoding="utf-8")) if state_file.exists() else {}
+        except Exception:state={}
+        update_id=str(release.get("updateId"))
+        if state.get("updateId")!=update_id:
+            notify_update(raw_id,bot_cfg,release)
+            state={"updateId":update_id,"announced":True,"updated":False}
+            save_json(state_file,state)
+        request_file=folder/".bothub_update_request"
+        mandatory=release.get("type")=="mandatory"
+        accepted=request_file.exists()
+        if not mandatory and not accepted:continue
+        try:
+            stop(bid)
+            size=download_latest_main(folder)
+            start(bid,bot_cfg)
+            state.update(updateId=update_id,announced=True,updated=True,updatedAt=int(time.time()*1000),bytes=size)
+            save_json(state_file,state)
+            if request_file.exists():request_file.unlink()
+            print("[BotHub] bot atualizado:",raw_id,"bytes:",size,flush=True)
+        except Exception as e:
+            print("[BotHub] falha ao atualizar",raw_id,":",str(e)[:220],flush=True)
+            try:
+                if bid not in PROCS or PROCS[bid].poll() is not None:start(bid,bot_cfg)
+            except Exception:pass
+
 def main():
     global CURRENT_CFG
     cfg=setup()
@@ -310,6 +371,8 @@ def main():
                 if k not in PROCS or PROCS[k].poll() is not None:
                     try:start(k,b)
                     except Exception as e:print("[BotHub] falha no bot",k,str(e)[:220],flush=True)
+            try: process_release_updates(t,queue)
+            except Exception as e: print("[BotHub] falha ao verificar atualização:",str(e)[:220],flush=True)
         except KeyboardInterrupt:break
         except Exception as e:print("[BotHub] erro Firebase/worker:",str(e)[:300],flush=True)
         time.sleep(max(10,int(os.getenv("BOTHUB_POLL_SECONDS","15"))))
