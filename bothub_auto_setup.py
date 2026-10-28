@@ -17,8 +17,19 @@ AUTH_URL = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPasswor
 
 def requisicao(url, metodo="GET", dados=None, token=None):
     headers = {"Content-Type": "application/json"}
+    # O Realtime Database REST aceita o ID token no parâmetro auth.
+    # Usamos esse formato para evitar incompatibilidades com o cabeçalho Bearer.
     if token:
-        headers["Authorization"] = "Bearer " + token
+        partes = urllib.parse.urlsplit(url)
+        query = urllib.parse.parse_qsl(partes.query, keep_blank_values=True)
+        query.append(("auth", token))
+        url = urllib.parse.urlunsplit((
+            partes.scheme,
+            partes.netloc,
+            partes.path,
+            urllib.parse.urlencode(query),
+            partes.fragment,
+        ))
     corpo = None if dados is None else json.dumps(dados).encode()
     req = urllib.request.Request(url, data=corpo, headers=headers, method=metodo)
     try:
