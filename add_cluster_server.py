@@ -135,23 +135,33 @@ def main():
     if CONFIG.exists():
         try: CFG = json.loads(CONFIG.read_text(encoding="utf-8"))
         except Exception: CFG = {}
-    if not CFG.get("secret") or not CFG.get("admin_token") or not CFG.get("firebase_email") or not CFG.get("firebase_password"):
-        print("\n=== Configuração inicial do nó BotHub P2P ===")
-        print("Cada servidor deve usar uma conta Firebase própria, com Email/Senha ativado.")
+    if not CFG.get("firebase_email") or not CFG.get("firebase_password"):
+        print("\n=== Credenciais Firebase do nó BotHub P2P ===")
+        print("Execute bothub_auto_setup.py para validar e salvar as credenciais, ou informe-as agora.")
         email = input("E-mail da conta Firebase deste servidor: ").strip()
         password = getpass("Senha Firebase: ").strip()
-        secret = getpass("Segredo compartilhado do cluster (mínimo 32 caracteres; igual em todos os nós): ").strip()
-        if not email or not password or len(secret) < 32:
-            print("[BotHub] E-mail/senha inválidos ou segredo curto.")
+        if not email or not password:
+            print("[BotHub] E-mail/senha vazios.")
             return 2
-        CFG = {"firebase_email":email, "firebase_password":password, "secret":secret, "admin_token":secrets.token_urlsafe(32), "peers":{}}
-        try:
-            auth(force=True)
-        except Exception as e:
-            print("[BotHub] Falha no login Firebase. Confira usuário, senha e Email/Password habilitado:", str(e)[:220])
+        CFG["firebase_email"] = email
+        CFG["firebase_password"] = password
+    if not CFG.get("secret"):
+        print("\n=== Segredo do cluster ===")
+        secret = getpass("Segredo compartilhado (mínimo 32 caracteres; igual em todos os nós): ").strip()
+        if len(secret) < 32:
+            print("[BotHub] Segredo curto; use pelo menos 32 caracteres.")
             return 2
+        CFG["secret"] = secret
+    if not CFG.get("admin_token"):
+        CFG["admin_token"] = secrets.token_urlsafe(32)
         print("[BotHub] Token administrativo local (guarde-o):")
         print(CFG["admin_token"])
+    CFG.setdefault("peers", {})
+    try:
+        auth(force=True)
+    except Exception as e:
+        print("[BotHub] Falha no login Firebase. Confira usuário, senha e Email/Password habilitado:", str(e)[:220])
+        return 2
     try:
         auth()
         register_server(CFG)
