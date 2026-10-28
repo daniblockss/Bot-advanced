@@ -281,8 +281,8 @@ def handle_shutdown_signal(signum, frame):
     cleanup_children()
     raise SystemExit(0)
 
-def script_already_running(script):
-    """Detecta outro processo Python executando exatamente este main.py."""
+def script_already_running(script, token_value=None):
+    """Detecta main.py duplicado por caminho OU pelo mesmo token em outra pasta."""
     target = str(script.resolve())
     current_pid = os.getpid()
     if sys.platform.startswith("linux") and Path("/proc").is_dir():
@@ -292,11 +292,25 @@ def script_already_running(script):
             try:
                 raw = (entry / "cmdline").read_bytes()
                 args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
-                if len(args) >= 2 and any(
-                    arg.endswith(".py") and str(Path(arg).resolve()) == target
-                    for arg in args[1:]
-                ):
-                    return int(entry.name)
+                script_args = [arg for arg in args[1:] if arg.endswith(".py")]
+                for arg in script_args:
+                    try:
+                        running_script = Path(arg).resolve()
+                    except Exception:
+                        continue
+                    if running_script.name != "main.py":
+                        continue
+                    if str(running_script) == target:
+                        return int(entry.name)
+                    if token_value:
+                        try:
+                            cfg_path = running_script.parent / "config.json"
+                            running_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                            running_token = str(running_cfg.get("discord_token") or running_cfg.get("token") or "")
+                            if running_token and running_token == str(token_value):
+                                return int(entry.name)
+                        except Exception:
+                            pass
             except (OSError, ValueError, RuntimeError):
                 continue
     else:
@@ -306,11 +320,24 @@ def script_already_running(script):
                 if proc.info["pid"] == current_pid:
                     continue
                 args = proc.info.get("cmdline") or []
-                if any(
-                    arg.endswith(".py") and str(Path(arg).resolve()) == target
-                    for arg in args[1:]
-                ):
-                    return proc.info["pid"]
+                for arg in (proc.info.get("cmdline") or [])[1:]:
+                    try:
+                        running_script = Path(arg).resolve()
+                    except Exception:
+                        continue
+                    if not str(arg).endswith(".py") or running_script.name != "main.py":
+                        continue
+                    if str(running_script) == target:
+                        return proc.info["pid"]
+                    if token_value:
+                        try:
+                            cfg_path = running_script.parent / "config.json"
+                            running_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                            running_token = str(running_cfg.get("discord_token") or running_cfg.get("token") or "")
+                            if running_token and running_token == str(token_value):
+                                return proc.info["pid"]
+                        except Exception:
+                            pass
         except Exception:
             pass
     return None
@@ -391,7 +418,7 @@ def start(k,b):
         r=S.get(url,timeout=30);r.raise_for_status()
         if len(r.content)<10000:raise RuntimeError("Download de main.py incompleto.")
         script.write_bytes(r.content)
-    duplicate_pid = script_already_running(script)
+    duplicate_pid = script_already_running(script, b.get("token"))
     if duplicate_pid is not None:
         print("[BotHub] main.py já está rodando neste dispositivo (PID",duplicate_pid,"); não vou iniciar outra cópia para",k,flush=True)
         return
