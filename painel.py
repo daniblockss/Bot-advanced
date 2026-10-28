@@ -99,6 +99,10 @@ class Painel:
         self.processos = {}
         self.lock = threading.RLock()
         self.parar_atualizador = threading.Event()
+        self._log_offsets = {}
+        self._erros_vistos = set()
+        self._afk_index = 0
+        self._cpu_sample = None
         self.script = baixar_script()
         self.hash_script = hashlib.sha256(self.script).hexdigest()
         BOTS.mkdir(exist_ok=True)
@@ -185,6 +189,7 @@ class Painel:
             if not script.exists():
                 print(f"{nome}: main8.py não encontrado."); return
             log = open(pasta / "bot.log", "ab", buffering=0)
+            self._log_offsets[nome] = log.tell()
             try:
                 proc = subprocess.Popen([str(pyvenv()), "-u", str(script)], cwd=pasta,
                     stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
@@ -263,37 +268,235 @@ class Painel:
         try:
             novo = baixar_script()
         except Exception as e:
-            print(f"[Atualização] Verificação falhou: {type(e).__name__}."); return
+            print(f"[Atualização] Verificação falhou: {type(e).__name__}.")
+            return
         novo_hash = hashlib.sha256(novo).hexdigest()
-        if novo_hash == self.hash_script:
-            print("[Atualização] Todos os bots já estão na versão atual."); return
-        print("[Atualização] Nova versão encontrada.")
-        self.script, self.hash_script = novo, novo_hash
+        self.script = novo
+        alvos = []
         for nome in list(self.estado["bots"]):
+            script_local = self.pasta(nome) / "main8.py"
+            try:
+                hash_local = hashlib.sha256(script_local.read_bytes()).hexdigest()
+            except OSError:
+                hash_local = ""
+            if hash_local != novo_hash:
+                alvos.append(nome)
+        self.hash_script = novo_hash
+        if not alvos:
+            print("[Atualização] Todos os bots já estão na versão atual.")
+            return
+        print(f"[Atualização] Atualizando {len(alvos)} bot(s)...")
+        for nome in alvos:
             pasta = self.pasta(nome)
             script = pasta / "main8.py"
             backup = pasta / "main8.py.previous"
+            proc = self.processos.get(nome)
+            estava_rodando = bool(proc and proc.poll() is None)
             try:
-                self.notificar(pasta, "atualizando")
-                self.parar(nome)
-                if script.exists(): shutil.copy2(script, backup)
+                if estava_rodando:
+                    self.notificar(pasta, "atualizando")
+                    self.parar(nome)
+                if script.exists():
+                    shutil.copy2(script, backup)
                 temp = pasta / "main8.py.tmp"
-                temp.write_bytes(novo); temp.replace(script)
+                temp.write_bytes(novo)
+                temp.replace(script)
                 teste = subprocess.run([str(pyvenv()), str(script), "--self-test"], cwd=pasta,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=90)
                 if teste.returncode != 0:
                     print(f"{nome}: autoteste falhou; restaurando versão anterior.")
-                    if backup.exists(): shutil.copy2(backup, script)
-                    self.iniciar(nome); continue
-                self.iniciar(nome)
-                self.notificar(pasta, "atualizado")
-                print(f"{nome}: atualizado e reiniciado.")
+                    if backup.exists():
+                        shutil.copy2(backup, script)
+                    if estava_rodando:
+                        self.iniciar(nome)
+                    continue
+                if estava_rodando:
+                    self.iniciar(nome)
+                    self.notificar(pasta, "atualizado")
+                print(f"{nome}: atualizado" + (" e reiniciado." if estava_rodando else "."))
             except Exception as e:
                 print(f"{nome}: atualização falhou ({type(e).__name__}).")
                 if backup.exists():
                     shutil.copy2(backup, script)
-                    try: self.iniciar(nome)
-                    except Exception: pass
+                if estava_rodando:
+                    try:
+                        self.iniciar(nome)
+                    except Exception:
+                        pass
+
+    def metricas_sistema(self):
+        memoria_total = memoria_disponivel = None
+        cpu = None
+        try:
+            if os.path.exists("/proc/meminfo"):
+                dados = {}
+                with open("/proc/meminfo", encoding="utf-8") as f:
+                    for linha in f:
+                        partes = linha.split()
+                        if len(partes) >= 2:
+                            dados[partes[0].rstrip(":")] = int(partes[1])
+                memoria_total = dados.get("MemTotal", 0) // 1024
+                memoria_disponivel = dados.get("MemAvailable", dados.get("MemFree", 0)) // 1024
+            if os.path.exists("/proc/stat"):
+                with open("/proc/stat", encoding="utf-8") as f:
+                    campos = list(map(int, f.readline().split()[1:]))
+                total = sum(campos[:8])
+                ocioso = campos[3] + (campos[4] if len(campos) > 4 else 0)
+                anterior = self._cpu_sample
+                self._cpu_sample = (total, ocioso)
+                if anterior and total > anterior[0]:
+                    cpu = max(0.0, min(100.0, (1 - (ocioso-anterior[1])/(total-anterior[0])) * 100))
+            else:
+                try:
+                    import psutil
+                    memoria = psutil.virtual_memory()
+                    memoria_total = int(memoria.total / 1048576)
+                    memoria_disponivel = int(memoria.available / 1048576)
+                    cpu = float(psutil.cpu_percent(interval=0.1))
+                except ImportError:
+                    pass
+        except (OSError, ValueError, IndexError):
+            pass
+        rodando = [(nome, proc.pid) for nome, proc in list(self.processos.items()) if proc and proc.poll() is None]
+        usos = []
+        for _, pid in rodando:
+            try:
+                with open(f"/proc/{pid}/status", encoding="utf-8") as f:
+                    for linha in f:
+                        if linha.startswith("VmRSS:"):
+                            usos.append(int(linha.split()[1]) // 1024)
+                            break
+            except (OSError, ValueError, IndexError):
+                pass
+        media_bot = max(250, int(sum(usos) / len(usos))) if usos else 250
+        restantes = max(0, memoria_disponivel // media_bot) if memoria_disponivel is not None else None
+        return memoria_total, memoria_disponivel, cpu, len(rodando), restantes, media_bot
+
+    def mostrar_status(self):
+        total, livre, cpu, rodando, restantes, media = self.metricas_sistema()
+        ram = f"RAM: {livre} MB livres / {total} MB" if livre is not None else "RAM: indisponível"
+        cpu_txt = f"CPU: {cpu:.1f}%" if cpu is not None else "CPU: calculando/indisponível"
+        capacidade = f"Estimativa: +{restantes} bot(s) por RAM (base ~{media} MB/bot)" if restantes is not None else "Estimativa de bots: indisponível"
+        print(f"\n📊 {ram} | {cpu_txt} | Bots rodando: {rodando} | {capacidade}")
+
+    def mostrar_log_afk(self):
+        nomes = list(self.estado["bots"])
+        if not nomes:
+            print("\n[AFK] Nenhum bot cadastrado.")
+            return
+        nome = nomes[self._afk_index % len(nomes)]
+        self._afk_index += 1
+        caminho = self.pasta(nome) / "bot.log"
+        try:
+            linhas = caminho.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            linhas = []
+        print(f"\n--- LOG AFK: {nome} (últimas 8 linhas) ---")
+        print("\n".join(linhas[-8:]) if linhas else "(log vazio)")
+        print("Pressione qualquer tecla para voltar ao painel.")
+
+    def ler_comando_afk(self, prompt):
+        if not sys.stdin.isatty():
+            return input(prompt)
+        print(prompt, end="", flush=True)
+        buffer = ""
+        ultima_tecla = time.monotonic()
+        ultima_troca = 0.0
+        em_afk = False
+        if os.name == "nt":
+            import msvcrt
+            while True:
+                if msvcrt.kbhit():
+                    tecla = msvcrt.getwch()
+                    if em_afk:
+                        print("\nVoltando ao painel...\n")
+                        return ""
+                    ultima_tecla = time.monotonic()
+                    if tecla in ("\r", "\n"):
+                        print()
+                        return buffer
+                    if tecla == "\x03":
+                        raise KeyboardInterrupt
+                    if tecla == "\x08":
+                        if buffer:
+                            buffer = buffer[:-1]
+                            print("\b \b", end="", flush=True)
+                    elif tecla not in ("\x00", "\xe0"):
+                        buffer += tecla
+                        print(tecla, end="", flush=True)
+                elif time.monotonic() - ultima_tecla >= 30:
+                    em_afk = True
+                    if time.monotonic() - ultima_troca >= 8:
+                        self.mostrar_log_afk()
+                        ultima_troca = time.monotonic()
+                    time.sleep(0.08)
+                else:
+                    time.sleep(0.05)
+        else:
+            import select, termios, tty
+            fd = sys.stdin.fileno()
+            antigo = termios.tcgetattr(fd)
+            try:
+                tty.setcbreak(fd)
+                while True:
+                    pronto, _, _ = select.select([sys.stdin], [], [], 0.2)
+                    if pronto:
+                        tecla = sys.stdin.read(1)
+                        if em_afk:
+                            print("\nVoltando ao painel...\n")
+                            return ""
+                        ultima_tecla = time.monotonic()
+                        if tecla in ("\r", "\n"):
+                            print()
+                            return buffer
+                        if tecla == "\x03":
+                            raise KeyboardInterrupt
+                        if tecla in ("\x7f", "\b"):
+                            if buffer:
+                                buffer = buffer[:-1]
+                                print("\b \b", end="", flush=True)
+                        else:
+                            buffer += tecla
+                            print(tecla, end="", flush=True)
+                    elif time.monotonic() - ultima_tecla >= 30:
+                        em_afk = True
+                        if time.monotonic() - ultima_troca >= 8:
+                            self.mostrar_log_afk()
+                            ultima_troca = time.monotonic()
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, antigo)
+
+    def monitorar_erros(self):
+        padrao = ("traceback", "exception", "error", "critical", "falha ao", "erro:")
+        while not self.parar_atualizador.wait(2):
+            for nome in list(self.estado["bots"]):
+                caminho = self.pasta(nome) / "bot.log"
+                try:
+                    tamanho = caminho.stat().st_size
+                    offset = self._log_offsets.get(nome, tamanho)
+                    if tamanho < offset:
+                        offset = 0
+                    with caminho.open("rb") as f:
+                        f.seek(offset)
+                        novos = f.read()
+                        self._log_offsets[nome] = f.tell()
+                    texto = novos.decode("utf-8", errors="replace")
+                except OSError:
+                    continue
+                for linha in texto.splitlines():
+                    baixa = linha.lower()
+                    if not any(p in baixa for p in padrao):
+                        continue
+                    assinatura = (nome, linha.strip()[:240])
+                    if assinatura in self._erros_vistos:
+                        continue
+                    self._erros_vistos.add(assinatura)
+                    if len(self._erros_vistos) > 500:
+                        self._erros_vistos.clear()
+                        self._erros_vistos.add(assinatura)
+                    for _ in range(3):
+                        print(f"\n⚠️ ERRO DETECTADO — {nome}. Verificar agora.\n⚠️ Erro detectado no painel: bots/{nome}/bot.log")
+                        time.sleep(0.35)
 
     def atualizador(self):
         while not self.parar_atualizador.wait(INTERVALO_ATUALIZACAO):
@@ -307,16 +510,19 @@ class Painel:
         print("Todos os bots iniciados por este painel foram encerrados.")
 
     def executar(self):
+        self.verificar_atualizacao()
         threading.Thread(target=self.atualizador, daemon=True).start()
         for nome, info in self.estado["bots"].items():
             if info.get("enabled", True):
                 try: self.iniciar(nome)
                 except Exception as e: print(f"{nome}: falha ao iniciar ({type(e).__name__}).")
+        threading.Thread(target=self.monitorar_erros, daemon=True).start()
         while True:
             print("\n" + "=" * 48 + "\nPAINEL DE BOTS DISCORD\n" + "=" * 48)
+            self.mostrar_status()
             print("1. Adicionar novo bot\n2. Apagar bot\n3. Ver log de um bot\n4. Listar bots")
             print("5. Iniciar bot parado\n6. Parar um bot\n7. Verificar atualização agora\n0. Sair e desligar todos")
-            try: escolha = input("Comando: ").strip()
+            try: escolha = self.ler_comando_afk("Comando: ").strip()
             except (EOFError, KeyboardInterrupt): break
             try:
                 if escolha == "1": self.adicionar()
