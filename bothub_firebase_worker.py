@@ -584,25 +584,50 @@ def acquire_worker_lock():
     except Exception:
         pass
 
-    if old_pid and old_pid != os.getpid() and _pid_is_this_worker(old_pid):
-        print("[BotHub] Outro controlador desta pasta foi detectado (PID", old_pid,
-              "). Encerrando-o para iniciar esta instância.", flush=True)
+    # Migração do bloqueio antigo: versões anteriores gravavam "0" e não guardavam o PID.
+    # Neste caso, localiza os outros workers pelo cmdline e encerra-os; esta instância é preservada.
+    other_pids = set()
+    if os.name != "nt":
         try:
-            os.kill(old_pid, signal.SIGTERM)
+            for entry in Path("/proc").iterdir():
+                if not entry.name.isdigit():
+                    continue
+                pid = int(entry.name)
+                if pid != os.getpid() and _pid_is_this_worker(pid):
+                    other_pids.add(pid)
+        except Exception:
+            pass
+    elif old_pid and old_pid != os.getpid() and _pid_is_this_worker(old_pid):
+        other_pids.add(old_pid)
+
+    if old_pid and old_pid != os.getpid() and _pid_is_this_worker(old_pid):
+        other_pids.add(old_pid)
+
+    for pid in sorted(other_pids):
+        print("[BotHub] Controlador antigo detectado (PID", pid,
+              "). Encerrando-o; esta instância continuará ativa.", flush=True)
+        try:
+            os.kill(pid, signal.SIGTERM)
         except OSError:
             pass
-        deadline = time.time() + 12
-        while time.time() < deadline:
+
+    deadline = time.time() + 10
+    while other_pids and time.time() < deadline:
+        alive = set()
+        for pid in other_pids:
             try:
-                os.kill(old_pid, 0)
-            except OSError:
-                break
-            time.sleep(0.25)
-        else:
-            try:
-                os.kill(old_pid, signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM)
+                os.kill(pid, 0)
+                alive.add(pid)
             except OSError:
                 pass
+        other_pids = alive
+        if other_pids:
+            time.sleep(0.25)
+    for pid in other_pids:
+        try:
+            os.kill(pid, signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM)
+        except OSError:
+            pass
 
     handle = open(lock_path, "a+", encoding="utf-8")
     try:
