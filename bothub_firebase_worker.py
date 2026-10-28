@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # BotHub Firebase worker: auto-registers this device using Firebase Anonymous Auth.
-import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,signal,atexit
+import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,signal,atexit,base64,hashlib,sqlite3
 from pathlib import Path
 import requests
 
@@ -411,8 +411,115 @@ def kill_existing_bothub_bots():
             except OSError:
                 pass
 
+# --- Cooperative leases and Firebase-backed memory state ---
+LEASE_SECONDS = max(45, int(os.getenv('BOTHUB_LEASE_SECONDS', '75')))
+STATE_FIXED_FILES = {'bot_personality.json','image_history.json','memory.sqlite3','reminders.sqlite3','memoria_geral','importantes','geral_avisos','identidade','regras','identidade-padrao.txt','regras-padrao.txt'}
+ACTIVE_LEASES = {}
+CURRENT_DEVICE_ID = ''
+CURRENT_FIREBASE_TOKEN = ''
+LEASE_MISSES = 0
+
+def _lease_url(bot_id):
+    return DB + '/botLeases/' + urllib.parse.quote(sid(bot_id), safe='') + '.json'
+
+def _state_url(bot_id):
+    return DB + '/botState/' + urllib.parse.quote(sid(bot_id), safe='') + '/files.json'
+
+def _req_json(method, url, tok, data=None, headers=None):
+    h = {'User-Agent':'BotHub-Cluster/4.0'}
+    if headers: h.update(headers)
+    r = S.request(method, url, params={'auth':tok}, json=data, headers=h, timeout=20)
+    if r.status_code >= 300: raise RuntimeError('Firebase HTTP '+str(r.status_code)+': '+r.text[:160])
+    return r
+
+def claim_bot_lease(bot_id, device_id, tok):
+    bid=sid(bot_id); url=_lease_url(bid); now=int(time.time()*1000)
+    for _ in range(5):
+        r=_req_json('GET',url,tok,headers={'X-Firebase-ETag':'true'})
+        etag=r.headers.get('ETag','null_etag'); cur=r.json() if r.text else {}
+        if not isinstance(cur,dict): cur={}
+        owner=str(cur.get('owner') or ''); until=int(cur.get('leaseUntil') or 0)
+        if owner and owner != device_id and until > now: return None
+        same=(owner == device_id); fence=int(cur.get('fence') or 0)+(0 if same else 1)
+        lease={'owner':device_id,'leaseUntil':now+LEASE_SECONDS*1000,'heartbeatAt':now,'fence':max(1,fence)}
+        put=S.put(url,params={'auth':tok},json=lease,headers={'If-Match':etag,'User-Agent':'BotHub-Cluster/4.0'},timeout=20)
+        if put.status_code in (200,204):
+            ACTIVE_LEASES[bid]={'fence':lease['fence'],'leaseUntil':lease['leaseUntil']}; return lease
+        if put.status_code in (409,412): continue
+        raise RuntimeError('Falha ao gravar lease: HTTP '+str(put.status_code))
+    return None
+
+def release_bot_lease(bot_id, device_id, tok):
+    bid=sid(bot_id); url=_lease_url(bid)
+    try:
+        r=_req_json('GET',url,tok,headers={'X-Firebase-ETag':'true'}); cur=r.json() if r.text else {}
+        if isinstance(cur,dict) and cur.get('owner') == device_id:
+            S.put(url,params={'auth':tok},json={'owner':'','leaseUntil':0,'heartbeatAt':int(time.time()*1000),'fence':int(cur.get('fence') or 0)},headers={'If-Match':r.headers.get('ETag','null_etag'),'User-Agent':'BotHub-Cluster/4.0'},timeout=15)
+    except Exception as e: print('[BotHub] falha ao liberar lease:',str(e)[:120],flush=True)
+    ACTIVE_LEASES.pop(bid,None)
+
+def _state_key(name):
+    return base64.urlsafe_b64encode(name.encode('utf-8')).decode('ascii').rstrip('=')
+
+def _state_files(folder):
+    out={}
+    for p in folder.iterdir():
+        if not p.is_file() or p.name.startswith('.') or p.name in {'config.json','bot.log','worker.json','firebase-token.json'}: continue
+        if p.name in STATE_FIXED_FILES or (p.suffix.lower()=='.txt' and any(x in p.name for x in ('memoria','importante','avisos','identidade','regras'))):
+            try:
+                if p.stat().st_size <= 8*1024*1024: out[p.name]=p
+            except OSError: pass
+    return out
+
+def _snapshot_bytes(path):
+    if path.name.endswith('.sqlite3') and path.exists():
+        tmp=path.with_name(path.name+'.sync.tmp')
+        try:
+            src=sqlite3.connect(str(path),timeout=10); dst=sqlite3.connect(str(tmp),timeout=10)
+            try: src.backup(dst)
+            finally: dst.close(); src.close()
+            return tmp.read_bytes()
+        finally:
+            try: tmp.unlink()
+            except OSError: pass
+    return path.read_bytes()
+
+def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
+    bid=sid(bot_id); tok=tok or CURRENT_FIREBASE_TOKEN; device_id=device_id or CURRENT_DEVICE_ID
+    lease=ACTIVE_LEASES.get(bid)
+    if not tok or not device_id or not lease: return
+    owner=_req_json('GET',_lease_url(bid),tok).json()
+    if not isinstance(owner,dict) or owner.get('owner') != device_id or int(owner.get('fence') or 0) != int(lease['fence']):
+        ACTIVE_LEASES.pop(bid,None); raise RuntimeError('Lease perdido; estado compartilhado protegido.')
+    folder=ROOT/'bots'/bid; folder.mkdir(parents=True,exist_ok=True); url=_state_url(bid)
+    r=_req_json('GET',url,tok); remote=r.json() if r.text else {}
+    if not isinstance(remote,dict): remote={}
+    if mode == 'pull' and remote:
+        for rec in remote.values():
+            if not isinstance(rec,dict): continue
+            name=str(rec.get('name') or '')
+            if name not in STATE_FIXED_FILES and not (name.endswith('.txt') and any(x in name for x in ('memoria','importante','avisos','identidade','regras'))): continue
+            try:
+                raw=base64.b64decode(rec.get('data',''),validate=True)
+                if len(raw)>8*1024*1024: continue
+                dest=folder/name; tmp=dest.with_name(dest.name+'.sync.tmp'); tmp.write_bytes(raw); tmp.replace(dest)
+            except Exception as e: print('[BotHub] estado remoto ignorado:',name,str(e)[:100],flush=True)
+    changed=False
+    for name,path in _state_files(folder).items():
+        try:
+            raw=_snapshot_bytes(path); digest=hashlib.sha256(raw).hexdigest(); key=_state_key(name)
+            if isinstance(remote.get(key),dict) and remote[key].get('sha256') == digest: continue
+            if len(raw)>8*1024*1024: continue
+            rec={'name':name,'sha256':digest,'data':base64.b64encode(raw).decode('ascii'),'updatedAt':int(time.time()*1000),'writer':device_id,'fence':int(lease['fence'])}
+            _req_json('PUT',url+'/'+key+'.json',tok,rec); changed=True
+        except Exception as e: print('[BotHub] sync de memória falhou:',name,str(e)[:120],flush=True)
+    if changed: print('[BotHub] memórias/estado sincronizados:',bid,flush=True)
+
+
 def start(k,b):
     folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main.py"
+    # Restore Firebase memory before main.py opens local databases.
+    sync_bot_state(k, 'pull')
     if not script.exists():
         url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py")
         r=S.get(url,timeout=30);r.raise_for_status()
@@ -842,9 +949,10 @@ def acquire_worker_lock():
     return handle
 
 def main():
-    global CURRENT_CFG
+    global CURRENT_CFG, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN, LEASE_MISSES
     cfg=setup()
     CURRENT_CFG=cfg
+    CURRENT_DEVICE_ID=cfg['device_id']
     v=ROOT/"venv";vp=v/("Scripts/python.exe" if os.name=="nt" else "bin/python")
     if not vp.exists():
         subprocess.check_call([sys.executable,"-m","venv",str(v)])
@@ -865,7 +973,7 @@ def main():
     while True:
         try:
             t=token(cfg);did=urllib.parse.quote(cfg["device_id"],safe="")
-            LAST_TOKEN=t;LAST_DID=did
+            LAST_TOKEN=t;LAST_DID=did;CURRENT_FIREBASE_TOKEN=t
             fb("PUT","workers/"+did,t,stats(cfg))
             queue=fb("GET","workerTasks/"+did,t) or {}
             LAST_QUEUE=queue if isinstance(queue,dict) else {}
@@ -890,27 +998,49 @@ def main():
                     continue
                 token_owner[secret]=k
                 desired[k]=b
+            leased={}
+            for k,bot_cfg in desired.items():
+                try:
+                    if claim_bot_lease(k,cfg['device_id'],t):
+                        leased[k]=bot_cfg
+                    else:
+                        print("[BotHub] bot pertence a outro worker; aguardando:",k,flush=True)
+                except Exception as lease_error:
+                    print("[BotHub] lease indisponível para",k,str(lease_error)[:140],flush=True)
             for k in list(PROCS):
-                if k not in desired or k in duplicate_ids:
+                if k not in leased or k in duplicate_ids:
+                    try: sync_bot_state(k,'push',t,cfg['device_id'])
+                    except Exception: pass
                     stop(k)
-                    print("[BotHub] parado para evitar instância duplicada:",k,flush=True)
-            for k,b in desired.items():
-                if k not in PROCS or PROCS[k].poll() is not None:
-                    auto_start=b.get("autoStart",True) is not False
-                    start_requested=float(b.get("startRequestedAt") or 0)
-                    if not auto_start and start_requested <= WORKER_STARTED*1000:
-                        continue
-                    try:start(k,b)
-                    except Exception as e:print("[BotHub] falha no bot",k,str(e)[:220],flush=True)
+                    release_bot_lease(k,cfg['device_id'],t)
+                    if k not in leased:
+                        shutil.rmtree(ROOT/'bots'/sid(k),ignore_errors=True)
+                    print("[BotHub] bot parado/transferido:",k,flush=True)
+            for k,bot_cfg in leased.items():
+                try:
+                    sync_bot_state(k,'push',t,cfg['device_id'])
+                    if k not in PROCS or PROCS[k].poll() is not None:
+                        auto_start=bot_cfg.get("autoStart",True) is not False
+                        start_requested=float(bot_cfg.get("startRequestedAt") or 0)
+                        if not auto_start and start_requested <= WORKER_STARTED*1000: continue
+                        start(k,bot_cfg)
+                except Exception as e: print("[BotHub] falha no bot",k,str(e)[:220],flush=True)
             try:
                 if process_cluster_update(t):
                     break
             except Exception as e: print("[BotHub] falha ao atualizar arquivos de cluster:",str(e)[:220],flush=True)
             try: process_release_updates(t,queue)
             except Exception as e: print("[BotHub] falha ao verificar atualização:",str(e)[:220],flush=True)
-        except KeyboardInterrupt:break
-        except Exception as e:print("[BotHub] erro Firebase/worker:",str(e)[:300],flush=True)
-        time.sleep(max(10,int(os.getenv("BOTHUB_POLL_SECONDS","15"))))
+        except KeyboardInterrupt: break
+        except Exception as e:
+            LEASE_MISSES += 1
+            print('[BotHub] erro Firebase/worker:',str(e)[:300],flush=True)
+            if LEASE_MISSES >= 3:
+                for active_id in list(PROCS): stop(active_id)
+                ACTIVE_LEASES.clear()
+        else:
+            LEASE_MISSES = 0
+        time.sleep(max(10,int(os.getenv('BOTHUB_POLL_SECONDS','15'))))
     cleanup_children()
 
 if __name__=="__main__":
