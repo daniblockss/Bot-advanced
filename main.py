@@ -9624,6 +9624,15 @@ async def on_message(message):
     ):
         deve_responder = True
 
+    # Se o usuário mencionar explicitamente outro bot, não "roubar" a conversa
+    # só porque esta instância está configurada em modo livre.
+    mencionou_outros_bots = any(
+        getattr(mencionado, "bot", False) and (not bot.user or mencionado.id != bot.user.id)
+        for mencionado in message.mentions
+    )
+    if mencionou_outros_bots and bot.user not in message.mentions and not chamou_por_nome:
+        deve_responder = False
+
     anexos_audio = [
         attachment
         for attachment in message.attachments
