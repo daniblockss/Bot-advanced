@@ -8922,27 +8922,39 @@ def criar_executor_ferramentas_ahm7(message):
                         resultados.append(f"Arquivo enviado ao canal: {nome}")
                 if arquivos:
                     if tool_name == "pixelster":
-                        guild = getattr(message, "guild", None)
-                        settings = monitoring_settings(guild.id) if guild else {}
-                        canal_logs_id = settings.get("channel_id")
-                        destino = bot.get_channel(canal_logs_id) if canal_logs_id else None
-                        if destino is None and canal_logs_id and guild:
-                            try:
-                                destino = await guild.fetch_channel(canal_logs_id)
-                            except (discord.HTTPException, discord.NotFound, discord.Forbidden):
-                                destino = None
-                        if destino is None or not isinstance(destino, discord.TextChannel):
-                            resultados.append(
-                                "A imagem foi gerada, mas não foi publicada: configure um canal "
-                                "de logs válido no painel de monitoramento."
-                            )
-                            return
-                        await destino.send(
-                            content=f"🖼️ Imagem gerada a pedido de {message.author.mention}.",
+                        # A imagem deve ser publicada no canal do pedido, nunca no canal de logs.
+                        destino_imagem = message.channel
+                        await destino_imagem.send(
+                            content=f"🖼️ Imagem gerada para {message.author.mention}.",
                             files=arquivos,
                             allowed_mentions=discord.AllowedMentions.none(),
                         )
-                        resultados.append("Imagem publicada no canal de logs configurado.")
+                        resultados.append(
+                            f"Imagem enviada em <#{destino_imagem.id}>."
+                        )
+
+                        # O canal de logs recebe somente um aviso textual, sem anexar a imagem.
+                        guild = getattr(message, "guild", None)
+                        settings = monitoring_settings(guild.id) if guild else {}
+                        canal_logs_id = settings.get("channel_id")
+                        destino_logs = bot.get_channel(canal_logs_id) if canal_logs_id else None
+                        if destino_logs is None and canal_logs_id and guild:
+                            try:
+                                destino_logs = await guild.fetch_channel(canal_logs_id)
+                            except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+                                destino_logs = None
+                        if isinstance(destino_logs, discord.TextChannel):
+                            try:
+                                await destino_logs.send(
+                                    f"🧾 A imagem solicitada por {message.author.mention} "
+                                    f"foi enviada em <#{destino_imagem.id}>.",
+                                    allowed_mentions=discord.AllowedMentions.none(),
+                                )
+                            except (discord.HTTPException, discord.Forbidden):
+                                log_console(
+                                    "AVISO: imagem enviada, mas não foi possível registrar "
+                                    "o aviso textual no canal de logs."
+                                )
                     else:
                         await message.channel.send(
                             content=content,
