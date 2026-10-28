@@ -18,7 +18,7 @@
 <h2>Como adicionar um servidor ao cluster</h2>
 <p class="hint">Baixe apenas um arquivo Python no servidor novo. O instalador cria o ambiente virtual se faltar, prepara o pip, instala as dependências, baixa o worker oficial e inicia tudo automaticamente. Requer Python 3.10+ e internet.</p>
 <pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#080d19;padding:12px;border-radius:10px;color:#dbeafe">mkdir -p "teste 2" && cd "teste 2"
-curl -L https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/add_cluster_server.py -o add_cluster_server.py
+curl -L https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/add_cluster_server.py -o add_cluster_server.py
 python3 add_cluster_server.py</pre>
 <p class="hint">Execute esses dois comandos no terminal da máquina que você quer adicionar ao cluster. Na primeira execução, informe um ID único para esse servidor e as credenciais Firebase do worker. O instalador baixa <code>bothub_firebase_worker.py</code> por conta própria; você não precisa baixá-lo manualmente.</p>
 <div class="row"><div><strong>1. Se o servidor não tiver Python ou venv</strong><div class="hint">O instalador precisa de Python 3.10+ para começar. Em Debian/Ubuntu, se o próprio módulo venv estiver ausente, ele mostrará o comando para instalar <code>python3-venv</code> e <code>python3-pip</code>. Depois, execute o instalador novamente.</div></div></div>
