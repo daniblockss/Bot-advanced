@@ -1,54 +1,67 @@
-# BotHub — configuração inicial
+# BotHub privado — API central + workers
+
+Este sistema é destinado ao administrador do serviço. Não existe painel público para clientes. O administrador cadastra os bots e seus tokens pela API protegida; os workers recebem apenas os bots que lhes foram atribuídos.
 
 ## Arquivos
-- `bothub_node.py`: arquivo único que você baixa e executa em cada tablet/servidor. Cria o venv, instala dependências, salva configuração e inicia o agente.
-- `bothub_api.py`: API central que recebe heartbeats, mede capacidade e envia DM no Discord em mudanças de estado.
-- `requirements-bothub.txt`: dependências da API central.
+- `bothub_api.py`: API central privada, banco SQLite, autenticação, cadastro/ativação/exclusão de bots, alocação por capacidade e fila.
+- `bothub_node.py`: instalador de arquivo único para cada tablet/servidor; instala dependências, envia heartbeat, consulta tarefas e inicia/reinicia bots.
+- `requirements-bothub.txt`: dependências da API.
 
-## 1. Publique a API central
-A API precisa rodar em um servidor sempre ligado e ser publicada por HTTPS. Em um servidor Linux com Python 3.11+:
+## Segurança obrigatória
+- Nunca salve tokens reais no repositório GitHub.
+- Use HTTPS público e tokens longos e diferentes para administrador e cada worker.
+- O banco SQLite contém tokens dos bots em texto claro; mantenha o arquivo e o volume do servidor protegidos e com backup seguro.
+- A API deve ser acessível apenas por HTTPS na internet. O exemplo de servidor abaixo escuta em localhost para ficar atrás de um proxy TLS.
+- Defina `BOTHUB_WORKERS_JSON` com todos os IDs de worker e tokens correspondentes antes de iniciar. O ID precisa ser idêntico ao digitado no instalador.
+- Defina `BOTHUB_ADMIN_TOKEN` com um segredo longo aleatório. Não o coloque no navegador nem no código do repositório.
+- Para DM, configure `BOTHUB_DISCORD_BOT_TOKEN` e `BOTHUB_DISCORD_USER_ID`. O bot de alerta precisa ter permissão para abrir DM com sua conta.
 
+## Instalar API central (Linux)
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements-bothub.txt
-```
-
-Configure variáveis de ambiente antes de iniciar. Exemplo de nomes (use valores seus e não publique tokens):
-
-- `BOTHUB_ADMIN_TOKEN`: token aleatório longo para proteger endpoints administrativos.
-- `BOTHUB_WORKERS_JSON`: JSON com IDs e tokens individuais dos workers, por exemplo `{"tablet-01":"TOKEN_ALEATORIO_LONGO" }`.
-- `BOTHUB_DISCORD_BOT_TOKEN`: token do bot Discord criado no Developer Portal.
-- `BOTHUB_DISCORD_USER_ID`: seu ID numérico de usuário Discord.
-- `BOTHUB_MIN_DISK_GB`: espaço mínimo livre (padrão 1 GB).
-- `BOTHUB_MIN_RAM_MB`: RAM mínima livre (padrão 200 MB).
-
-Inicie a API:
-```bash
+export BOTHUB_ADMIN_TOKEN='COLOQUE_UM_SEGREDO_LONGO'
+export BOTHUB_WORKERS_JSON='{"tablet-01":"TOKEN_WORKER_LONGO_ALEATORIO"}'
+export BOTHUB_DISCORD_BOT_TOKEN='TOKEN_DO_BOT_DE_ALERTA'
+export BOTHUB_DISCORD_USER_ID='SEU_ID_DISCORD'
 uvicorn bothub_api:app --host 127.0.0.1 --port 8000
 ```
+Configure Caddy/Nginx ou o proxy da hospedagem para fornecer HTTPS e encaminhar para localhost:8000. Use armazenamento persistente para `bothub.sqlite3`.
 
-Coloque um proxy HTTPS (por exemplo, Caddy ou Nginx) na frente dela. Não exponha a porta 8000 diretamente à internet sem HTTPS. A DM só funciona se o usuário permitir mensagens do bot/servidor; o bot precisa conseguir abrir uma DM.
+## Cadastrar bots (somente administrador)
+Envie `POST /api/admin/bots` com cabeçalho `Authorization: Bearer SEU_BOTHUB_ADMIN_TOKEN` e JSON:
+```json
+{"bot_name":"Bot do cliente","discord_token":"TOKEN_DO_BOT","config":{}}
+```
+A resposta inclui `bot_id`. O token não é devolvido nas rotas administrativas de listagem. A API não valida automaticamente se o token do bot é válido; valide-o antes do cadastro. Nunca passe tokens de bots para clientes.
 
-## 2. Configure cada tablet/servidor
-Baixe o arquivo único do GitHub e execute:
+Listar bots: `GET /api/admin/bots`
+Status da capacidade/fila: `GET /api/admin/status`
+Desativar bot: `PATCH /api/admin/bots/ID` com `{"enabled":false}`
+Reativar: `PATCH /api/admin/bots/ID` com `{"enabled":true}`
+Excluir: `DELETE /api/admin/bots/ID`
 
+Todos esses endpoints exigem o token administrativo. A documentação interativa da API em `/docs` não ignora autenticação.
+
+## Configurar cada tablet/servidor
+Baixe o instalador:
 ```bash
+python3 -c "import urllib.request; urllib.request.urlretrieve('https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bothub_node.py','bothub_node.py')"
 python3 bothub_node.py
 ```
+Informe a URL HTTPS da API, o ID de worker cadastrado em `BOTHUB_WORKERS_JSON` e seu token. O worker instala `requests` e `psutil`, reporta recursos e consulta a API. Bots atribuídos são baixados de `BOTHUB_BOT_SOURCE_URL` (padrão: main8.py), recebem configuração local e são iniciados usando o ambiente Python compartilhado. Logs ficam em `~/.bothub/bots/ID/bot.log`.
 
-URL raw do instalador:
-https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bothub_node.py
+Para Android/Termux, instale Termux:Boot e Termux:API, abra o Termux:Boot pelo menos uma vez e execute o instalador de novo depois que `~/.termux/boot` existir. Android pode encerrar processos em segundo plano; configure a bateria sem restrições. O wake lock ajuda a manter o dispositivo acordado, mas não garante uptime se o sistema encerrar o app.
 
-O instalador pergunta a URL HTTPS da API, o ID do dispositivo e o token individual correspondente ao ID configurado em `BOTHUB_WORKERS_JSON`. Ele cria `~/.bothub/venv`, instala os requisitos e inicia o heartbeat. Em Termux, para iniciar após reinicialização, instale Termux:Boot; o instalador configura o script automaticamente apenas se `~/.termux/boot` já existir.
+## Fila e capacidade
+A API atribui até `BOTHUB_MAX_BOTS_PER_WORKER` bots por worker elegível (padrão 3). Um worker é elegível se estiver online e tiver pelo menos `BOTHUB_MIN_DISK_GB` GB livres e `BOTHUB_MIN_RAM_MB` MB livres. Bots sem slot ficam aguardando e são atribuídos automaticamente quando houver espaço. Valores padrão: 1 GB e 200 MB. Ajuste de acordo com o peso real de seus bots.
 
-## 3. Estado e alertas
-- O worker envia heartbeat a cada 30 segundos.
-- Um tablet é considerado offline depois de 100 segundos sem heartbeat.
-- A capacidade depende do espaço em disco e da RAM livre.
-- O endpoint administrativo `POST /api/admin/queue` atualiza a quantidade de bots aguardando. Envie `{"waiting_bots": 3}` com cabeçalho `Authorization: Bearer SEU_BOTHUB_ADMIN_TOKEN`.
-- `GET /api/admin/status` mostra os tablets e a capacidade, protegido pelo mesmo token.
-- Alertas de capacidade esgotada/restaurada são enviados por DM quando há bots na fila e a disponibilidade muda.
+Alertas por DM ocorrem em transições de capacidade/fila, não a cada heartbeat. Antes de uso real, teste com um bot de teste e confirme logs, início/parada, reassociação de worker, persistência do banco e envio de DM. O supervisor reinicia bots que saem inesperadamente ao sincronizar tarefas.
 
-## Limitações importantes desta primeira versão
-Esta versão configura e monitora os workers e implementa a lógica de alertas. Ela **ainda não distribui nem inicia automaticamente os processos dos bots Discord** e não integra a fila ao painel/site existente. A quantidade da fila precisa ser atualizada pelo backend/painel usando o endpoint administrativo. Não cole tokens no código nem em commits públicos.
+## Limitações conhecidas
+- Esta é uma primeira integração funcional, ainda precisa ser testada no seu ambiente antes de produção.
+- A atribuição considera limite de bots, RAM e disco, mas não prevê consumo futuro exato por bot.
+- Se um worker morrer abruptamente, o bot pode demorar até a próxima sincronização para ser reatribuído.
+- A configuração de inicialização automática é best-effort; Android/Termux não garante execução contínua.
+- Proteja o endpoint e o banco: a API entrega o token de cada bot apenas ao worker autorizado que o executa.
