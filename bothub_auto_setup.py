@@ -36,8 +36,14 @@ def requisicao(url, metodo="GET", dados=None, token=None):
 
 
 def mensagem(resultado):
+    """Converte respostas de erro do Firebase em texto sem quebrar."""
     if isinstance(resultado, dict):
-        return resultado.get("error", {}).get("message", str(resultado))
+        erro = resultado.get("error")
+        if isinstance(erro, dict):
+            return str(erro.get("message", resultado))
+        if isinstance(erro, str):
+            return erro
+        return str(resultado)
     return str(resultado)
 
 
