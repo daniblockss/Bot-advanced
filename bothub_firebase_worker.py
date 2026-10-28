@@ -348,6 +348,27 @@ def process_release_updates(tok, queue):
                 if bid not in PROCS or PROCS[bid].poll() is not None:start(bid,bot_cfg)
             except Exception:pass
 
+def acquire_worker_lock():
+    """Impede dois controladores de iniciarem os mesmos bots nesta instalação."""
+    lock_path = ROOT / ".bothub_worker.lock"
+    handle = open(lock_path, "a+", encoding="utf-8")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            if lock_path.stat().st_size == 0:
+                handle.write("0")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, BlockingIOError):
+        handle.close()
+        return None
+    return handle
+
 def main():
     global CURRENT_CFG
     cfg=setup()
@@ -358,6 +379,10 @@ def main():
         subprocess.check_call([str(vp),"-m","pip","install","--upgrade","pip"])
         subprocess.check_call([str(vp),"-m","pip","install","requests","discord.py","aiohttp"])
         os.execv(str(vp),[str(vp),str(Path(__file__).resolve())])
+    lock_handle = acquire_worker_lock()
+    if lock_handle is None:
+        print("[BotHub] Já existe um controlador rodando nesta pasta. Este processo será encerrado para evitar bots duplicados.", flush=True)
+        return
     print("[BotHub] Worker iniciado sem pedir ID, e-mail ou senha.",flush=True)
     while True:
         try:
