@@ -404,8 +404,10 @@ venvpy=root/"venv"/("Scripts/python.exe" if os.name=="nt" else "bin/python")
 if not venvpy.exists(): venvpy=Path(py)
 state.write_text(json.dumps({"updateId":data.get("updateId"),"status":"applied","appliedAt":int(time.time()*1000)}),encoding="utf-8")
 pending.unlink(missing_ok=True)
-worker=root/"bothub_firebase_worker.py"
-os.execv(str(venvpy),[str(venvpy),str(worker)])
+installer=root/"add_cluster_server.py"
+if not installer.exists():
+    raise RuntimeError("Instalador atualizado não foi encontrado; não é possível reiniciar a instalação.")
+os.execv(str(venvpy),[str(venvpy),str(installer)])
 """
     helper_path=ROOT/".bothub_cluster_updater.py"
     helper_path.write_text(helper,encoding="utf-8")
