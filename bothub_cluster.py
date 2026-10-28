@@ -310,6 +310,21 @@ class Handler(BaseHTTPRequestHandler):
         return self.rfile.read(size)
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/admin/ui":
+            if self.client_address[0] not in ("127.0.0.1", "::1"):
+                return self.send_json(403, {"error":"private admin only"})
+            panel = Path(__file__).with_name("bothub_panel.html")
+            try:
+                data = panel.read_bytes()
+            except OSError:
+                return self.send_json(404, {"error":"bothub_panel.html not found"})
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if path == "/health":
             return self.send_json(200, {"ok":True,"node_id":NODE_ID})
         if path == "/v1/status":
