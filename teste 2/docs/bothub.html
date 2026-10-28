@@ -32,7 +32,7 @@ import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'htt
 import {getDatabase,ref,onValue,get,set,update,remove} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 const firebaseConfig={apiKey:'AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE',authDomain:'bothub-bca02.firebaseapp.com',databaseURL:'https://bothub-bca02-default-rtdb.firebaseio.com',projectId:'bothub-bca02',storageBucket:'bothub-bca02.firebasestorage.app',messagingSenderId:'890310788815',appId:'1:890310788815:web:a08d772d6f1afffb3e99ba',measurementId:'G-ZHEP6R0XVW'};
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getDatabase(app);
-const testRef=path=>ref(db,'teste2/'+path);
+const testRef=path=>ref(db,path);
 const $=id=>document.getElementById(id);let workerData={},botData={},stopListeners=[],busy=false,lastAssignment='';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const bytes=n=>{let v=Number(n)||0,u=['B','KB','MB','GB','TB'],i=0;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i?1:0)+' '+u[i]};
