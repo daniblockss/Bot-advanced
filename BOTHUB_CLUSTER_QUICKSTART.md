@@ -8,9 +8,11 @@ Este agente é uma implementação inicial de cluster sem líder fixo. Cada nó 
 
 ## Instalação em cada nó
 
+**Não rode este agente junto com o antigo `bothub_node.py` para os mesmos bots**, pois isso pode iniciar processos duplicados. Primeiro teste com bots descartáveis e pare o worker antigo para os bots que migrar.
+
 1. Instale Python 3.9+ e as dependências do bot que seu projeto exige. Para medir RAM, instale `psutil` (`python -m pip install psutil`).
 2. Baixe `bothub_cluster.py` do repositório em cada tablet/servidor.
-3. Gere um segredo forte e um token administrativo, guarde-os fora do GitHub. Use os mesmos valores em todos os nós autorizados; dê a cada nó um `BOTHUB_NODE_ID` único.
+3. Gere um segredo forte e um token administrativo, guarde-os fora do GitHub. Gere valores no terminal com `python3 -c 'import secrets; print(secrets.token_hex(32))'` (segredo do cluster) e `python3 -c 'import secrets; print(secrets.token_hex(24))'` (token admin). Copie-os manualmente para os nós autorizados; não os envie para o chat nem faça commit. Use os mesmos valores em todos os nós autorizados; dê a cada nó um `BOTHUB_NODE_ID` único.
 4. Configure a lista estática de pares, com os endereços LAN de todos os outros nós. Exemplo para dois nós:
    - Nó A: `BOTHUB_CLUSTER_PEERS_JSON='{"tablet-b":"http://192.168.1.22:47800}'`
    - Nó B: `BOTHUB_CLUSTER_PEERS_JSON='{"tablet-a":"http://192.168.1.21:47800}'`
@@ -36,3 +38,23 @@ Para administrar, abra outro terminal com as mesmas variáveis e execute `python
 - A implementação usa leases simples com quórum estático e relógio do sistema. Ela não substitui Raft/etcd/Consul nem foi auditada para partições adversariais; use somente em laboratório até os testes de falha serem concluídos.
 - O código de bots precisa ler `config.json` no diretório de trabalho. Verifique isso no `main8.py` antes de confiar que um bot vai iniciar corretamente.
 - Desativar um bot precisa se propagar; confirme a replicação e o encerramento no nó executor nos testes.
+
+
+## Comandos rápidos de instalação
+
+Em cada Linux/Termux, crie uma pasta, baixe o agente e instale as dependências:
+
+```bash
+mkdir -p ~/bothub-cluster && cd ~/bothub-cluster
+curl -fsSL https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bothub_cluster.py -o bothub_cluster.py
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install psutil discord.py aiohttp Pillow
+```
+
+No Termux, se `venv` não funcionar, use o Python do Termux e instale os pacotes com `python -m pip install psutil discord.py aiohttp Pillow`.
+
+Antes de iniciar, descubra o IP LAN de cada dispositivo. No Linux/Ubuntu: `hostname -I`. No Termux: `ip -4 addr show wlan0`. Use IPs fixos/reservas DHCP e confirme que ambos conseguem se alcançar na porta TCP 47800.
+
+**Segurança:** o protocolo atual autentica as mensagens, mas não cifra o tráfego. Use somente numa LAN privada confiável para teste; não use Wi-Fi público e não exponha a porta 47800 à internet. Para uso fora da LAN, primeiro configure VPN privada e transporte cifrado.
