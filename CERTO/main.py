@@ -12560,6 +12560,35 @@ def registrar_raiz(app):
             {"role": "user", "content": json.dumps({"pedido": pedido,
                 "estrutura": [{k: v for k, v in c.items() if k != "permissoes"} for c in estado],
                 "amostras": fontes}, ensure_ascii=False)}]
+        def extrair_json_plano(texto):
+            texto = str(texto or "").strip().lstrip("\ufeff")
+            # Aceita JSON cercado por markdown ou precedido por uma frase do modelo.
+            if texto.startswith("\x60\x60\x60"):
+                linhas = texto.splitlines()
+                if linhas:
+                    linhas = linhas[1:]
+                if linhas and linhas[-1].strip().startswith("\x60\x60\x60"):
+                    linhas = linhas[:-1]
+                texto = "\\n".join(linhas).strip()
+            decoder = json.JSONDecoder()
+            try:
+                valor, _ = decoder.raw_decode(texto)
+                if isinstance(valor, dict):
+                    return valor
+            except json.JSONDecodeError:
+                pass
+            # Procura um objeto JSON completo sem confundir chaves dentro de strings.
+            for indice, caractere in enumerate(texto):
+                if caractere != "{":
+                    continue
+                try:
+                    valor, _ = decoder.raw_decode(texto[indice:])
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(valor, dict):
+                    return valor
+            raise ValueError("A resposta da IA não contém um objeto JSON completo.")
+
         falhas = []
         for provedor in app["obter_ordem_provedores"]():
             for chave in app["obter_chaves_provedor"](provedor):
@@ -12568,7 +12597,7 @@ def registrar_raiz(app):
                     resposta = resposta.strip()
                     if resposta.startswith("```"):
                         resposta = resposta.split("\n", 1)[1].rsplit("```", 1)[0]
-                    plano = raiz_validar_plano(json.loads(resposta), estado)
+                    plano = raiz_validar_plano(extrair_json_plano(resposta), estado)
                     conclusoes = plano.get("conclusoes")
                     if not isinstance(conclusoes, dict) or any(
                         not isinstance(conclusoes.get(c["id"]), str) or not conclusoes[c["id"]].strip()
@@ -12582,8 +12611,14 @@ def registrar_raiz(app):
                     await ctx.send("Revise a proposta acima. Nenhuma alteração foi aplicada.", view=view)
                     return
                 except (app["FalhaProvedor"], ValueError, TypeError, KeyError) as error:
-                    falhas.append(type(error).__name__)
-        await ctx.send("Não consegui obter uma proposta válida. Nada foi alterado. Tente um pedido menor. " + ", ".join(falhas[-3:]))
+                    detalhe = re.sub(r"(?i)(bearer\s+|(?:sk|gsk|AIza)[-_])[A-Za-z0-9._-]{8,}", "[credencial ocultada]", str(error))
+                    falhas.append(f"{provedor}: {type(error).__name__}" + (f" ({detalhe[:100]})" if detalhe else ""))
+        resumo_falhas = "; ".join(falhas[-3:])
+        await ctx.send(
+            "Não consegui obter uma proposta válida. Nenhuma alteração foi aplicada. "
+            "Tente novamente ou simplifique o pedido. "
+            + (resumo_falhas[:700] if resumo_falhas else "Nenhum provedor disponível.")
+        )
 
     class Revisao(discord.ui.Modal, title="O que precisa mudar na proposta?"):
         motivo = discord.ui.TextInput(label="Explique o que ficou errado e o que deseja", style=discord.TextStyle.paragraph, max_length=1500)
