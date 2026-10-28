@@ -146,17 +146,19 @@ def main():
         CFG["firebase_email"] = email
         CFG["firebase_password"] = password
     if not CFG.get("secret"):
-        print("\n=== Segredo do cluster ===")
-        secret = getpass("Segredo compartilhado (mínimo 32 caracteres; igual em todos os nós): ").strip()
-        if len(secret) < 32:
-            print("[BotHub] Segredo curto; use pelo menos 32 caracteres.")
-            return 2
-        CFG["secret"] = secret
+        # Gera um segredo forte automaticamente para não travar a inicialização.
+        CFG["secret"] = secrets.token_urlsafe(48)
+        print("\n[BotHub] Segredo do cluster gerado automaticamente:")
+        print(CFG["secret"])
+        print("[BotHub] Guarde esse segredo; os outros nós precisam usar o mesmo.")
     if not CFG.get("admin_token"):
         CFG["admin_token"] = secrets.token_urlsafe(32)
         print("[BotHub] Token administrativo local (guarde-o):")
         print(CFG["admin_token"])
     CFG.setdefault("peers", {})
+    # Salva a configuração antes das chamadas de rede para não perder o segredo
+    # gerado caso o Firebase esteja temporariamente indisponível.
+    write_config(CFG)
     try:
         auth(force=True)
     except Exception as e:
@@ -234,8 +236,8 @@ def main():
     START.write_text(START_TEMPLATE, encoding="utf-8")
     try: START.chmod(0o700)
     except OSError: pass
-    print("\n[BotHub] Arquivos preparados em:", ROOT)
-    print("[BotHub] O instalador vai se apagar e executar start.py.")
+    print("\n[BotHub] Arquivos preparados em:", ROOT, flush=True)
+    print("[BotHub] O instalador será apagado e start.py iniciará agora automaticamente.", flush=True)
     installer = Path(__file__).resolve()
     try:
         installer.unlink()
