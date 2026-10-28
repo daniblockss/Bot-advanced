@@ -483,16 +483,64 @@ os.execv(str(venvpy),[str(venvpy),str(installer)])
         start_new_session=(os.name!="nt"))
     return True
 
+def _pid_is_this_worker(pid):
+    """Evita matar um processo não relacionado caso o PID antigo tenha sido reutilizado."""
+    if pid == os.getpid():
+        return True
+    if os.name != "nt":
+        try:
+            raw = Path("/proc") / str(pid) / "cmdline"
+            command = raw.read_bytes().replace(b"\\0", b" ").decode("utf-8", errors="ignore")
+            return "bothub_firebase_worker.py" in command
+        except Exception:
+            return False
+    try:
+        import psutil
+        process = psutil.Process(pid)
+        return any("bothub_firebase_worker.py" in str(arg).lower()
+                   for arg in process.cmdline())
+    except Exception:
+        return False
+
 def acquire_worker_lock():
-    """Impede dois controladores de iniciarem os mesmos bots nesta instalação."""
+    """O controlador novo encerra a instância antiga desta instalação e assume o controle."""
     lock_path = ROOT / ".bothub_worker.lock"
+    # O arquivo guarda o PID da instância que atualmente possui o bloqueio.
+    old_pid = None
+    try:
+        raw = lock_path.read_text(encoding="utf-8").strip()
+        if raw.isdigit():
+            old_pid = int(raw)
+    except Exception:
+        pass
+
+    if old_pid and old_pid != os.getpid() and _pid_is_this_worker(old_pid):
+        print("[BotHub] Outro controlador desta pasta foi detectado (PID", old_pid,
+              "). Encerrando-o para iniciar esta instância.", flush=True)
+        try:
+            os.kill(old_pid, signal.SIGTERM)
+        except OSError:
+            pass
+        deadline = time.time() + 12
+        while time.time() < deadline:
+            try:
+                os.kill(old_pid, 0)
+            except OSError:
+                break
+            time.sleep(0.25)
+        else:
+            try:
+                os.kill(old_pid, signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM)
+            except OSError:
+                pass
+
     handle = open(lock_path, "a+", encoding="utf-8")
     try:
         if os.name == "nt":
             import msvcrt
             handle.seek(0)
             if lock_path.stat().st_size == 0:
-                handle.write("0")
+                handle.write(" ")
                 handle.flush()
             handle.seek(0)
             msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
@@ -501,7 +549,31 @@ def acquire_worker_lock():
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except (OSError, BlockingIOError):
         handle.close()
-        return None
+        # Se o processo antigo ainda está encerrando, tenta assumir o bloqueio por alguns segundos.
+        deadline = time.time() + 8
+        while time.time() < deadline:
+            time.sleep(0.25)
+            handle = open(lock_path, "a+", encoding="utf-8")
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except (OSError, BlockingIOError):
+                handle.close()
+                handle = None
+        if handle is None:
+            print("[BotHub] Não consegui assumir o controle: outro controlador ainda mantém o bloqueio.", flush=True)
+            return None
+
+    handle.seek(0)
+    handle.truncate()
+    handle.write(str(os.getpid()))
+    handle.flush()
     return handle
 
 def main():
