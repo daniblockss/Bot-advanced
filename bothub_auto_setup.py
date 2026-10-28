@@ -5,6 +5,8 @@
 
 import getpass
 import json
+import os
+from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -90,6 +92,33 @@ def main():
 
     token = dados["idToken"]
     uid = dados.get("localId")
+    # Salva as credenciais localmente para o start.py, somente após login confirmado.
+    # Não envia o arquivo para o GitHub e restringe permissões no Linux/Termux.
+    config_path = Path(__file__).resolve().parent / "cluster_config.json"
+    try:
+        config = {}
+        if config_path.exists():
+            try:
+                config = json.loads(config_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                config = {}
+        config["firebase_email"] = email
+        config["firebase_password"] = senha_original
+        config["firebase_uid"] = uid
+        tmp_path = config_path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+        try:
+            tmp_path.chmod(0o600)
+        except OSError:
+            pass
+        tmp_path.replace(config_path)
+        try:
+            config_path.chmod(0o600)
+        except OSError:
+            pass
+        print("Credenciais salvas localmente em cluster_config.json (não compartilhe esse arquivo).")
+    except Exception as exc:
+        print("AVISO: login correto, mas não consegui salvar as credenciais:", str(exc))
     print("Login realizado.")
     print("UID da conta:", uid)
 
