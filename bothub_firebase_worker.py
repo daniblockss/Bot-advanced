@@ -498,6 +498,7 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
         for rec in remote.values():
             if not isinstance(rec,dict): continue
             name=str(rec.get('name') or '')
+            if not name or Path(name).name != name or name.startswith('.') or '..' in name or '/' in name or chr(92) in name: continue
             if name not in STATE_FIXED_FILES and not (name.endswith('.txt') and any(x in name for x in ('memoria','importante','avisos','identidade','regras'))): continue
             try:
                 raw=base64.b64decode(rec.get('data',''),validate=True)
