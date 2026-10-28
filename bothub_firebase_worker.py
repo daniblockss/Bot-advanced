@@ -1009,9 +1009,9 @@ def main():
                     print("[BotHub] lease indisponível para",k,str(lease_error)[:140],flush=True)
             for k in list(PROCS):
                 if k not in leased or k in duplicate_ids:
+                    stop(k)
                     try: sync_bot_state(k,'push',t,cfg['device_id'])
                     except Exception: pass
-                    stop(k)
                     release_bot_lease(k,cfg['device_id'],t)
                     if k not in leased:
                         shutil.rmtree(ROOT/'bots'/sid(k),ignore_errors=True)
