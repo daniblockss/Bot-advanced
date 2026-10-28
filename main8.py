@@ -3969,8 +3969,11 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
         try:
             automaticas = recall_memory(user_id, guild_id, pergunta)
             if automaticas:
-                prompt += "\nMemorias individuais relevantes (fatos são contexto; preferências explícitas " 
-                "devem ser seguidas quando pertinentes):\n" + "\n".join(v for _, v in automaticas) + "\n"
+                prompt += (
+                    "\nMemorias individuais relevantes (fatos são contexto; preferências explícitas "
+                    "devem ser seguidas quando pertinentes):\n"
+                    + "\n".join(v for _, v in automaticas) + "\n"
+                )
         except sqlite3.Error:
             logging.getLogger("breeze.sistema").exception("Falha ao recuperar memoria")
         try:
@@ -3982,7 +3985,7 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
             prompt += (
                 "🧠 **MEMÓRIAS PESSOAIS SALVAS PELO USUÁRIO:**\n"
                 "Use-as somente quando relevantes; não as revele espontaneamente. "
-                "Fatos são contexto; preferências explícitas e pedidos persistentes devem orientar " 
+                "Fatos são contexto; preferências explícitas e pedidos persistentes devem orientar "
                 "as respostas quando forem pertinentes, como instruções de preferência.\n"
             )
             prompt += "\n".join(
