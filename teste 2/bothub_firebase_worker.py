@@ -534,7 +534,7 @@ def start(k,b):
     # Restore Firebase memory before main.py opens local databases.
     sync_bot_state(k, 'pull')
     if not script.exists():
-        url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/main.py")
+        url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/main.py"
         r=S.get(url,timeout=30);r.raise_for_status()
         if len(r.content)<10000:raise RuntimeError("Download de main.py incompleto.")
         script.write_bytes(r.content)
@@ -703,7 +703,7 @@ def process_worker_commands(cfg,tok,did,queue):
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
 def download_latest_main(folder):
-    url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/main.py")
+    url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/main.py"
     response=S.get(url,timeout=45);response.raise_for_status()
     data=response.content
     if len(data)<10000: raise RuntimeError("main.py baixado está incompleto.")
