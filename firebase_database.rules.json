@@ -1,0 +1,34 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "admins": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": false
+      }
+    },
+    "workerUids": {
+      "$deviceId": {
+        ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || data.val() === auth.uid)",
+        ".write": false
+      }
+    },
+    "workers": {
+      "$deviceId": {
+        ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+        ".write": "auth != null && root.child('workerUids').child($deviceId).val() === auth.uid"
+      }
+    },
+    "bots": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+    },
+    "workerTasks": {
+      "$deviceId": {
+        ".read": "auth != null && (root.child('admins').child(auth.uid).val() === true || root.child('workerUids').child($deviceId).val() === auth.uid)",
+        ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
+      }
+    }
+  }
+}
