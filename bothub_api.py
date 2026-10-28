@@ -91,12 +91,19 @@ def snapshot():
                              and int(d.get("ram_free_bytes") or 0) >= MIN_RAM_MB*1024**2)
         d.pop("payload", None)
         nodes.append(d)
-    online_capacity = [n for n in nodes if n["capacity"]]
     active_bots = [dict(b) for b in bots if b["enabled"]]
+    assigned_counts = {}
+    for bot in active_bots:
+        wid = bot["worker_id"]
+        if wid:
+            assigned_counts[wid] = assigned_counts.get(wid, 0) + 1
+    online_capacity = [n for n in nodes if n["capacity"]]
+    available_slots = [n for n in online_capacity if assigned_counts.get(n["device_id"], 0) < MAX_BOTS_PER_WORKER]
     queued = [b for b in active_bots if not b["worker_id"] or not any(n["device_id"] == b["worker_id"] and n["capacity"] for n in nodes)]
     return {"nodes": nodes, "bots": [dict(b) for b in bots],
-            "available_nodes": len(online_capacity), "capacity_available": bool(online_capacity),
-            "active_bots": len(active_bots), "queued_bots": len(queued), "server_time": now}
+            "available_nodes": len(available_slots), "online_capacity_nodes": len(online_capacity),
+            "capacity_available": bool(available_slots), "active_bots": len(active_bots),
+            "queued_bots": len(queued), "server_time": now}
 
 def reconcile_assignments():
     """Assign enabled bots to healthy workers, respecting the configured per-worker slot limit."""
