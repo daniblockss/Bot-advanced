@@ -106,9 +106,10 @@ def node_status():
     disk = shutil.disk_usage(str(ROOT))
     with LOCK:
         running = sum(1 for p in PROCS.values() if p.poll() is None)
+    resources_ok = ram >= MIN_RAM_MB*1024**2 and disk.free >= MIN_DISK_GB*1024**3
     return {"node_id": NODE_ID, "at": int(time.time()), "ram_free": ram,
             "disk_free": disk.free, "cpu": cpu, "running": running,
-            "eligible": ram >= MIN_RAM_MB*1024**2 and disk.free >= MIN_DISK_GB*1024**3 and running < MAX_BOTS}
+            "eligible": resources_ok, "available": resources_ok and running < MAX_BOTS}
 
 def all_statuses():
     out = {NODE_ID: node_status()}
@@ -156,8 +157,10 @@ def gossip():
 def eligible_nodes(statuses):
     return sorted(k for k,v in statuses.items() if v.get("eligible"))
 
-def candidate_for(task_id, statuses):
-    nodes = eligible_nodes(statuses)
+def candidate_for(task_id, statuses, existing_owner=None):
+    if existing_owner in statuses and statuses[existing_owner].get("eligible"):
+        return existing_owner
+    nodes = sorted(k for k,v in statuses.items() if v.get("available", v.get("eligible", False)))
     if not nodes: return None
     return max(nodes, key=lambda n: hashlib.sha256((task_id + "\0" + n).encode()).digest())
 
@@ -172,6 +175,22 @@ def vote(task_id, owner):
           ON CONFLICT(task_id) DO UPDATE SET owner=excluded.owner,until_ts=excluded.until_ts""",
           (task_id,owner,until_ts))
     return {"granted": True, "until": until_ts}
+
+def current_lease_owner(task_id):
+    now = int(time.time())
+    with dbconn() as d:
+        row = d.execute("SELECT owner,until_ts FROM leases WHERE task_id=?", (task_id,)).fetchone()
+    if row and int(row["until_ts"]) > now:
+        return row["owner"]
+    from urllib.parse import quote
+    for pid in sorted(PEERS):
+        try:
+            result = peer_request(pid, "/v1/lease?task_id=" + quote(task_id, safe=""))
+            if result.get("owner") and int(result.get("until_ts", 0)) > now:
+                return str(result["owner"])
+        except Exception:
+            pass
+    return None
 
 def acquire_lease(task_id):
     # Static membership means majority is computed against all configured members.
@@ -247,7 +266,7 @@ def reconcile():
     for t in tasks:
         if not t["enabled"]: continue
         tid = t["task_id"]
-        owner = candidate_for(tid, statuses)
+        owner = candidate_for(tid, statuses, current_lease_owner(tid))
         if owner != NODE_ID: continue
         if not acquire_lease(tid): continue
         desired.add(safe_id(tid))
@@ -291,6 +310,13 @@ class Handler(BaseHTTPRequestHandler):
             raw = b"{}"
             if not authorized_peer(self, raw): return self.send_json(401,{"error":"peer auth denied"})
             return self.send_json(200,{"tasks":task_rows()})
+        if path == "/v1/lease":
+            raw = b"{}"
+            if not authorized_peer(self, raw): return self.send_json(401,{"error":"peer auth denied"})
+            from urllib.parse import parse_qs
+            tid = parse_qs(urlparse(self.path).query).get("task_id", [""])[0]
+            with dbconn() as d: row = d.execute("SELECT owner,until_ts FROM leases WHERE task_id=?", (tid,)).fetchone()
+            return self.send_json(200, dict(row) if row else {})
         if path == "/admin/status":
             if self.client_address[0] not in ("127.0.0.1","::1") or self.headers.get("Authorization") != "Bearer "+ADMIN_TOKEN:
                 return self.send_json(403,{"error":"private admin only"})
