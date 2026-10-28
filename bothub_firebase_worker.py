@@ -612,7 +612,7 @@ def notify_update(bot_id, bot_cfg, update):
 
 def process_release_updates(tok, queue):
     release=fb("GET","botHubUpdates/current",tok)
-    if not isinstance(release,dict) or not release.get("updateId"):return
+    if not isinstance(release,dict) or not release.get("updateId") or release.get("clusterOnly"):return
     for raw_id,bot_cfg in list(queue.items()):
         if not isinstance(bot_cfg,dict) or not bot_cfg.get("enabled",True):continue
         bid=sid(raw_id);folder=ROOT/"bots"/bid
