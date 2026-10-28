@@ -149,12 +149,83 @@ def child_parent_death_signal():
     except Exception:
         pass
 
+def kill_bot_processes_under_root():
+    """Encerra todos os main.py pertencentes às pastas de bots desta instalação, inclusive órfãos."""
+    bots_root = (ROOT / "bots").resolve()
+    current_pid = os.getpid()
+    candidates = []
+    if os.name != "nt" and Path("/proc").is_dir():
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            pid = int(entry.name)
+            if pid == current_pid:
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes()
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
+                for arg in args[1:]:
+                    if not arg.endswith(".py"):
+                        continue
+                    script = Path(arg).resolve()
+                    if script.name == "main.py" and bots_root in script.parents:
+                        candidates.append(pid)
+                        break
+            except (OSError, ValueError, RuntimeError):
+                continue
+    else:
+        try:
+            import psutil
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                pid = proc.info.get("pid")
+                if not pid or pid == current_pid:
+                    continue
+                for arg in (proc.info.get("cmdline") or [])[1:]:
+                    try:
+                        script = Path(arg).resolve()
+                        if script.name == "main.py" and bots_root in script.parents:
+                            candidates.append(pid)
+                            break
+                    except (OSError, ValueError, RuntimeError):
+                        continue
+        except Exception as e:
+            print("[BotHub] Não foi possível localizar todos os main.py órfãos:", str(e)[:160], flush=True)
+    stopped = []
+    for pid in sorted(set(candidates)):
+        try:
+            os.kill(pid, signal.SIGTERM)
+            stopped.append(pid)
+        except OSError:
+            pass
+    deadline = time.time() + 5
+    while stopped and time.time() < deadline:
+        alive = []
+        for pid in stopped:
+            try:
+                os.kill(pid, 0)
+                alive.append(pid)
+            except OSError:
+                pass
+        stopped = alive
+        if stopped:
+            time.sleep(0.2)
+    for pid in stopped:
+        try:
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+        except OSError:
+            pass
+    if candidates:
+        print("[BotHub] Processos main.py encerrados:", ", ".join(map(str, sorted(set(candidates)))), flush=True)
+
 def cleanup_children():
+    # Primeiro encerra os processos que este worker iniciou.
     for key in list(PROCS):
         stop(key)
+    # Depois encontra e encerra processos órfãos que sobreviveram a uma execução anterior.
+    kill_bot_processes_under_root()
 
 def handle_shutdown_signal(signum, frame):
-    print("[BotHub] Controlador sendo desligado; encerrando todos os main.py...", flush=True)
+    print("[BotHub] Controlador sendo desligado; encerrando TODOS os main.py desta instalação...", flush=True)
     cleanup_children()
     raise SystemExit(0)
 
@@ -689,6 +760,8 @@ def main():
     signal.signal(signal.SIGINT, handle_shutdown_signal)
     atexit.register(cleanup_children)
     kill_existing_bothub_bots()
+    kill_bot_processes_under_root()
+    print("[BotHub] Todos os main.py antigos desta instalação foram encerrados; iniciando os bots atribuídos.", flush=True)
     print("[BotHub] Worker iniciado sem pedir ID, e-mail ou senha.",flush=True)
     while True:
         try:
