@@ -12905,7 +12905,7 @@ async def comando_perfil(ctx, *, argumentos=""):
         except Exception as erro:
             resultados.append("⚠️ Falha ao alterar a descrição: " + str(erro)[:180])
 
-    await ctx.reply("\\n".join(resultados) or "⚠️ Nenhuma alteração foi aplicada.", mention_author=False)
+    await ctx.reply("\n".join(resultados) or "⚠️ Nenhuma alteração foi aplicada.", mention_author=False)
 
 if __name__ == "__main__":
     if not solicitar_token_discord_ou_sair(20):
