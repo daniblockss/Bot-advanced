@@ -7,7 +7,7 @@ ROOT=Path.home()/".bothub";ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json";TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
-PROCS={};LOGS={};S=requests.Session()
+PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time()
 def setup():
  if CFGFILE.exists():return json.loads(CFGFILE.read_text())
  import getpass
@@ -34,14 +34,14 @@ def fb(method,path,tok,data=None):
  if r.status_code>=300:raise RuntimeError("Firebase "+str(r.status_code)+": "+r.text[:200])
  return r.json() if r.text else None
 def stats(cfg):
- d=shutil.disk_usage(str(Path.home()));running=[k for k,p in PROCS.items() if p.poll() is None];x={"deviceId":cfg["device_id"],"hostname":socket.gethostname(),"label":socket.gethostname(),"platform":platform.platform(),"diskFreeBytes":d.free,"diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"runningBots":len(running),"runningBotIds":running,"lastSeen":int(time.time()*1000)}
+ d=shutil.disk_usage(str(Path.home()));running=[k for k,p in PROCS.items() if p.poll() is None];x={"deviceId":cfg["device_id"],"hostname":socket.gethostname(),"label":socket.gethostname(),"platform":platform.platform(),"diskFreeBytes":d.free,"diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"runningBots":len(running),"runningBotIds":running,"lastSeen":int(time.time()*1000),"uptimeSeconds":int(time.time()-WORKER_STARTED),"workerStartedAt":int(WORKER_STARTED*1000)}
  try:
   x["publicIp"]=S.get("https://api.ipify.org?format=json",timeout=4).json().get("ip","")
  except Exception:x["publicIp"]=""
  try:
   import psutil
   m=psutil.virtual_memory()
-  x.update(ramFreeBytes=m.available,ramTotalBytes=m.total,cpuPercent=psutil.cpu_percent(.1))
+  x.update(ramFreeBytes=m.available,ramTotalBytes=m.total,cpuPercent=psutil.cpu_percent(.1),cpuCount=psutil.cpu_count() or (os.cpu_count() or 1))
  except Exception:
   # Android/Termux may not support psutil; use Linux procfs when available.
   try:
@@ -53,9 +53,9 @@ def stats(cfg):
      mem[key] = int(parts[0]) * (1024 if len(parts) > 1 and parts[1].lower() == "kb" else 1)
    total = mem.get("MemTotal", 0)
    available = mem.get("MemAvailable", mem.get("MemFree", 0) + mem.get("Buffers", 0) + mem.get("Cached", 0))
-   x.update(ramFreeBytes=available, ramTotalBytes=total, cpuPercent=0)
+   x.update(ramFreeBytes=available, ramTotalBytes=total, cpuPercent=0, cpuCount=os.cpu_count() or 1)
   except Exception:
-   x.update(ramFreeBytes=0, ramTotalBytes=0, cpuPercent=0)
+   x.update(ramFreeBytes=0, ramTotalBytes=0, cpuPercent=0, cpuCount=os.cpu_count() or 1)
  return x
 def sid(v):return "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or "bot"
 def stop(k):
