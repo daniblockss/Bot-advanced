@@ -423,7 +423,7 @@ def _lease_url(bot_id):
     return DB + '/botLeases/' + urllib.parse.quote(sid(bot_id), safe='') + '.json'
 
 def _state_url(bot_id):
-    return DB + '/botState/' + urllib.parse.quote(sid(bot_id), safe='') + '/files.json'
+    return DB + '/botState/' + urllib.parse.quote(sid(bot_id), safe='') + '/files'
 
 def _req_json(method, url, tok, data=None, headers=None):
     h = {'User-Agent':'BotHub-Cluster/4.0'}
@@ -492,7 +492,7 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
     if not isinstance(owner,dict) or owner.get('owner') != device_id or int(owner.get('fence') or 0) != int(lease['fence']):
         ACTIVE_LEASES.pop(bid,None); raise RuntimeError('Lease perdido; estado compartilhado protegido.')
     folder=ROOT/'bots'/bid; folder.mkdir(parents=True,exist_ok=True); url=_state_url(bid)
-    r=_req_json('GET',url,tok); remote=r.json() if r.text else {}
+    r=_req_json('GET',url+'.json',tok); remote=r.json() if r.text else {}
     if not isinstance(remote,dict): remote={}
     if mode == 'pull' and remote:
         for rec in remote.values():
