@@ -235,7 +235,7 @@ def publish_shutdown_status(reason="Servidor desligado"):
             fb("PATCH", "workers/" + LAST_DID, LAST_TOKEN, {
                 "status": "offline", "online": False, "runningBots": 0,
                 "runningBotIds": [], "shutdownAt": now, "shutdownReason": reason,
-                "lastSeen": now, "workerUptimeSeconds": int(time.time() - WORKER_STARTED)
+                "lastSeen": now - 120000, "workerUptimeSeconds": int(time.time() - WORKER_STARTED)
             })
             fb("PUT", "workerEvents/" + LAST_DID + "/lastShutdown", LAST_TOKEN, {
                 "status": "offline", "online": False, "reason": reason,
