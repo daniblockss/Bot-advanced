@@ -399,17 +399,18 @@ def admin_cli():
 
 def main():
     require_setup(); init_db()
+    # Admin mode is a separate client process; it must not bind a second copy of the server port.
+    if len(sys.argv)>1 and sys.argv[1]=="admin":
+        admin_cli()
+        return
     server = ThreadingHTTPServer((HOST,PORT),Handler)
     threading.Thread(target=server.serve_forever,daemon=True,name="bothub-http").start()
     print("[BotHub] nó",NODE_ID,"ouvindo",HOST,PORT,"pares:",", ".join(sorted(PEERS)) or "(nenhum)")
     threading.Thread(target=worker_loop,daemon=True,name="bothub-reconcile").start()
-    if len(sys.argv)>1 and sys.argv[1]=="admin":
-        admin_cli()
-    else:
-        print("[BotHub] Para administrar localmente, execute: python3 bothub_cluster.py admin")
-        try:
-            while True: time.sleep(1)
-        except KeyboardInterrupt: pass
+    print("[BotHub] Para administrar localmente, execute: python3 bothub_cluster.py admin")
+    try:
+        while True: time.sleep(1)
+    except KeyboardInterrupt: pass
     STOP.set(); server.shutdown()
     for tid in list(PROCS): stop_task(tid)
 
