@@ -10,6 +10,16 @@
 <section class="layout"><div class="card"><h2>Dispositivos / workers</h2><div id="workers"><span class="muted">Aguardando workers…</span></div><p class="hint">Os tablets executam os bots. O painel distribui os bots ativos para dispositivos online, priorizando o maior espaço livre e respeitando o limite por dispositivo.</p></div>
 <div class="card"><h2>Cadastrar bot Discord</h2><label>Nome</label><input id="botName" maxlength="100" placeholder="Meu bot"><label>Token do bot</label><input id="botToken" type="password" autocomplete="off" placeholder="Token privado"><button id="createBot">Cadastrar e distribuir</button><div id="createMsg" class="hint"></div><p class="hint">O token é salvo no Firebase com regras privadas; ele não fica no código HTML. Use apenas bots que você controla.</p></div></section>
 <section class="card"><h2>Bots cadastrados</h2><div id="bots"><span class="muted">Aguardando dados…</span></div><div id="queueMsg" class="hint"></div></section>
+<section class="card" id="guia-adicionar-bot">
+<h2>Como adicionar um bot Discord</h2>
+<p class="hint">Siga estes passos para cadastrar um bot que você criou ou administra.</p>
+<div class="row"><div><strong>1. Criar o bot no Discord</strong><div class="hint">Abra o <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer">Discord Developer Portal</a>, clique em New Application, dê um nome e entre na aba Bot. Se ainda não existir, crie o bot.</div></div></div>
+<div class="row"><div><strong>2. Copiar o token privado</strong><div class="hint">Na aba Bot, use Reset Token/Copy para obter o token. Trate-o como uma senha: não envie para ninguém, não publique em prints e não coloque em código público. Se vazar, gere outro token.</div></div></div>
+<div class="row"><div><strong>3. Adicionar o bot ao seu servidor</strong><div class="hint">No Developer Portal, abra OAuth2 → URL Generator, selecione o escopo <code>bot</code> e, se for usar comandos de barra, também <code>applications.commands</code>. Escolha apenas as permissões necessárias, copie a URL gerada e abra-a para convidar o bot a um servidor onde você tenha permissão para gerenciar.</div></div></div>
+<div class="row"><div><strong>4. Cadastrar aqui no BotHub</strong><div class="hint">Volte ao painel, preencha o nome e cole o token no campo Token do bot. Toque em <strong>Cadastrar e distribuir</strong>. O BotHub salva o cadastro e tenta encaminhar o bot automaticamente para um dispositivo disponível.</div></div></div>
+<div class="row"><div><strong>5. Conferir o estado</strong><div class="hint">Na lista Bots cadastrados, veja se está ligado ou na fila. O dispositivo precisa estar online, ter RAM e disco livres suficientes e estar executando o worker do BotHub. Se ficar na fila, confira a seção Dispositivos / workers.</div></div></div>
+<p class="hint">Importante: cadastrar o token não convida o bot ao servidor nem concede permissões. Nunca cole aqui o token de um bot de outra pessoa.</p>
+</section>
 </div></main>
 <script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
