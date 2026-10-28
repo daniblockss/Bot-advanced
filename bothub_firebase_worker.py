@@ -1018,8 +1018,9 @@ def main():
                     print("[BotHub] bot parado/transferido:",k,flush=True)
             for k,bot_cfg in leased.items():
                 try:
-                    sync_bot_state(k,'push',t,cfg['device_id'])
                     if k not in PROCS or PROCS[k].poll() is not None:
+                        sync_bot_state(k,'pull',t,cfg['device_id'])
+                        sync_bot_state(k,'push',t,cfg['device_id'])
                         auto_start=bot_cfg.get("autoStart",True) is not False
                         start_requested=float(bot_cfg.get("startRequestedAt") or 0)
                         if not auto_start and start_requested <= WORKER_STARTED*1000: continue
