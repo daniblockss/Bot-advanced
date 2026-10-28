@@ -7811,7 +7811,33 @@ async def executar_ahm7(
                 for indice, url in enumerate(dict.fromkeys(url for _, url in urls[:4]), 1):
                     data, _, filename = await baixar_imagem_url(url, limite=limite_envio)
                     arquivos.append(discord.File(io.BytesIO(data), filename=f"gerada-{indice}-{filename}"))
-                await interaction.followup.send(files=arquivos, ephemeral=True, allowed_mentions=NO_MENTIONS)
+                guild = getattr(interaction, "guild", None)
+                settings = monitoring_settings(guild.id) if guild else {}
+                canal_logs_id = settings.get("channel_id")
+                destino = bot.get_channel(canal_logs_id) if canal_logs_id else None
+                if destino is None and canal_logs_id and guild:
+                    try:
+                        destino = await guild.fetch_channel(canal_logs_id)
+                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+                        destino = None
+                if destino is None or not isinstance(destino, discord.TextChannel):
+                    await interaction.followup.send(
+                        "A imagem foi gerada, mas não foi publicada: configure um canal "
+                        "de logs válido no painel de monitoramento.",
+                        ephemeral=True,
+                        allowed_mentions=NO_MENTIONS,
+                    )
+                else:
+                    await destino.send(
+                        content=f"🖼️ Imagem gerada a pedido de {interaction.user.mention}.",
+                        files=arquivos,
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                    await interaction.followup.send(
+                        "Imagem publicada no canal de logs configurado.",
+                        ephemeral=True,
+                        allowed_mentions=NO_MENTIONS,
+                    )
             finally:
                 for arquivo in arquivos:
                     arquivo.close()
