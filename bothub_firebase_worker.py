@@ -192,6 +192,75 @@ def script_already_running(script):
             pass
     return None
 
+def kill_existing_bothub_bots():
+    """Encerra processos antigos de bots do BotHub antes de o controlador atual iniciá-los."""
+    current_pid = os.getpid()
+    killed = []
+    if sys.platform.startswith("linux") and Path("/proc").is_dir():
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            pid = int(entry.name)
+            if pid in (current_pid, os.getppid()):
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes()
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
+                if len(args) < 2:
+                    continue
+                script_args = [arg for arg in args[1:] if arg.endswith(".py")]
+                if not script_args:
+                    continue
+                is_bot_script = False
+                for arg in script_args:
+                    path = Path(arg).resolve()
+                    if path.name == "main.py" and "bots" in path.parts:
+                        is_bot_script = True
+                        break
+                if is_bot_script:
+                    os.kill(pid, signal.SIGTERM)
+                    killed.append(pid)
+            except (OSError, ValueError, RuntimeError):
+                continue
+    elif os.name == "nt":
+        try:
+            import psutil
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                pid = proc.info.get("pid")
+                if not pid or pid in (current_pid, os.getppid()):
+                    continue
+                args = proc.info.get("cmdline") or []
+                for arg in args[1:]:
+                    try:
+                        path = Path(arg).resolve()
+                        if path.name == "main.py" and "bots" in path.parts:
+                            proc.terminate()
+                            killed.append(pid)
+                            break
+                    except (OSError, ValueError, RuntimeError):
+                        continue
+        except Exception as e:
+            print("[BotHub] Não foi possível verificar todos os processos antigos:", str(e)[:160], flush=True)
+    if killed:
+        print("[BotHub] Encerrando bots antigos antes de iniciar esta instância:", ", ".join(map(str, killed)), flush=True)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            alive = []
+            for pid in killed:
+                try:
+                    os.kill(pid, 0)
+                    alive.append(pid)
+                except OSError:
+                    pass
+            if not alive:
+                break
+            time.sleep(0.2)
+        for pid in alive if 'alive' in locals() else []:
+            try:
+                os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+            except OSError:
+                pass
+
 def start(k,b):
     folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main.py"
     if not script.exists():
@@ -594,6 +663,7 @@ def main():
     signal.signal(signal.SIGTERM, handle_shutdown_signal)
     signal.signal(signal.SIGINT, handle_shutdown_signal)
     atexit.register(cleanup_children)
+    kill_existing_bothub_bots()
     print("[BotHub] Worker iniciado sem pedir ID, e-mail ou senha.",flush=True)
     while True:
         try:
