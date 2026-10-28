@@ -828,15 +828,15 @@ class VoiceSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
-        # O dono do servidor que adicionou o bot recebe acesso supremo neste servidor.
-        # A autorização é por servidor; isso não promove o dono globalmente.
-        try:
+        # Entrar não autoriza automaticamente a comunidade. O criador principal
+        # precisa enviar !allow dentro deste servidor antes de liberar os recursos.
+        if comunidade_autorizada(guild.id):
             owners = config.setdefault("criadores_supremos_guild", {})
             owners[str(guild.id)] = int(guild.owner_id)
             salvar_config(config)
-            log_console(f"Criador supremo do servidor {guild.id} registrado: {guild.owner_id}")
-        except Exception as error:
-            log_console(f"Não foi possível registrar o dono do servidor {guild.id}: {type(error).__name__}")
+            log_console(f"Comunidade autorizada {guild.id}; dono local: {guild.owner_id}")
+        else:
+            log_console(f"Comunidade {guild.id} pendente de autorização; aguarda !allow do criador principal.")
         await self.sync_commands(guild)
 
     @tasks.loop(minutes=5)
@@ -2024,6 +2024,8 @@ def carregar_config():
         "apis": [],
         "criadores_ids": [1252679441629315144],
         "criador_supremo": 1252679441629315144,
+        "comunidades_autorizadas": [],
+        "criadores_supremos_guild": {},
         "dm_settings": {"enabled": True, "admin_ids": []},
         "raiz_permissoes": {},
         "canais_configurados": {},
@@ -2045,6 +2047,11 @@ def carregar_config():
 
     for chave, valor in default_config.items():
         cfg.setdefault(chave, valor)
+    if not isinstance(cfg.get("comunidades_autorizadas"), list):
+        cfg["comunidades_autorizadas"] = []
+    cfg["comunidades_autorizadas"] = list(dict.fromkeys(int(gid) for gid in cfg["comunidades_autorizadas"] if str(gid).isdigit() and int(gid) > 0))
+    if not isinstance(cfg.get("criadores_supremos_guild"), dict):
+        cfg["criadores_supremos_guild"] = {}
     if type(cfg["criador_supremo"]) is not int or cfg["criador_supremo"] <= 0:
         raise RuntimeError("criador_supremo precisa ser um ID Discord inteiro positivo.")
     if not isinstance(cfg["raiz_permissoes"], dict) or any(
@@ -2670,6 +2677,13 @@ def tem_perm(message):
         return False
     conteudo = message.content.lower()
     return "!perm" in conteudo or ":perm:" in conteudo
+
+def comunidade_autorizada(guild_id):
+    """A comunidade só recebe funções completas após !allow pelo criador principal."""
+    try:
+        return int(guild_id) in {int(value) for value in config.get("comunidades_autorizadas", [])}
+    except (TypeError, ValueError):
+        return False
 
 def is_creator(user_or_message):
     """Autoriza o dono do servidor atual e os criadores globais persistidos."""
@@ -6549,7 +6563,20 @@ class CreatorChannelsPanel(BoundView):
         await replace_view(interaction, view.summary(), view)
 
 
+class AllowlistCommandTree(app_commands.CommandTree):
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        guild = interaction.guild
+        if guild is not None and not comunidade_autorizada(guild.id):
+            await private_reply(interaction, "⛔ Esta comunidade ainda não foi autorizada. O criador principal precisa usar `!allow` neste servidor.")
+            return False
+        return True
+
+
 class BreezeBot(commands.Bot):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("tree_cls", AllowlistCommandTree)
+        super().__init__(*args, **kwargs)
+
     async def close(self):
         handler = globals().get("DISCORD_LOGS")
         if handler:
@@ -6572,6 +6599,15 @@ bot = BreezeBot(command_prefix="!", intents=intents, help_command=None)
 @bot.check
 async def somente_criadores_prefixo(ctx):
     comando = getattr(ctx, "command", None)
+    # Em comunidades não autorizadas, só o criador principal pode executar !allow.
+    if ctx.guild is not None and not comunidade_autorizada(ctx.guild.id):
+        if comando and comando.name == "allow" and ctx.author.id == int(config.get("criador_supremo", 1252679441629315144)):
+            return True
+        if comando and comando.name in {"ping", "info"}:
+            return True
+        if ctx.author.id == int(config.get("criador_supremo", 1252679441629315144)):
+            await ctx.reply("⛔ Esta comunidade ainda não foi autorizada. Use `!allow` para liberar este servidor.")
+        return False
     if comando and comando.name in {"ping", "info"}:
         return True
     if comando and comando.name == "raiz":
@@ -6707,6 +6743,28 @@ async def resolver_usuario_criador(ctx, alvo: str):
     )]
     unicos = {m.id: m for m in exatos}
     return next(iter(unicos.values())) if len(unicos) == 1 else None
+
+
+@bot.command(name="allow")
+@commands.guild_only()
+async def prefix_allow_comunidade(ctx):
+    criador_principal = int(config.get("criador_supremo", 1252679441629315144))
+    if ctx.author.id != criador_principal:
+        return await ctx.reply("⛔ Só o criador principal do bot pode autorizar comunidades com `!allow`.")
+    guild_id = int(ctx.guild.id)
+    autorizadas = config.setdefault("comunidades_autorizadas", [])
+    if guild_id not in {int(value) for value in autorizadas if str(value).isdigit()}:
+        autorizadas.append(guild_id)
+    config.setdefault("criadores_supremos_guild", {})[str(guild_id)] = int(ctx.guild.owner_id)
+    salvar_config(config)
+    try:
+        await bot.tree.sync(guild=ctx.guild)
+    except (discord.HTTPException, discord.Forbidden):
+        pass
+    await ctx.reply(
+        f"✅ Comunidade **{ctx.guild.name}** autorizada. O dono desta comunidade (<@{ctx.guild.owner_id}>) agora tem acesso administrativo local; isso não concede acesso global nem altera outros servidores.",
+        allowed_mentions=NO_MENTIONS,
+    )
 
 
 @bot.command(name="add-criador")
