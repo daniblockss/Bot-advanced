@@ -10,7 +10,7 @@ CFGFILE=ROOT/"worker.json"
 TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
-PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time()
+PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 
 def save_json(path,data):
     tmp=path.with_suffix(path.suffix+".tmp")
@@ -70,8 +70,21 @@ def token(cfg):
     save_json(CFGFILE,cfg)
     return t["idToken"]
 
-def fb(method,path,tok,data=None):
+def fb(method,path,tok,data=None,_retried=False):
     r=S.request(method,DB+"/"+path.strip("/")+".json",params={"auth":tok},json=data,timeout=20)
+    if r.status_code==401 and not _retried:
+        detail=r.text[:300]
+        low=detail.lower()
+        # Reautentica apenas quando o Firebase indica token inválido/expirado.
+        if any(term in low for term in ("expired","invalid token","invalid_token","auth token","id token")) and CURRENT_CFG is not None:
+            try:
+                if TOKFILE.exists(): TOKFILE.unlink()
+                fresh=token(CURRENT_CFG)
+                print("[BotHub] Token rejeitado pelo Firebase; sessão renovada, repetindo a solicitação uma vez.",flush=True)
+                return fb(method,path,fresh,data,_retried=True)
+            except Exception as e:
+                raise RuntimeError("Firebase recusou a sessão (401) e a renovação falhou: "+str(e)[:180])
+        raise RuntimeError("Firebase HTTP 401: "+detail+" | Confira Authentication > Anonymous e as regras de leitura/gravação do Realtime Database para usuários autenticados.")
     if r.status_code>=300:raise RuntimeError("Firebase "+str(r.status_code)+": "+r.text[:220])
     return r.json() if r.text else None
 
@@ -274,7 +287,9 @@ def process_worker_commands(cfg,tok,did,queue):
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
 def main():
+    global CURRENT_CFG
     cfg=setup()
+    CURRENT_CFG=cfg
     v=ROOT/"venv";vp=v/("Scripts/python.exe" if os.name=="nt" else "bin/python")
     if not vp.exists():
         subprocess.check_call([sys.executable,"-m","venv",str(v)])
