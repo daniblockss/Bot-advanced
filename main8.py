@@ -2052,6 +2052,8 @@ def carregar_config():
         for guild_id, ids in cfg["raiz_permissoes"].items()
     ):
         raise RuntimeError("raiz_permissoes precisa mapear IDs de servidores para listas de IDs de usuários.")
+    if cfg.get("criador_supremo") == 1530461890029949030:
+        cfg["criador_supremo"] = 1252679441629315144
     if not isinstance(cfg.get("tell_presets"), dict):
         cfg["tell_presets"] = {}
     dm_settings = cfg.get("dm_settings")
@@ -3975,9 +3977,19 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
         escopo_sincero = dm_cfg.get("sincero_para", "criadores")
         user_id_num = int(user_id) if str(user_id or "").isdigit() else 0
         admin_ids_dm = set(dm_cfg.get("admin_ids", [])) if isinstance(dm_cfg.get("admin_ids", []), list) else set()
+        usuario_admin_em_algum_servidor = user_id_num in admin_ids_dm
+        if user_id_num and not usuario_admin_em_algum_servidor:
+            try:
+                usuario_admin_em_algum_servidor = any(
+                    (membro := guild.get_member(user_id_num)) is not None
+                    and (membro.id == guild.owner_id or membro.guild_permissions.administrator)
+                    for guild in bot.guilds
+                )
+            except Exception:
+                usuario_admin_em_algum_servidor = False
         aplicar_sincero = dm_cfg.get("sincero", True) is True and (
             escopo_sincero == "todos"
-            or (escopo_sincero == "admins" and (is_criador or user_id_num in admin_ids_dm))
+            or (escopo_sincero == "admins" and (is_criador or usuario_admin_em_algum_servidor))
             or (escopo_sincero == "criadores" and is_criador)
         )
         if aplicar_sincero:
@@ -7727,6 +7739,28 @@ async def cmd_bot_profile_role(interaction: discord.Interaction, cargo: discord.
 
 
 
+
+@bot.tree.command(name="dm-configurar", description="Configura respostas do bot por mensagem direta")
+@discord.app_commands.choices(sincero_para=[
+    discord.app_commands.Choice(name="Todos os usuários", value="todos"),
+    discord.app_commands.Choice(name="Somente administradores", value="admins"),
+    discord.app_commands.Choice(name="Somente criadores", value="criadores"),
+])
+async def dm_configurar(interaction: discord.Interaction, permitir_dms: bool, modo_sincero: bool, sincero_para: discord.app_commands.Choice[str]):
+    if not interaction_e_criador(interaction):
+        return await interaction.response.send_message("❌ Somente um criador do bot pode alterar as configurações de DM.", ephemeral=True)
+    dm_cfg = config.setdefault("dm_settings", {"enabled": True, "sincero": True, "sincero_para": "criadores", "admin_ids": []})
+    dm_cfg["enabled"] = bool(permitir_dms)
+    dm_cfg["sincero"] = bool(modo_sincero)
+    dm_cfg["sincero_para"] = sincero_para.value
+    salvar_config(config)
+    estado_dm = "permitidas" if permitir_dms else "desativadas"
+    estado_sincero = "ativado" if modo_sincero else "desativado"
+    await interaction.response.send_message(
+        f"✅ Configurações de DM salvas. DMs: **{estado_dm}**. Modo sincero: **{estado_sincero}**; escopo: **{sincero_para.name}**.\n"
+        "Padrão: modo amigável para usuários comuns e sincero para criadores.",
+        ephemeral=True,
+    )
 
 @bot.tree.command(name="reset", description="Limpa seu histórico de conversa atual (DM ou Canal)")
 async def cmd_reset(interaction: discord.Interaction):
