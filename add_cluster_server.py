@@ -5,7 +5,9 @@ from __future__ import annotations
 import os, platform, subprocess, sys, urllib.request
 from pathlib import Path
 
-WORKER_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bothub_firebase_worker.py"
+GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main"
+INSTALLER_URL = GITHUB_RAW + "/add_cluster_server.py"
+WORKER_URL = GITHUB_RAW + "/bothub_firebase_worker.py"
 ROOT = Path.cwd().resolve()
 WORKER = ROOT / "bothub_firebase_worker.py"
 VENV = ROOT / "venv"
@@ -15,6 +17,35 @@ TERMUX = "com.termux" in str(Path.home()).lower() or "ANDROID_ROOT" in os.enviro
 def run(args):
     print("\n[BotHub Installer] $", " ".join(map(str, args)), flush=True)
     subprocess.check_call(args)
+
+def update_installer():
+    """Confere a cópia pública no GitHub e reinicia se houver versão mais nova."""
+    if os.environ.get("BOTHUB_INSTALLER_REFRESHED") == "1":
+        return
+    current = Path(__file__).resolve()
+    try:
+        req = urllib.request.Request(
+            INSTALLER_URL + "?cachebust=" + str(int(__import__("time").time())),
+            headers={"User-Agent": "BotHub-Installer/3.0", "Cache-Control": "no-cache"}
+        )
+        with urllib.request.urlopen(req, timeout=45) as response:
+            latest = response.read()
+        if len(latest) < 1000 or b"def download()" not in latest or b"bothub_firebase_worker.py" not in latest:
+            raise RuntimeError("O instalador público baixado não passou na verificação.")
+        try:
+            existing = current.read_bytes()
+        except OSError:
+            existing = b""
+        if existing != latest:
+            tmp = current.with_suffix(current.suffix + ".update.tmp")
+            tmp.write_bytes(latest)
+            tmp.replace(current)
+            print("[BotHub Installer] Instalador atualizado a partir do GitHub público. Reiniciando...", flush=True)
+            env = dict(os.environ)
+            env["BOTHUB_INSTALLER_REFRESHED"] = "1"
+            os.execve(sys.executable, [sys.executable, str(current)], env)
+    except Exception as exc:
+        print("[BotHub Installer] Não consegui conferir a atualização do instalador; continuando com a cópia atual:", str(exc)[:180], flush=True)
 
 def download():
     print("[BotHub Installer] Baixando worker atualizado...", flush=True)
@@ -35,6 +66,7 @@ def main():
     if sys.version_info < (3, 10):
         print("ERRO: é necessário Python 3.10 ou superior.")
         return 2
+    update_installer()
     ROOT.mkdir(parents=True, exist_ok=True)
     if not PYTHON.exists():
         print("[BotHub Installer] Criando ambiente Python dentro desta pasta...")
