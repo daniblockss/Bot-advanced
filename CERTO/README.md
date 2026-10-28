@@ -3,7 +3,7 @@
 Esta pasta reúne apenas os arquivos necessários para a versão atual do painel e do worker.
 
 ## Arquivos
-- `index.html`: painel web BotHub, com gerenciamento de perfil e editor de arquivos.
+- `index.html`: painel web BotHub, com gerenciamento de perfil, editor de arquivos e visualizador de logs dos bots.
 - `bothub_firebase_worker.py`: worker, distribuição dos bots, comandos de arquivo e atualização de perfil via API do Discord.
 - `add_cluster_server.py`: instalador do worker.
 - `firebase_database.rules.json`: regras privadas do Firebase, incluindo permissões para comandos e resultados do worker.
@@ -23,6 +23,12 @@ Esta pasta reúne apenas os arquivos necessários para a versão atual do painel
 - Para nomes com espaços, use aspas: `!perfil "Meu Bot" descrição aqui`.
 
 O Discord pode aplicar limites de frequência e validação aos campos do perfil. A descrição é a descrição da aplicação, não o tópico de um servidor.
+
+## IA de organização do servidor (`!raiz agent`)
+O parser aceita JSON puro, JSON cercado por Markdown e um objeto JSON válido precedido por texto. Quando os provedores falham, a resposta mostra diagnósticos resumidos por provedor; nenhuma mudança no servidor é aplicada sem a confirmação na proposta.
+
+## Logs dos bots
+No painel, clique em `Ver logs` ao lado do bot. O worker retorna o trecho final do log local (até cerca de 18 KB), incluindo saída e erros. O worker precisa estar atualizado e online.
 
 ## Segurança
 Nunca publique tokens em HTML, no GitHub ou em mensagens. O painel envia operações autenticadas ao worker e não mostra o token. Não conceda permissões administrativas do Firebase a contas não confiáveis.
