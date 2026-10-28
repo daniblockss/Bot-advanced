@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BotHub — Controle</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--card:#121b30;--line:#283752;--text:#edf2ff;--muted:#9cabc5;--a:#8b5cf6;--green:#34d399;--red:#fb7185}*{box-sizing:border-box}body{margin:0;background:linear-gradient(160deg,#172342,var(--bg) 55%);color:var(--text);font:15px system-ui,Arial}main{max-width:1120px;margin:auto;padding:22px}header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}.brand{display:flex;gap:12px;align-items:center}.logo{display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,#8b5cf6,#06b6d4);font-size:23px;font-weight:900}h1{margin:0;font-size:25px}h2{font-size:17px;margin:0 0 14px}.muted,.hint{color:var(--muted)}.hint{font-size:12px;line-height:1.5}.card{background:#121b30f2;border:1px solid var(--line);border-radius:17px;padding:17px;margin-bottom:14px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.layout{display:grid;grid-template-columns:1fr 1fr;gap:14px}.metric{font-size:27px;font-weight:750;margin-top:8px}.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}.row:last-child{border-bottom:0}.badge{font-size:12px;padding:5px 8px;border-radius:99px;background:#123b35;color:var(--green);white-space:nowrap}.off{background:#47202c;color:var(--red)}label{display:block;margin:11px 0 6px;color:var(--muted);font-size:13px}input,select,textarea{width:100%;padding:11px;border-radius:10px;border:1px solid var(--line);background:#0a1120;color:var(--text);font:inherit}textarea{resize:vertical;line-height:1.45}select{min-height:42px}button{border:0;border-radius:10px;background:var(--a);color:white;padding:11px 14px;font-weight:650;cursor:pointer;margin-top:10px}button.secondary{background:#293754}button.danger{background:#9f3150}.actions{display:flex;gap:8px;flex-wrap:wrap}.hidden{display:none}.error{color:#fda4af;white-space:pre-wrap}.ok{color:#6ee7b7}code{overflow-wrap:anywhere;color:#c4b5fd}@media(max-width:760px){main{padding:13px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.layout{grid-template-columns:1fr}.metric{font-size:23px}}
+</style></head><body><main>
+<header><div class="brand"><div class="logo">B</div><div><h1>BotHub</h1><div class="muted">Painel central · Firebase Realtime Database</div></div></div><div class="actions"><span id="connection" class="badge off">Desconectado</span><button id="logout" class="secondary hidden">Sair</button></div></header>
+<section id="login" class="card"><h2>Entrar no BotHub</h2><div class="hint">Entre com sua conta administradora do Firebase.</div><label>E-mail</label><input id="email" type="email" autocomplete="username" value="daniblocks100@gmail.com"><label>Senha do Firebase</label><input id="password" type="password" autocomplete="current-password" placeholder="Senha da conta Firebase"><button id="loginBtn">Entrar no painel</button><div id="loginMsg" class="error"></div></section>
+<div id="dashboard" class="hidden">
+<section class="grid"><div class="card"><div class="muted">Dispositivos online</div><div id="online" class="metric">0</div></div><div class="card"><div class="muted">Com capacidade</div><div id="capacity" class="metric">0</div></div><div class="card"><div class="muted">Bots realmente ligados</div><div id="active" class="metric">0</div></div><div class="card"><div class="muted">Na fila</div><div id="queued" class="metric">0</div></div><div class="card"><div class="muted">RAM disponível total</div><div id="ramFreeTotal" class="metric">—</div><div id="ramTotalLabel" class="hint">RAM total: —</div></div><div class="card"><div class="muted">Armazenamento livre total</div><div id="diskFreeTotal" class="metric">—</div><div id="diskTotalLabel" class="hint">Capacidade total: —</div></div><div class="card"><div class="muted">CPU média dos online</div><div id="cpuAvg" class="metric">—</div></div><div class="card"><div class="muted">Tempo online do worker mais antigo</div><div id="longestUptime" class="metric">—</div></div></section>
+<section class="layout"><div class="card"><h2>Dispositivos / workers</h2><div id="workers"><span class="muted">Aguardando workers…</span></div><p class="hint">Os dispositivos executam os bots. O painel distribui automaticamente até 3 bots por worker elegível, priorizando o maior espaço livre. “Vagas estimadas” é uma estimativa pelo limite atual, não uma garantia: o consumo de RAM e disco varia conforme cada bot.</p></div>
+<div class="card"><h2>Cadastrar bot Discord</h2><label>Nome</label><input id="botName" maxlength="100" placeholder="Meu bot"><label>Token do bot</label><input id="botToken" type="password" autocomplete="off" placeholder="Token privado"><button id="createBot">Cadastrar e distribuir</button><div id="createMsg" class="hint"></div><p class="hint">O token é salvo no Firebase com regras privadas; ele não fica no código HTML. Use apenas bots que você controla.</p></div></section>
+<section class="card"><h2>Bots cadastrados</h2><div id="bots"><span class="muted">Aguardando dados…</span></div><div id="queueMsg" class="hint"></div></section>
+<section class="card"><h2>Perfil do bot pelo painel</h2><p class="hint">O painel envia a alteração ao worker que executa o bot. O token nunca aparece nesta tela. A mudança depende dos limites e permissões da API do Discord.</p><label>Bot</label><select id="profileBot"><option value="">Selecione um bot</option></select><label>Novo nome (opcional)</label><input id="profileName" maxlength="32" placeholder="Nome do bot"><label>Nova descrição (opcional)</label><textarea id="profileDescription" maxlength="400" rows="3" placeholder="Descrição da aplicação (até 400 caracteres)"></textarea><label>Nova foto de perfil (PNG/JPEG, até 4 MB, opcional)</label><input id="profileAvatar" type="file" accept="image/png,image/jpeg"><button id="saveProfile">Aplicar perfil</button><div id="profileMsg" class="hint"></div></section>
+<section class="card"><h2>Gerenciador de arquivos do bot</h2><p class="hint">Navega somente dentro da pasta do bot escolhido neste worker. Permite ler, criar, editar e excluir arquivos de texto de até 256 KiB. Arquivos privados de configuração, tokens e logs são bloqueados. Não executa comandos de terminal.</p><label>Bot / pasta de trabalho</label><select id="fileBot"><option value="">Selecione um bot</option></select><div class="actions"><button id="loadFiles" class="secondary">Abrir pasta / atualizar</button><button id="restartFileBot" class="secondary">Reiniciar bot</button></div><div id="fileStatus" class="hint"></div><div id="fileList" style="margin-top:10px"></div><label>Arquivo selecionado</label><input id="filePath" placeholder="Ex.: main8.py"><label>Conteúdo UTF-8 (máximo 256 KiB)</label><textarea id="fileContent" rows="12" spellcheck="false" placeholder="Selecione um arquivo na lista ou informe um novo caminho permitido."></textarea><div class="actions"><button id="saveFile">Salvar / criar arquivo</button><button id="deleteFile" class="danger">Excluir arquivo</button></div></section>
+<h2>Como adicionar um servidor ao cluster</h2>
+<p class="hint">Baixe apenas um arquivo Python no servidor novo. O instalador cria o ambiente virtual se faltar, prepara o pip, instala as dependências, baixa o worker oficial e inicia tudo automaticamente. Requer Python 3.10+ e internet.</p>
+<pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#080d19;padding:12px;border-radius:10px;color:#dbeafe">curl -L https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/add_cluster_server.py -o add_cluster_server.py
+python3 add_cluster_server.py</pre>
+<p class="hint">Execute esses dois comandos no terminal da máquina que você quer adicionar ao cluster. Na primeira execução, informe um ID único para esse servidor e as credenciais Firebase do worker. O instalador baixa <code>bothub_firebase_worker.py</code> por conta própria; você não precisa baixá-lo manualmente.</p>
+<div class="row"><div><strong>1. Se o servidor não tiver Python ou venv</strong><div class="hint">O instalador precisa de Python 3.10+ para começar. Em Debian/Ubuntu, se o próprio módulo venv estiver ausente, ele mostrará o comando para instalar <code>python3-venv</code> e <code>python3-pip</code>. Depois, execute o instalador novamente.</div></div></div>
+<div class="row"><div><strong>2. Criar uma conta Firebase para o worker</strong><div class="hint">No Firebase Console do projeto BotHub, abra Authentication → Users e crie uma conta de e-mail e senha para este dispositivo. Use uma conta separada por worker; não compartilhe a senha de administrador.</div></div></div>
+<div class="row"><div><strong>3. Autorizar o worker</strong><div class="hint">Depois da primeira execução, encontre o UID dessa conta em Authentication → Users. Em Realtime Database → Dados, configure <code>workerUids/ID_DO_DISPOSITIVO</code> com o UID da conta como valor de texto. Use exatamente o ID digitado no terminal. Mantenha as regras privadas.</div></div></div>
+<div class="row"><div><strong>4. Confirmar no painel</strong><div class="hint">Deixe o worker rodando e aguarde cerca de 15–30 segundos. A máquina deverá aparecer em Dispositivos / workers. Para iniciar automaticamente após reiniciar, configure o instalador/worker como serviço do sistema.</div></div></div>
+<p class="hint">Se o dispositivo não aparecer, confira o terminal, internet, credenciais Firebase e o caminho <code>workerUids</code>. Não use o mesmo ID em duas máquinas.</p>
+</div></main>
+<script type="module">
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import {getDatabase,ref,onValue,get,set,update,remove} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+const firebaseConfig={apiKey:'AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE',authDomain:'bothub-bca02.firebaseapp.com',databaseURL:'https://bothub-bca02-default-rtdb.firebaseio.com',projectId:'bothub-bca02',storageBucket:'bothub-bca02.firebasestorage.app',messagingSenderId:'890310788815',appId:'1:890310788815:web:a08d772d6f1afffb3e99ba',measurementId:'G-ZHEP6R0XVW'};
+const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getDatabase(app);
+const $=id=>document.getElementById(id);let workerData={},botData={},stopListeners=[],busy=false,lastAssignment='';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const bytes=n=>{let v=Number(n)||0,u=['B','KB','MB','GB','TB'],i=0;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i?1:0)+' '+u[i]};
+const duration=s=>{s=Math.max(0,Math.floor(Number(s)||0));const d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);return (d?d+'d ':'')+(h+'h '+m+'min')};
+const ageText=ms=>{if(!Number.isFinite(ms)||ms<0)return 'desconhecido';return duration(ms/1000)+' atrás'};
+const STALE_MS=60*60*1000; let cleanupBusy=false,lastCleanup=0;
+function online(w){return !!w&&Date.now()-Number(w.lastSeen||0)<90000}
+function eligible(w){return online(w)&&(Number(w.ramFreeBytes||0)>150*1024*1024)&&(Number(w.diskFreeBytes||0)>500*1024*1024)}
+function stopSubs(){stopListeners.forEach(f=>f());stopListeners=[]}
+function watch(path,cb){const r=ref(db,path);stopListeners.push(onValue(r,s=>cb(s.val()||{}),e=>{const detail='Erro Firebase em '+path+': '+(e.code||'')+' — '+(e.message||String(e));$('connection').textContent='Erro Firebase';$('connection').className='badge off';$('queueMsg').textContent=detail;$('queueMsg').className='error';console.error('[BotHub Firebase]',path,e)}))}
+function runningSet(){const s=new Set();for(const w of Object.values(workerData)){const ids=w.runningBotIds;if(Array.isArray(ids))ids.forEach(id=>s.add(String(id)));else if(ids&&typeof ids==='object')Object.keys(ids).forEach(id=>s.add(String(id)))}return s}
+function drawWorkers(){const entries=Object.entries(workerData),live=entries.filter(([,w])=>online(w));$('online').textContent=live.length;$('capacity').textContent=entries.filter(([,w])=>eligible(w)).length;const counts={};Object.values(botData).filter(b=>b.enabled&&b.workerId).forEach(b=>counts[b.workerId]=(counts[b.workerId]||0)+1);const sum=(arr,k)=>arr.reduce((n,[,w])=>n+(Number(w[k])||0),0);$('ramFreeTotal').textContent=bytes(sum(live,'ramFreeBytes'));$('ramTotalLabel').textContent='RAM total: '+bytes(sum(live,'ramTotalBytes'));$('diskFreeTotal').textContent=bytes(sum(live,'diskFreeBytes'));$('diskTotalLabel').textContent='Capacidade total: '+bytes(sum(live,'diskTotalBytes'));const cpus=live.map(([,w])=>Number(w.cpuPercent)).filter(Number.isFinite);$('cpuAvg').textContent=cpus.length?(cpus.reduce((a,b)=>a+b,0)/cpus.length).toFixed(1)+'%':'—';$('longestUptime').textContent=live.length?duration(Math.max(...live.map(([,w])=>Number(w.uptimeSeconds)||0))):'—';const ips={};for(const [id,w] of entries){const ip=w.publicIp;if(ip)ips[ip]=(ips[ip]||0)+1}const duplicateIps=new Set(Object.entries(ips).filter(([,n])=>n>1).map(([ip])=>ip));$('workers').innerHTML=entries.length?entries.map(([id,w])=>{const isOnline=online(w),seen=Number(w.lastSeen)||0,runCount=Array.isArray(w.runningBotIds)?w.runningBotIds.length:Object.keys(w.runningBotIds||{}).length,ipDup=w.publicIp&&duplicateIps.has(w.publicIp);return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipDup?'<span class="badge off">IP repetido</span>':'')+'<div class="hint">ID: '+esc(id)+' · '+esc(w.platform||'sistema desconhecido')+'</div><div class="hint">IP público: '+esc(w.publicIp||'não informado')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+' · núcleos: '+esc(w.cpuCount||'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre / '+bytes(w.ramTotalBytes)+' total · Disco: '+bytes(w.diskFreeBytes)+' livre / '+bytes(w.diskTotalBytes)+' total</div><div class="hint">Dispositivo ligado há: '+duration(w.uptimeSeconds)+' · bots atribuídos: '+(counts[id]||0)+' · bots ligados: '+runCount+'</div><div class="hint">Vagas estimadas: '+(eligible(w)?Math.max(0,3-(counts[id]||0)):0)+' de 3 bots (limite atual; depende de RAM/disco e do consumo real de cada bot)</div><div class="hint">Último heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'': 'off')+'">'+(eligible(w)?'Livre/capaz':isOnline?'Sem capacidade':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir registro</button>':'')+'</div></div>'}).join(''):'<div class="muted">Nenhum dispositivo registrado ainda.</div>';document.querySelectorAll('[data-remove-worker]').forEach(b=>b.onclick=()=>removeWorker(b.dataset.removeWorker))}
+function drawBots(){populateManagementSelects();const bots=Object.entries(botData);const active=bots.filter(([,b])=>b.enabled);const running=runningSet();const reallyRunning=active.filter(([id])=>running.has(id));const queued=active.filter(([,b])=>!b.workerId||!eligible(workerData[b.workerId]));$('active').textContent=reallyRunning.length;$('queued').textContent=queued.length;$('bots').innerHTML=bots.length?bots.map(([id,b])=>{const isRunning=running.has(id);return '<div class="row"><div><strong>'+esc(b.name||'Bot')+'</strong><div class="hint">ID: <code>'+esc(id)+'</code><br>Dispositivo: '+esc(b.workerId||'Na fila')+' · '+(isRunning?'LIGADO (confirmado pelo worker)':b.enabled?'Ativo, mas não confirmado como ligado':'Desativado')+'</div></div><div class="actions"><button class="secondary" data-toggle="'+esc(id)+'" data-enabled="'+(b.enabled?'1':'0')+'">'+(b.enabled?'Pausar':'Ativar')+'</button><button class="danger" data-delete="'+esc(id)+'">Excluir</button></div></div>'}).join(''):'<div class="muted">Nenhum bot cadastrado.</div>';$('queueMsg').textContent=queued.length?'Servidores esgotados. Tente novamente mais tarde. ('+queued.length+' na fila)':'';document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>toggleBot(b.dataset.toggle,b.dataset.enabled!=='1'));document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>deleteBot(b.dataset.delete))}
+async function rebalance(){if(busy)return;busy=true;try{const now=Date.now();const nodes=Object.entries(workerData).filter(([,w])=>eligible(w)).sort((a,b)=>(Number(b[1].diskFreeBytes)||0)-(Number(a[1].diskFreeBytes)||0));const counts={};nodes.forEach(([id])=>counts[id]=0);const assignments={};const enabled=Object.entries(botData).filter(([,b])=>b.enabled);for(const [bid,b] of enabled){let target=b.workerId;if(!target||!counts.hasOwnProperty(target)||counts[target]>=3){target=nodes.find(([id])=>counts[id]<3)?.[0]||null}else if(!eligible(workerData[target])){target=nodes.find(([id])=>counts[id]<3)?.[0]||null}if(target)counts[target]=(counts[target]||0)+1;assignments[bid]=target}
+let signature=JSON.stringify(assignments);if(signature===lastAssignment){busy=false;return}lastAssignment=signature;
+const updates={};for(const [bid,b] of Object.entries(botData)){const wid=b.enabled?assignments[bid]||null:null;if((b.workerId||null)!==wid)updates['bots/'+bid+'/workerId']=wid}
+if(Object.keys(updates).length)await update(ref(db),updates);
+const allWorkerIds=new Set([...Object.keys(workerData),...Object.values(botData).map(b=>b.workerId).filter(Boolean)]);for(const wid of allWorkerIds){const assigned={};for(const [bid,b] of Object.entries(botData)){if(b.enabled&&assignments[bid]===wid)assigned[bid]={name:b.name,token:b.token,config:b.config||{},enabled:true,updatedAt:b.updatedAt||now}}await set(ref(db,'workerTasks/'+wid),assigned)}
+}catch(e){console.error('Rebalance:',e);$('queueMsg').textContent='Erro ao distribuir: '+e.message}finally{busy=false}}
+async function toggleBot(id,enabled){try{await update(ref(db,'bots/'+id),{enabled,updatedAt:Date.now(),workerId:null});lastAssignment='';await refreshData()}catch(e){alert('Não foi possível alterar o bot: '+e.message)}}
+async function deleteBot(id){if(!confirm('Excluir este bot?'))return;try{await remove(ref(db,'bots/'+id));await remove(ref(db,'workerTasks/'+(botData[id]?.workerId||'_')+'/'+id));lastAssignment='';await refreshData()}catch(e){alert('Não foi possível excluir: '+e.message)}}
+async function refreshData(){const [w,b]=await Promise.all([get(ref(db,'workers')),get(ref(db,'bots'))]);workerData=w.val()||{};botData=b.val()||{};drawWorkers();drawBots();await rebalance();drawWorkers();drawBots()}
+async function cleanupStaleWorkers(){if(cleanupBusy||Date.now()-lastCleanup<60000)return;cleanupBusy=true;lastCleanup=Date.now();try{for(const [id,w] of Object.entries(workerData)){const seen=Number(w.lastSeen||w.createdAt)||0;if(seen>0&&Date.now()-seen>STALE_MS){await remove(ref(db,'workers/'+id));delete workerData[id]}}}catch(e){console.warn('Limpeza de workers antigos:',e)}finally{cleanupBusy=false}}
+async function removeWorker(id){const w=workerData[id];if(!w)return;if(online(w)){alert('Este dispositivo ainda está online. O registro não foi excluído.');return}if(!confirm('Excluir o registro antigo de '+(w.label||w.hostname||id)+'? Isso remove apenas o registro do painel; não desinstala nada na máquina.'))return;try{await remove(ref(db,'workers/'+id));delete workerData[id];drawWorkers()}catch(e){alert('Não foi possível excluir o registro: '+e.message)}}
+
+let currentFilePath="";
+function populateManagementSelects(){
+  for(const selectId of ["profileBot","fileBot"]){
+    const el=$(selectId),previous=el.value;
+    const options=['<option value="">Selecione um bot</option>'];
+    for(const [id,b] of Object.entries(botData)){
+      const wid=b.workerId,worker=workerData[wid];
+      const status=wid&&online(worker)?"online":wid?"worker offline":"na fila";
+      options.push('<option value="'+esc(id)+'">'+esc(b.name||id)+' — '+esc(status)+'</option>');
+    }
+    el.innerHTML=options.join("");
+    if(previous&&botData[previous])el.value=previous;
+  }
+}
+async function sendWorkerCommand(wid,command,timeoutMs=50000){
+  const id=crypto.randomUUID().replaceAll("-","");
+  await set(ref(db,"workerCommands/"+wid+"/"+id),{...command,requestedAt:Date.now()});
+  const started=Date.now();
+  while(Date.now()-started<timeoutMs){
+    await new Promise(resolve=>setTimeout(resolve,1200));
+    const snap=await get(ref(db,"workerResults/"+wid+"/"+id));
+    const result=snap.val();
+    if(result){
+      await remove(ref(db,"workerResults/"+wid+"/"+id)).catch(()=>{});
+      if(result.status!=="ok")throw new Error(result.message||"O worker recusou a operação.");
+      return result;
+    }
+  }
+  throw new Error("O worker não respondeu a tempo. Confirme se está online e atualizado.");
+}
+function selectedBotAndWorker(selectId){
+  const id=$(selectId).value,b=botData[id],wid=b&&b.workerId;
+  if(!id||!b)throw new Error("Selecione um bot.");
+  if(!wid||!online(workerData[wid]))throw new Error("Este bot não está atribuído a um worker online.");
+  return {id,b,wid};
+}
+$("saveProfile").onclick=async()=>{
+  const msg=$("profileMsg");msg.className="hint";msg.textContent="Enviando alteração…";
+  try{
+    const {id,wid}=selectedBotAndWorker("profileBot");
+    const name=$("profileName").value.trim(),description=$("profileDescription").value.trim(),file=$("profileAvatar").files[0];
+    if(name&&(name.length<2||name.length>32))throw new Error("O nome deve ter de 2 a 32 caracteres.");
+    if(description.length>400)throw new Error("A descrição deve ter até 400 caracteres.");
+    if(file&&file.size>4*1024*1024)throw new Error("A imagem deve ter até 4 MB.");
+    if(!name&&!description&&!file)throw new Error("Preencha o nome, a descrição ou escolha uma imagem.");
+    const command={operation:"profile",botId:id};
+    if(name)command.name=name;
+    if(description)command.description=description;
+    if(file){
+      if(!["image/png","image/jpeg"].includes(file.type))throw new Error("Escolha uma imagem PNG ou JPEG.");
+      command.avatarDataUrl=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error("Falha ao ler a imagem."));reader.readAsDataURL(file)});
+    }
+    const result=await sendWorkerCommand(wid,command);
+    msg.className="ok";msg.textContent="Perfil atualizado. "+(result.message||"");
+    $("profileAvatar").value="";
+    await refreshData();
+  }catch(e){msg.className="error";msg.textContent=e.message||String(e)}
+};
+async function loadFileList(){
+  const status=$("fileStatus"),list=$("fileList");status.className="hint";status.textContent="Carregando pasta…";list.innerHTML="";
+  try{
+    const {id,wid}=selectedBotAndWorker("fileBot");
+    const path=$("filePath").value.trim();
+    const result=await sendWorkerCommand(wid,{operation:"list",botId:id,path});
+    const items=(result.result&&result.result.items)||[];
+    currentFilePath=path;
+    list.innerHTML=items.length?items.map(item=>{
+      const icon=item.directory?"📁":"📄",size=item.directory?"pasta":bytes(item.size);
+      return '<div class="row"><div style="min-width:0;flex:1"><strong>'+icon+' '+esc(item.name)+'</strong><div class="hint">'+esc(size)+'</div></div><button class="secondary" style="margin:0" data-open-path="'+esc(item.path)+'" data-is-dir="'+(item.directory?'1':'0')+'">'+(item.directory?"Abrir":"Editar")+'</button></div>';
+    }).join(""):'<div class="muted">Pasta vazia ou sem arquivos de texto permitidos.</div>';
+    list.querySelectorAll("[data-open-path]").forEach(button=>button.onclick=async()=>{
+      const next=button.dataset.openPath;
+      if(button.dataset.isDir==="1"){$("filePath").value=next;await loadFileList();return}
+      $("filePath").value=next;
+      $("fileStatus").textContent="Lendo "+next+"…";
+      try{const selected=selectedBotAndWorker("fileBot");const data=await sendWorkerCommand(selected.wid,{operation:"read",botId:selected.id,path:next});$("fileContent").value=data.result.content;currentFilePath=next;$("fileStatus").textContent="Arquivo carregado: "+next+" ("+bytes(data.result.size)+")"}
+      catch(e){$("fileStatus").className="error";$("fileStatus").textContent=e.message||String(e)}
+    });
+    status.textContent="Pasta aberta: /"+(path||"")+". "+items.length+" item(ns).";
+  }catch(e){status.className="error";status.textContent=e.message||String(e)}
+}
+$("loadFiles").onclick=loadFileList;
+$("saveFile").onclick=async()=>{
+  const status=$("fileStatus");status.className="hint";status.textContent="Salvando…";
+  try{
+    const {id,wid}=selectedBotAndWorker("fileBot"),path=$("filePath").value.trim(),content=$("fileContent").value;
+    if(!path)throw new Error("Informe o caminho do arquivo, por exemplo main8.py.");
+    if(new TextEncoder().encode(content).length>256*1024)throw new Error("O arquivo deve ter no máximo 256 KiB.");
+    await sendWorkerCommand(wid,{operation:"write",botId:id,path,content});
+    currentFilePath=path;status.className="ok";status.textContent="Arquivo salvo: "+path+". Para aplicar mudanças no código, use Reiniciar bot.";
+    await loadFileList();
+  }catch(e){status.className="error";status.textContent=e.message||String(e)}
+};
+$("deleteFile").onclick=async()=>{
+  if(!confirm("Excluir o arquivo selecionado?"))return;
+  const status=$("fileStatus");
+  try{const {id,wid}=selectedBotAndWorker("fileBot"),path=$("filePath").value.trim();if(!path)throw new Error("Informe o caminho do arquivo.");await sendWorkerCommand(wid,{operation:"delete",botId:id,path});$("filePath").value="";$("fileContent").value="";status.className="ok";status.textContent="Arquivo excluído.";await loadFileList()}
+  catch(e){status.className="error";status.textContent=e.message||String(e)}
+};
+$("restartFileBot").onclick=async()=>{
+  const status=$("fileStatus");status.className="hint";status.textContent="Reiniciando bot…";
+  try{const {id,wid}=selectedBotAndWorker("fileBot");await sendWorkerCommand(wid,{operation:"restart",botId:id});status.className="ok";status.textContent="Solicitação de reinício enviada."}
+  catch(e){status.className="error";status.textContent=e.message||String(e)}
+};
+function start(){stopSubs();$('login').classList.add('hidden');$('dashboard').classList.remove('hidden');$('logout').classList.remove('hidden');$('connection').textContent='Conectando…';$('connection').className='badge';watch('workers',v=>{workerData=v;cleanupStaleWorkers();drawWorkers();rebalance().then(drawBots)});watch('bots',v=>{botData=v;drawBots();rebalance()});$('connection').textContent='Conectado';$('connection').className='badge'}
+$('loginBtn').onclick=async()=>{ $('loginMsg').textContent='';try{await signInWithEmailAndPassword(auth,$('email').value.trim(),$('password').value)}catch(e){$('loginMsg').textContent='Login Firebase falhou: '+e.message}};
+$('logout').onclick=()=>signOut(auth);
+$('createBot').onclick=async()=>{const name=$('botName').value.trim(),token=$('botToken').value.trim();if(!name||token.length<30){$('createMsg').textContent='Informe um nome e um token válido.';return}try{const id=crypto.randomUUID().replaceAll('-','');await set(ref(db,'bots/'+id),{name,token,config:{},enabled:true,workerId:null,createdAt:Date.now(),updatedAt:Date.now()});$('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado; distribuição automática iniciada.';lastAssignment='';await refreshData()}catch(e){$('createMsg').textContent='Erro: '+e.message}};
+setInterval(()=>{if(auth.currentUser){cleanupStaleWorkers().then(()=>drawWorkers())}},60000);
+onAuthStateChanged(auth,async user=>{if(!user){stopSubs();$('dashboard').classList.add('hidden');$('login').classList.remove('hidden');$('logout').classList.add('hidden');$('email').value='daniblocks100@gmail.com';$('password').value='';$('connection').textContent='Desconectado';$('connection').className='badge off';return}try{const s=await get(ref(db,'admins/'+user.uid));if(s.val()!==true){$('loginMsg').textContent='Login feito, mas este UID não está autorizado. No Realtime Database > Dados, configure admins/'+user.uid+' = true.';await signOut(auth);return}start()}catch(e){stopSubs();$('dashboard').classList.add('hidden');$('login').classList.remove('hidden');$('logout').classList.add('hidden');$('connection').textContent='Acesso negado';$('connection').className='badge off';$('loginMsg').textContent='O login entrou, mas o Firebase bloqueou a leitura de admins/'+user.uid+'. No Realtime Database > Dados, crie admins/'+user.uid+' com valor booleano true; não coloque esse UID na aba Regras. Detalhe: '+e.message;try{await signOut(auth)}catch(_){}}});
+</script></body></html>
