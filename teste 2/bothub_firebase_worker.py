@@ -458,7 +458,7 @@ def kill_existing_bothub_bots():
 
 # --- Cooperative leases and Firebase-backed memory state ---
 LEASE_SECONDS = max(45, int(os.getenv('BOTHUB_LEASE_SECONDS', '75')))
-STATE_FIXED_FILES = {'bot_personality.json','foto de perfil.txt','image_history.json','memory.sqlite3','reminders.sqlite3','memoria_geral','importantes','geral_avisos','identidade','regras','identidade-padrao.txt','regras-padrao.txt'}
+STATE_FIXED_FILES = {'bot_personality.json','foto de perfil.txt','image_history.json','memory.sqlite3','reminders.sqlite3','memoria_geral','importantes','geral_avisos','identidade','regras','identidade-padrao.txt','regras-padrao.txt','bot_settings.json'}
 ACTIVE_LEASES = {}
 CURRENT_DEVICE_ID = ''
 CURRENT_FIREBASE_TOKEN = ''
@@ -537,6 +537,28 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
     if not isinstance(owner,dict) or owner.get('owner') != device_id or int(owner.get('fence') or 0) != int(lease['fence']):
         ACTIVE_LEASES.pop(bid,None); raise RuntimeError('Lease perdido; estado compartilhado protegido.')
     folder=ROOT/'bots'/bid; folder.mkdir(parents=True,exist_ok=True); url=_state_url(bid)
+    # Antes de enviar o estado, cria uma cópia sincronizável da configuração sem segredos.
+    # config.json nunca é enviado diretamente porque contém token e possíveis chaves de API.
+    if mode == 'push':
+        try:
+            local_cfg_path = folder/'config.json'
+            if local_cfg_path.is_file():
+                local_cfg = json.loads(local_cfg_path.read_text(encoding='utf-8'))
+                if isinstance(local_cfg, dict):
+                    def strip_secrets(value):
+                        blocked = {'discord_token','token','api_key','apikey','secret','password','authorization'}
+                        if isinstance(value, dict):
+                            return {str(key): strip_secrets(item) for key,item in value.items()
+                                    if str(key).lower() not in blocked and str(key).lower() not in {'apis'}}
+                        if isinstance(value, list):
+                            return [strip_secrets(item) for item in value]
+                        return value
+                    safe_cfg = strip_secrets(local_cfg)
+                    if isinstance(safe_cfg.get('ai'), dict):
+                        safe_cfg['ai'].pop('api_keys', None)
+                    save_json(folder/'bot_settings.json', safe_cfg)
+        except Exception as e:
+            print('[BotHub] não foi possível preparar configurações seguras para sincronização:',str(e)[:120],flush=True)
     r=_req_json('GET',url+'.json',tok); remote=r.json() if r.text else {}
     if not isinstance(remote,dict): remote={}
     if mode == 'pull' and remote:
@@ -587,8 +609,36 @@ def start(k,b):
                 os.kill(duplicate_pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         except OSError:
             pass
-    cfg=dict(b.get("config") or {});cfg["discord_token"]=b["token"]
-    cp=folder/"config.json";save_json(cp,cfg)
+    # A configuração recebida do painel fornece a base; preserva a configuração local
+    # e aplica por cima o estado sincronizado mais recente (sem tokens/chaves privadas).
+    cfg=dict(b.get("config") or {})
+    cp=folder/"config.json"
+    if cp.is_file():
+        try:
+            local_cfg=json.loads(cp.read_text(encoding="utf-8"))
+            if isinstance(local_cfg,dict):
+                def merge_cfg(base, overlay):
+                    result=dict(base) if isinstance(base,dict) else {}
+                    if isinstance(overlay,dict):
+                        for key,value in overlay.items():
+                            if isinstance(value,dict) and isinstance(result.get(key),dict):
+                                result[key]=merge_cfg(result[key],value)
+                            else:
+                                result[key]=value
+                    return result
+                cfg=merge_cfg(cfg,local_cfg)
+        except Exception as e:
+            print("[BotHub] configuração local não pôde ser mesclada:",str(e)[:120],flush=True)
+    safe_state=folder/"bot_settings.json"
+    if safe_state.is_file():
+        try:
+            persisted=json.loads(safe_state.read_text(encoding="utf-8"))
+            if isinstance(persisted,dict):
+                cfg=merge_cfg(cfg,persisted) if "merge_cfg" in locals() else {**cfg,**persisted}
+        except Exception as e:
+            print("[BotHub] estado persistido de configurações não pôde ser carregado:",str(e)[:120],flush=True)
+    cfg["discord_token"]=b["token"]
+    save_json(cp,cfg)
     if k in PROCS and PROCS[k].poll() is None:return
     log=open(folder/"bot.log","ab",buffering=0)
     popen_kwargs = {}
@@ -1059,9 +1109,9 @@ def main():
                     try: sync_bot_state(k,'push',t,cfg['device_id'])
                     except Exception: pass
                     release_bot_lease(k,cfg['device_id'],t)
-                    if k not in leased:
-                        shutil.rmtree(ROOT/'bots'/sid(k),ignore_errors=True)
-                    print("[BotHub] bot parado/transferido:",k,flush=True)
+                    # Não apagar a pasta ao transferir/desatribuir o bot: ela contém
+                    # arquivos locais e cópias de recuperação. O estado é sincronizado acima.
+                    print("[BotHub] bot parado/transferido; arquivos locais preservados:",k,flush=True)
             for k,bot_cfg in leased.items():
                 try:
                     if k not in PROCS or PROCS[k].poll() is not None:
