@@ -1899,9 +1899,9 @@ AHM7_TOOL_PURPOSES = {
     "driveup": "informar acesso OAuth individual ao DriveUp",
 }
 AI_SETTINGS_DEFAULT = {
-    "default_provider": "blockrun",
+    "default_provider": "chatgpt",
     "automatic_model_routing": True,
-    "fallback_order": ["blockrun", "llm7", "groq", "openrouter", "chatgpt"],
+    "fallback_order": ["chatgpt", "openrouter", "groq", "llm7", "blockrun"],
     "api_keys": {provider: [] for provider in AI_PROVIDER_NAMES},
     "models": dict(AI_DEFAULT_MODELS),
     "ahm7_tools": {tool: True for tool in AHM7_TOOLS},
@@ -2021,8 +2021,9 @@ def carregar_config():
     default_config = {
         "discord_token": "",
         "apis": [],
-        "criadores_ids": [1530461890029949030],
-        "criador_supremo": 1530461890029949030,
+        "criadores_ids": [1252679441629315144],
+        "criador_supremo": 1252679441629315144,
+        "dm_settings": {"enabled": True, "sincero": True, "sincero_para": "criadores", "admin_ids": []},
         "raiz_permissoes": {},
         "canais_configurados": {},
         "tell_presets": {},
@@ -2053,6 +2054,15 @@ def carregar_config():
         raise RuntimeError("raiz_permissoes precisa mapear IDs de servidores para listas de IDs de usuários.")
     if not isinstance(cfg.get("tell_presets"), dict):
         cfg["tell_presets"] = {}
+    dm_settings = cfg.get("dm_settings")
+    if not isinstance(dm_settings, dict):
+        dm_settings = {}
+    cfg["dm_settings"] = {
+        "enabled": dm_settings.get("enabled", True) is True,
+        "sincero": dm_settings.get("sincero", True) is True,
+        "sincero_para": dm_settings.get("sincero_para", "criadores") if dm_settings.get("sincero_para", "criadores") in {"todos", "admins", "criadores"} else "criadores",
+        "admin_ids": [int(uid) for uid in dm_settings.get("admin_ids", []) if str(uid).isdigit()][:100] if isinstance(dm_settings.get("admin_ids", []), list) else [],
+    }
     ai_cfg = cfg.get("ai")
     if not isinstance(ai_cfg, dict):
         ai_cfg = {}
@@ -2665,7 +2675,7 @@ def is_creator(user_or_message):
 
 
 def obter_ids_criadores():
-    return set(CRIADORES_IDS) | {int(config.get("criador_supremo", 1530461890029949030))}
+    return set(CRIADORES_IDS) | {int(config.get("criador_supremo", 1252679441629315144))}
 
 def interaction_e_criador(interaction):
     return is_creator(interaction.user)
@@ -3961,11 +3971,25 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
         )
     
     if is_dm:
-        prompt += (
-            "🎭 **MODO DE PERSONALIDADE: MENSAGEM DIRETA (DM)**\n"
-            "- Você está conversando em uma **Mensagem Direta (DM)** privada.\n"
-            "- **TOM:** Sério, direto, profissional, formal e objetivo. Sem exageros, sem brincadeiras bobas.\n\n"
+        dm_cfg = config.get("dm_settings", {}) if isinstance(config, dict) else {}
+        escopo_sincero = dm_cfg.get("sincero_para", "criadores")
+        user_id_num = int(user_id) if str(user_id or "").isdigit() else 0
+        admin_ids_dm = set(dm_cfg.get("admin_ids", [])) if isinstance(dm_cfg.get("admin_ids", []), list) else set()
+        aplicar_sincero = dm_cfg.get("sincero", True) is True and (
+            escopo_sincero == "todos"
+            or (escopo_sincero == "admins" and (is_criador or user_id_num in admin_ids_dm))
+            or (escopo_sincero == "criadores" and is_criador)
         )
+        if aplicar_sincero:
+            prompt += (
+                "🎭 **MODO DE PERSONALIDADE: MENSAGEM DIRETA (DM) — SINCERO**\n"
+                "- Seja honesto, direto, claro e objetivo, sem ser cruel ou desrespeitoso.\n\n"
+            )
+        else:
+            prompt += (
+                "🎭 **MODO DE PERSONALIDADE: MENSAGEM DIRETA (DM) — AMIGÁVEL**\n"
+                "- Seja acolhedor, natural, descontraído e simpático; use emojis quando combinarem.\n\n"
+            )
     else:
         prompt += (
             "🎭 **MODO DE PERSONALIDADE: SERVIDOR PÚBLICO**\n"
@@ -5417,47 +5441,26 @@ def _requisitar_chat_sync(
 def obter_ordem_provedores():
     preferido_configurado = AI_CONFIG["default_provider"]
     preferido_env = os.getenv("AI_DEFAULT_PROVIDER", "").strip().lower()
-    preferido = preferido_env or (
-        "blockrun"
-        if AI_CONFIG.get("automatic_model_routing", True)
-        else preferido_configurado
-    )
     ordem_env = os.getenv("AI_FALLBACK_ORDER")
-    if preferido not in AI_PROVIDER_NAMES:
-        log_console(
-            f"AVISO: AI_DEFAULT_PROVIDER inválido ({preferido}); "
-            f"usando {preferido_configurado}."
-        )
-        preferido = preferido_configurado
     if ordem_env:
         candidatos = [provider.strip().lower() for provider in ordem_env.split(",")]
-        invalidos = [
-            provider for provider in candidatos
-            if provider and provider not in AI_PROVIDER_NAMES
-        ]
-        if invalidos:
-            log_console(
-                "AVISO: provedores ignorados em AI_FALLBACK_ORDER: "
-                + ", ".join(invalidos)
-            )
-        ordem = [
-            provider for provider in candidatos
-            if provider in AI_PROVIDER_NAMES
-        ]
-        if invalidos and not ordem:
+        ordem = [provider for provider in candidatos if provider in AI_PROVIDER_NAMES]
+        if not ordem:
             ordem = list(AI_CONFIG["fallback_order"])
+        preferido = preferido_env or preferido_configurado
     else:
-        ordem = list(AI_CONFIG["fallback_order"])
-        if (
-            AI_CONFIG.get("automatic_model_routing", True)
-            and not preferido_env
-            and ordem == ["chatgpt", "openrouter", "groq", "blockrun"]
-        ):
-            ordem = list(AI_SETTINGS_DEFAULT["fallback_order"])
-        elif AI_CONFIG.get("automatic_model_routing", True) and not preferido_env:
-            ordem = ["blockrun"] + [
-                provider for provider in ordem if provider != "blockrun"
-            ]
+        # APIs principais configuradas primeiro; sem elas, LLM7 e depois BlockRun.
+        primarios = ("chatgpt", "openrouter", "groq")
+        disponiveis = {provider: bool(obter_chaves_provedor(provider)) for provider in primarios}
+        if any(disponiveis.values()):
+            ordem = [provider for provider in primarios if disponiveis[provider]]
+            ordem.extend(["llm7", "blockrun"])
+        else:
+            ordem = ["llm7", "blockrun"]
+        preferido = preferido_env or (ordem[0] if ordem else preferido_configurado)
+    if preferido not in AI_PROVIDER_NAMES:
+        log_console(f"AVISO: AI_DEFAULT_PROVIDER inválido ({preferido}); usando {preferido_configurado}.")
+        preferido = preferido_configurado
     ordem = [preferido] + ordem + list(AI_PROVIDER_NAMES)
     return list(dict.fromkeys(p for p in ordem if p in AI_PROVIDER_NAMES))
 
@@ -9560,6 +9563,13 @@ async def on_message(message):
     # Determinar se o Bot deve responder no Chat
     deve_responder = False
     if is_dm:
+        dm_cfg = config.get("dm_settings", {}) if isinstance(config, dict) else {}
+        if dm_cfg.get("enabled", True) is not True:
+            try:
+                await message.channel.send("As mensagens diretas estão desativadas nas configurações deste bot.")
+            except discord.HTTPException:
+                pass
+            return
         deve_responder = True
     elif tipo == "chat":
         mencionou_bot = (bot.user in message.mentions) or (message.guild and any(role in message.role_mentions for role in message.guild.me.roles))
