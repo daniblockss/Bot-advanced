@@ -82,6 +82,8 @@ def request(url, method="GET", payload=None, peer=True, timeout=3):
         signed = stamp.encode() + b"\n" + body
         headers.update({"X-BotHub-Node": NODE_ID, "X-BotHub-Time": stamp,
                         "X-BotHub-Signature": hmac.new(SECRET, signed, hashlib.sha256).hexdigest()})
+    else:
+        headers["Authorization"] = "Bearer " + ADMIN_TOKEN
     if payload is not None:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=body if payload is not None else None, headers=headers, method=method)
@@ -130,6 +132,10 @@ def merge_tasks(incoming):
             try:
                 tid, name, token = str(t["task_id"]), str(t["name"]), str(t["token"])
                 config, enabled, updated = t.get("config", {}), int(bool(t.get("enabled", True))), int(t["updated"])
+                if isinstance(config, str):
+                    try: config = json.loads(config)
+                    except Exception: config = {}
+                if not isinstance(config, dict): config = {}
                 if not tid or len(tid) > 100 or len(name) > 100 or len(token) < 30 or updated > now + 300:
                     continue
                 existing = d.execute("SELECT updated FROM tasks WHERE task_id=?", (tid,)).fetchone()
