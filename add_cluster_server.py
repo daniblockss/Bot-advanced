@@ -20,7 +20,7 @@ START_TEMPLATE = r'''#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Inicializador do nó BotHub P2P com registro e descoberta pelo Firebase."""
 from __future__ import annotations
-import json, os, secrets, subprocess, sys, time, socket, urllib.parse, urllib.request, threading
+import json, os, secrets, subprocess, sys, time, socket, urllib.parse, urllib.request, threading, hashlib
 from pathlib import Path
 from getpass import getpass
 
@@ -92,7 +92,7 @@ def register_server(cfg):
     url = ("http://" + pub + ":" + str(PORT)) if pub else ("http://" + ip + ":" + str(PORT))
     now = int(time.time() * 1000)
     entry = {
-        "uid": uid, "node_id": node, "hostname": socket.gethostname(),
+        "uid": uid, "node_id": node, "cluster_id": hashlib.sha256(cfg["secret"].encode()).hexdigest()[:16], "hostname": socket.gethostname(),
         "platform": sys.platform, "url": url, "local_url": "http://" + ip + ":" + str(PORT),
         "public_ip": pub, "local_ip": ip, "port": PORT,
         "created_at": int((servers.get(node) or {}).get("created_at", now)),
