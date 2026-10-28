@@ -9,7 +9,7 @@ ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
 TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
-DB="https://bothub-bca02-default-rtdb.firebaseio.com"
+DB="https://bothub-bca02-default-rtdb.firebaseio.com/teste2"
 PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 
@@ -292,6 +292,7 @@ def handle_shutdown_signal(signum, frame):
 def script_already_running(script, token_value=None):
     """Detecta main.py duplicado por caminho OU pelo mesmo token em outra pasta."""
     target = str(script.resolve())
+    bots_root = (ROOT / "bots").resolve()
     current_pid = os.getpid()
     if sys.platform.startswith("linux") and Path("/proc").is_dir():
         for entry in Path("/proc").iterdir():
@@ -306,7 +307,7 @@ def script_already_running(script, token_value=None):
                         running_script = Path(arg).resolve()
                     except Exception:
                         continue
-                    if running_script.name != "main.py":
+                    if running_script.name != "main.py" or bots_root not in running_script.parents:
                         continue
                     if str(running_script) == target:
                         return int(entry.name)
@@ -335,6 +336,8 @@ def script_already_running(script, token_value=None):
                         continue
                     if not str(arg).endswith(".py") or running_script.name != "main.py":
                         continue
+                    if bots_root not in running_script.parents:
+                        continue
                     if str(running_script) == target:
                         return proc.info["pid"]
                     if token_value:
@@ -353,6 +356,7 @@ def script_already_running(script, token_value=None):
 def kill_existing_bothub_bots():
     """Encerra processos antigos de bots do BotHub antes de o controlador atual iniciá-los."""
     current_pid = os.getpid()
+    bots_root = (ROOT / "bots").resolve()
     killed = []
     if sys.platform.startswith("linux") and Path("/proc").is_dir():
         for entry in Path("/proc").iterdir():
@@ -372,7 +376,7 @@ def kill_existing_bothub_bots():
                 is_bot_script = False
                 for arg in script_args:
                     path = Path(arg).resolve()
-                    if path.name == "main.py" and "bots" in path.parts:
+                    if path.name == "main.py" and bots_root in path.parents:
                         is_bot_script = True
                         break
                 if is_bot_script:
@@ -391,7 +395,7 @@ def kill_existing_bothub_bots():
                 for arg in args[1:]:
                     try:
                         path = Path(arg).resolve()
-                        if path.name == "main.py" and "bots" in path.parts:
+                        if path.name == "main.py" and bots_root in path.parents:
                             proc.terminate()
                             killed.append(pid)
                             break
@@ -530,7 +534,7 @@ def start(k,b):
     # Restore Firebase memory before main.py opens local databases.
     sync_bot_state(k, 'pull')
     if not script.exists():
-        url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py")
+        url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/main.py")
         r=S.get(url,timeout=30);r.raise_for_status()
         if len(r.content)<10000:raise RuntimeError("Download de main.py incompleto.")
         script.write_bytes(r.content)
@@ -699,7 +703,7 @@ def process_worker_commands(cfg,tok,did,queue):
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
 def download_latest_main(folder):
-    url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py")
+    url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/main.py")
     response=S.get(url,timeout=45);response.raise_for_status()
     data=response.content
     if len(data)<10000: raise RuntimeError("main.py baixado está incompleto.")
@@ -762,8 +766,8 @@ def process_release_updates(tok, queue):
 
 
 CLUSTER_UPDATE_URLS={
-    "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/add_cluster_server.py",
-    "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bothub_firebase_worker.py",
+    "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/add_cluster_server.py",
+    "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/bothub_firebase_worker.py",
 }
 
 def process_cluster_update(tok):
