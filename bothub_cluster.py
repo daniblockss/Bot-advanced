@@ -96,12 +96,24 @@ def peer_request(peer_id, path, method="GET", payload=None):
     return request(base + path, method, payload, True, 3)
 
 def node_status():
+    # psutil is optional: it cannot be built on some Android/Termux Python installs.
+    ram, cpu = 0, 0.0
     try:
         import psutil
         ram = int(psutil.virtual_memory().available)
         cpu = float(psutil.cpu_percent(interval=0.05))
     except Exception:
-        ram, cpu = 0, 0.0
+        # Linux and Termux expose available memory through /proc/meminfo.
+        try:
+            with open("/proc/meminfo", "r", encoding="ascii") as f:
+                mem = {}
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[0].endswith(":"):
+                        mem[parts[0][:-1]] = int(parts[1]) * 1024
+                ram = mem.get("MemAvailable", mem.get("MemFree", 0))
+        except (OSError, ValueError):
+            ram = 0
     import shutil
     disk = shutil.disk_usage(str(ROOT))
     with LOCK:
