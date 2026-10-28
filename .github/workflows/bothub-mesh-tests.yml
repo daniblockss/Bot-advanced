@@ -8,6 +8,13 @@ on:
       - "test_bothub_mesh.py"
       - "bothub_cluster.py"
       - "test_bothub_cluster.py"
+      - "main.py"
+      - "main8.py"
+      - "bothub_firebase_worker.py"
+      - "add_cluster_server.py"
+      - "firebase_database.rules.json"
+      - "docs/bothub.html"
+      - "CERTO/**"
       - ".github/workflows/bothub-mesh-tests.yml"
   pull_request:
     paths:
@@ -23,6 +30,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Validate Python syntax
+        run: python -m py_compile main.py main8.py bothub_firebase_worker.py add_cluster_server.py
+      - name: Validate Firebase rules JSON
+        run: python -m json.tool firebase_database.rules.json > /dev/null
+      - name: Validate panel JavaScript syntax
+        run: |
+          python -c "from pathlib import Path; s=Path('docs/bothub.html').read_text(); Path('/tmp/bothub.mjs').write_text(s.split('<script type=\"module\">',1)[1].split('</script>',1)[0])"
+          node --check /tmp/bothub.mjs
+      - name: Check curated package copies
+        run: |
+          cmp docs/bothub.html CERTO/index.html
+          cmp bothub_firebase_worker.py CERTO/bothub_firebase_worker.py
+          cmp add_cluster_server.py CERTO/add_cluster_server.py
+          cmp firebase_database.rules.json CERTO/firebase_database.rules.json
+          cmp main.py CERTO/main.py
       - name: Run mesh unit tests
         env:
           BOTHUB_MESH_SECRET: test-only-secret-do-not-use-in-production-0000000000
