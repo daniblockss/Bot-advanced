@@ -77,6 +77,15 @@ def public_ip():
 
 def register_server(cfg):
     token, uid = auth()
+    # Segredo compartilhado protegido no Firebase: todos os nós da mesma conta usam o mesmo.
+    shared_secret = fb("GET", "clusterSettings/shared_secret", token)
+    if not isinstance(shared_secret, str) or len(shared_secret) < 32:
+        shared_secret = cfg.get("secret", "")
+        if len(shared_secret) < 32:
+            shared_secret = secrets.token_urlsafe(48)
+        fb("PUT", "clusterSettings/shared_secret", token, shared_secret)
+    cfg["secret"] = shared_secret
+    write_config(cfg)
     servers = fb("GET", "clusterServers", token) or {}
     node = cfg.get("node_id", "")
     if not node or (node not in servers and cfg.get("firebase_uid") not in ("", uid)):
@@ -107,6 +116,7 @@ def register_server(cfg):
         fb("PUT", "clusterServers/" + node + "/last_seen", token, now)
         fb("PUT", "clusterServers/" + node + "/status", token, "online")
         fb("PUT", "clusterServers/" + node + "/url", token, url)
+        fb("PUT", "clusterServers/" + node + "/cluster_id", token, hashlib.sha256(cfg["secret"].encode()).hexdigest()[:16])
     cfg["node_id"] = node
     cfg["firebase_uid"] = uid
     write_config(cfg)
