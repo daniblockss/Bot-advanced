@@ -123,8 +123,11 @@ $("publishClusterUpdate").onclick=async()=>{
     if(!confirm("Buscar a versão atual de "+name+" no GitHub e distribuir para os workers compatíveis?\\n\\nO controlador pode reiniciar e os bots podem ficar indisponíveis por alguns segundos."))return;
     msg.textContent="Publicando pedido de atualização…";
     const updateId=crypto.randomUUID().replaceAll("-","");
-    await set(ref(db,"botHubClusterUpdates/current"),{updateId,files:[name],source:"github",createdAt:Date.now(),createdBy:auth.currentUser?.uid||"admin"});
-    msg.className="ok";msg.textContent="Pedido publicado. Os workers compatíveis baixarão o arquivo diretamente do GitHub.";
+    const release={updateId,files:[name],source:"github",createdAt:Date.now(),createdBy:auth.currentUser?.uid||"admin"};
+    await set(ref(db,"botHubClusterUpdates/current"),release);
+    // Compatibilidade: controladores antigos só conhecem o canal obrigatório legado.
+    await set(ref(db,"botHubUpdates/current"),{updateId,type:"mandatory",clusterOnly:true,description:"Atualização do controlador BotHub.",createdAt:release.createdAt,createdBy:release.createdBy});
+    msg.className="ok";msg.textContent="Pedido publicado. Controladores antigos e novos baixarão os scripts diretamente do GitHub.";
   }catch(e){msg.className="error";msg.textContent=e.message||String(e)}
 };
 $("publishRelease").onclick=async()=>{
