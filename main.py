@@ -3952,6 +3952,11 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
     regras = ler_txt(obter_arquivo_guild(REGRAS_TXT_FILE, guild_id))
 
     prompt = f"{identidade}\n\n{regras}\n\n=========================================\n"
+    prompt += (
+        f"IDENTIDADE: seu nome é {str(getattr(bot.user, 'name', 'bot'))}. "
+        "Apresente-se pelo nome deste bot no Discord. Não afirme ser Nemotron, NVIDIA ou outro modelo "
+        "e não invente fabricante/modelo. Use sempre a mesma personalidade no servidor, nas DMs e com criadores.\n\n"
+    )
     try:
         perfil_path = os.path.join(BASE_DIR, "bot_personality.json")
         if os.path.isfile(perfil_path):
@@ -3959,15 +3964,20 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
                 perfil_bot = json.load(perfil_handle)
             descricao_visual = str(perfil_bot.get("visual_description", "")).strip()
             personalidade_bot = str(perfil_bot.get("personality", "")).strip()
-            if descricao_visual or personalidade_bot:
+            regras_personalidade = perfil_bot.get("rules", [])
+            if isinstance(regras_personalidade, list):
+                regras_personalidade = "\n".join("- " + str(item)[:300] for item in regras_personalidade[:12])
+            else:
+                regras_personalidade = str(regras_personalidade or "")[:1800]
+            if descricao_visual or personalidade_bot or regras_personalidade:
                 prompt += (
                     "PERFIL PERSISTENTE DESTE BOT (baseado no próprio perfil e avatar):\n"
                     f"- Nome do bot: {str(perfil_bot.get('name', ''))[:100]}\n"
                     f"- Descrição do perfil: {str(perfil_bot.get('description', ''))[:500]}\n"
                     f"- Leitura visual do avatar: {descricao_visual[:1600]}\n"
                     f"- Personalidade derivada do perfil: {personalidade_bot[:1800]}\n"
+                    f"- Regras de comportamento derivadas do perfil: {regras_personalidade[:1800]}\n"
                     "Use esse perfil como orientação estável, sem inventar fatos sobre o personagem retratado.\n\n"
-                    "IDENTIDADE: apresente-se pelo nome deste bot no Discord. Nunca diga espontaneamente que é Nemotron, NVIDIA ou outro modelo; não invente fabricante ou modelo. Mantenha a mesma personalidade também nas DMs e com criadores.\n\n"
                 )
     except (OSError, ValueError, TypeError):
         pass
@@ -6999,7 +7009,7 @@ async def garantir_personalidade_inicial():
     if os.path.exists(caminho) or not bot.user:
         return
     perfil = {"name": str(bot.user.name), "description": "", "avatar_url": str(bot.user.display_avatar.url),
-              "visual_description": "", "personality": ""}
+              "visual_description": "", "personality": "", "rules": []}
     try:
         try:
             app = await bot.application_info()
@@ -7021,16 +7031,32 @@ async def garantir_personalidade_inicial():
         except Exception as error:
             log_console(f"Perfil visual inicial indisponível ({type(error).__name__}); usando metadados do bot.")
         prompt_personalidade = (
-            "Crie uma personalidade curta, natural e consistente para um bot de comunidade Discord. "
-            "Use apenas o nome, descrição e leitura visual abaixo como inspiração; não invente biografia, "
-            "modelo de IA, fabricante ou capacidades. A personalidade deve funcionar igual em DM e no servidor, "
-            "ser simpática, animada e útil, e não deve se apresentar com frases genéricas de assistente. "
-            "Deixe as regras operacionais vazias; escreva apenas 3 a 6 frases de personalidade.\\n"
+            "Crie uma personalidade e regras iniciais para este bot Discord com base apenas no nome, "
+            "descrição e avatar. A imagem pode inspirar um estilo alegre, misterioso, assustador, calmo, "
+            "bravo ou divertido, mas não invente fatos reais sobre pessoas. A personalidade deve ter 3 a 6 "
+            "frases naturais. Crie de 3 a 8 regras seguras, úteis e coerentes com o estilo. Não mencione modelo, "
+            "fabricante ou provedor de IA. Retorne SOMENTE JSON válido no formato "
+            '{"personality":"texto","rules":["regra 1","regra 2"]}.\\n'
             + json.dumps(perfil, ensure_ascii=False)
         )
         try:
-            personalidade = await consultar_ia_simples(prompt_personalidade)
-            perfil["personality"] = str(personalidade or "").strip()[:1800]
+            gerado = await consultar_ia_simples(prompt_personalidade)
+            bruto = str(gerado or "").strip()
+            if bruto.startswith("```"):
+                bruto = bruto.strip("`")
+                if bruto.lower().startswith("json"):
+                    bruto = bruto[4:].strip()
+            try:
+                resultado = json.loads(bruto)
+            except (json.JSONDecodeError, TypeError):
+                resultado = {}
+            if isinstance(resultado, dict) and resultado.get("personality"):
+                perfil["personality"] = str(resultado["personality"]).strip()[:1800]
+                regras_geradas = resultado.get("rules", [])
+                if isinstance(regras_geradas, list):
+                    perfil["rules"] = [str(item).strip()[:300] for item in regras_geradas[:8] if str(item).strip()]
+            else:
+                perfil["personality"] = bruto[:1800]
         except Exception as error:
             log_console(f"Personalidade inicial indisponível ({type(error).__name__}).")
         tmp = caminho + ".tmp"
