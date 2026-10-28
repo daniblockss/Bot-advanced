@@ -421,7 +421,7 @@ def kill_existing_bothub_bots():
 
 # --- Cooperative leases and Firebase-backed memory state ---
 LEASE_SECONDS = max(45, int(os.getenv('BOTHUB_LEASE_SECONDS', '75')))
-STATE_FIXED_FILES = {'bot_personality.json','image_history.json','memory.sqlite3','reminders.sqlite3','memoria_geral','importantes','geral_avisos','identidade','regras','identidade-padrao.txt','regras-padrao.txt'}
+STATE_FIXED_FILES = {'bot_personality.json','foto de perfil.txt','image_history.json','memory.sqlite3','reminders.sqlite3','memoria_geral','importantes','geral_avisos','identidade','regras','identidade-padrao.txt','regras-padrao.txt'}
 ACTIVE_LEASES = {}
 CURRENT_DEVICE_ID = ''
 CURRENT_FIREBASE_TOKEN = ''
