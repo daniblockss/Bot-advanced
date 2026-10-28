@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Painel para gerenciar vários bots Discord independentes."""
-import hashlib, json, os, shutil, signal, subprocess, sys, threading, time
+import datetime, hashlib, json, os, shutil, signal, subprocess, sys, threading, time
 import urllib.request, urllib.error
 from pathlib import Path
+import requests
 
 ROOT = Path(__file__).resolve().parent
 BOTS = ROOT / "bots"
@@ -32,12 +33,59 @@ def instalar_dependencias():
 
 
 def baixar_script():
-    req = urllib.request.Request(URL, headers={"User-Agent": "BotAdvancedPanel/1.0", "Cache-Control": "no-cache"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        dados = resp.read()
+    resposta = requests.get(URL, headers={"User-Agent": "BotAdvancedPanel/1.0", "Cache-Control": "no-cache"}, timeout=30)
+    resposta.raise_for_status()
+    dados = resposta.content
     if len(dados) < 10000:
         raise RuntimeError("O arquivo baixado parece incompleto; atualização cancelada.")
     return dados
+
+
+def obter_info_publicacao():
+    """Consulta a data do commit publicado para main8.py no GitHub."""
+    try:
+        resposta = requests.get(
+            "https://api.github.com/repos/daniblockss/Bot-advanced/commits",
+            params={"path": "main8.py", "per_page": 1},
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "BotAdvancedPanel/1.0"},
+            timeout=15,
+        )
+        resposta.raise_for_status()
+        itens = resposta.json()
+        commit = itens[0] if isinstance(itens, list) and itens else {}
+        info = commit.get("commit", {})
+        autor = info.get("author") or info.get("committer") or {}
+        return {"commit_sha": commit.get("sha", ""), "published_at": autor.get("date", "")}
+    except (requests.RequestException, ValueError, IndexError, TypeError):
+        return {"commit_sha": "", "published_at": ""}
+
+
+def idade_publicacao(data_iso):
+    if not data_iso:
+        return "data de publicação indisponível"
+    try:
+        instante = datetime.datetime.fromisoformat(data_iso.replace("Z", "+00:00"))
+        segundos = max(0, int((datetime.datetime.now(datetime.timezone.utc) - instante.astimezone(datetime.timezone.utc)).total_seconds()))
+        if segundos < 3600:
+            return f"há {max(1, segundos // 60)} minuto(s)"
+        if segundos < 86400:
+            return f"há {segundos // 3600} hora(s)"
+        return f"há {segundos // 86400} dia(s)"
+    except (ValueError, TypeError):
+        return "data de publicação indisponível"
+
+
+def salvar_versao_bot(pasta, hash_script, info):
+    registro = {
+        "sha256": hash_script,
+        "commit_sha": info.get("commit_sha", ""),
+        "published_at": info.get("published_at", ""),
+        "checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    destino = pasta / "main8.version.json"
+    temporario = destino.with_suffix(".tmp")
+    temporario.write_text(json.dumps(registro, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporario.replace(destino)
 
 
 def carregar_estado():
@@ -267,6 +315,9 @@ class Painel:
     def verificar_atualizacao(self):
         try:
             novo = baixar_script()
+            info_publicacao = obter_info_publicacao()
+            if info_publicacao.get("published_at"):
+                print(f"[Atualização] Código do GitHub publicado {idade_publicacao(info_publicacao['published_at'])}.")
         except Exception as e:
             print(f"[Atualização] Verificação falhou: {type(e).__name__}.")
             return
@@ -283,6 +334,11 @@ class Painel:
                 alvos.append(nome)
         self.hash_script = novo_hash
         if not alvos:
+            for nome in list(self.estado["bots"]):
+                try:
+                    salvar_versao_bot(self.pasta(nome), novo_hash, info_publicacao)
+                except OSError:
+                    pass
             print("[Atualização] Todos os bots já estão na versão atual.")
             return
         print(f"[Atualização] Atualizando {len(alvos)} bot(s)...")
@@ -310,6 +366,7 @@ class Painel:
                     if estava_rodando:
                         self.iniciar(nome)
                     continue
+                salvar_versao_bot(pasta, novo_hash, info_publicacao)
                 if estava_rodando:
                     self.iniciar(nome)
                     self.notificar(pasta, "atualizado")
