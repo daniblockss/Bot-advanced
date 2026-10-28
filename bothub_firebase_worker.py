@@ -86,9 +86,7 @@ def main():
  if not vp.exists():
   subprocess.check_call([sys.executable,"-m","venv",str(v)])
   subprocess.check_call([str(vp),"-m","pip","install","--upgrade","pip"])
-  packages=["requests","discord.py","aiohttp","Pillow"]
-  if "ANDROID_ROOT" not in os.environ and "com.termux" not in str(Path.home()) and "termux" not in os.environ.get("PREFIX",""):
-   packages.append("psutil")
+  packages=["requests","discord.py","aiohttp"]
   subprocess.check_call([str(vp),"-m","pip","install",*packages])
   os.execv(str(vp),[str(vp),str(Path(__file__).resolve())])
  print("[BotHub] Worker Firebase ativo:",cfg["device_id"],flush=True)
