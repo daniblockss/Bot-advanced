@@ -2023,7 +2023,7 @@ def carregar_config():
         "apis": [],
         "criadores_ids": [1252679441629315144],
         "criador_supremo": 1252679441629315144,
-        "dm_settings": {"enabled": True, "sincero": True, "sincero_para": "criadores", "admin_ids": []},
+        "dm_settings": {"enabled": True, "admin_ids": []},
         "raiz_permissoes": {},
         "canais_configurados": {},
         "tell_presets": {},
@@ -2059,13 +2059,8 @@ def carregar_config():
     dm_settings = cfg.get("dm_settings")
     if not isinstance(dm_settings, dict):
         dm_settings = {}
-    dm_scope = dm_settings.get("sincero_para", "criadores")
-    if not isinstance(dm_scope, str) or dm_scope not in {"todos", "admins", "criadores"}:
-        dm_scope = "criadores"
     cfg["dm_settings"] = {
         "enabled": dm_settings.get("enabled", True) is True,
-        "sincero": dm_settings.get("sincero", True) is True,
-        "sincero_para": dm_scope,
         "admin_ids": [int(uid) for uid in dm_settings.get("admin_ids", []) if str(uid).isdigit()][:100] if isinstance(dm_settings.get("admin_ids", []), list) else [],
     }
     ai_cfg = cfg.get("ai")
@@ -3972,6 +3967,7 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
                     f"- Leitura visual do avatar: {descricao_visual[:1600]}\n"
                     f"- Personalidade derivada do perfil: {personalidade_bot[:1800]}\n"
                     "Use esse perfil como orientação estável, sem inventar fatos sobre o personagem retratado.\n\n"
+                    "IDENTIDADE: apresente-se pelo nome deste bot no Discord. Nunca diga espontaneamente que é Nemotron, NVIDIA ou outro modelo; não invente fabricante ou modelo. Mantenha a mesma personalidade também nas DMs e com criadores.\n\n"
                 )
     except (OSError, ValueError, TypeError):
         pass
@@ -7810,27 +7806,7 @@ async def cmd_bot_profile_role(interaction: discord.Interaction, cargo: discord.
 
 
 
-@bot.tree.command(name="dm-configurar", description="Configura respostas do bot por mensagem direta")
-@discord.app_commands.choices(sincero_para=[
-    discord.app_commands.Choice(name="Todos os usuários", value="todos"),
-    discord.app_commands.Choice(name="Somente administradores", value="admins"),
-    discord.app_commands.Choice(name="Somente criadores", value="criadores"),
-])
-async def dm_configurar(interaction: discord.Interaction, permitir_dms: bool, modo_sincero: bool, sincero_para: discord.app_commands.Choice[str]):
-    if not interaction_e_criador(interaction):
-        return await interaction.response.send_message("❌ Somente um criador do bot pode alterar as configurações de DM.", ephemeral=True)
-    dm_cfg = config.setdefault("dm_settings", {"enabled": True, "sincero": True, "sincero_para": "criadores", "admin_ids": []})
-    dm_cfg["enabled"] = bool(permitir_dms)
-    dm_cfg["sincero"] = bool(modo_sincero)
-    dm_cfg["sincero_para"] = sincero_para.value
-    salvar_config(config)
-    estado_dm = "permitidas" if permitir_dms else "desativadas"
-    estado_sincero = "ativado" if modo_sincero else "desativado"
-    await interaction.response.send_message(
-        f"✅ Configurações de DM salvas. DMs: **{estado_dm}**. Modo sincero: **{estado_sincero}**; escopo: **{sincero_para.name}**.\n"
-        "Padrão: modo amigável para usuários comuns e sincero para criadores.",
-        ephemeral=True,
-    )
+
 
 @bot.tree.command(name="reset", description="Limpa seu histórico de conversa atual (DM ou Canal)")
 async def cmd_reset(interaction: discord.Interaction):
