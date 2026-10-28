@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101322">
+  <meta name="description" content="Solicite e personalize seu bot para Discord com acompanhamento do pedido.">
+  <title>BotHub — Crie seu bot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{color-scheme:dark;--bg:#0b0d17;--panel:#121626;--panel2:#171c30;--line:#282e46;--text:#f5f7ff;--muted:#a2aac3;--purple:#8b5cf6;--blue:#4f8cff;--mint:#61e6c3;--danger:#ff8b9b}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 15% -10%,#292052 0,transparent 38%),radial-gradient(ellipse at 100% 10%,#102f4a 0,transparent 30%),var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh}button,input,select,textarea{font:inherit}button{cursor:pointer}.wrap{max-width:1160px;margin:auto;padding:0 24px}.topbar{height:82px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #ffffff12}.brand{display:flex;align-items:center;gap:12px;font:700 22px 'Space Grotesk',sans-serif;letter-spacing:-.7px}.logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--purple),var(--blue));display:grid;place-items:center;box-shadow:0 8px 30px #7256ff40}.logo svg{width:23px}.status{font-size:12px;color:var(--mint);border:1px solid #61e6c344;background:#61e6c30c;padding:8px 12px;border-radius:999px}.hero{padding:68px 0 36px;display:grid;grid-template-columns:1.1fr .9fr;gap:42px;align-items:center}.eyebrow{display:inline-flex;gap:8px;align-items:center;border:1px solid #8b5cf644;background:#8b5cf612;border-radius:999px;padding:8px 12px;color:#c7b7ff;font-size:12px;font-weight:700;letter-spacing:.6px;text-transform:uppercase}.dot{width:7px;height:7px;background:var(--mint);border-radius:50%;box-shadow:0 0 12px var(--mint)}h1,h2,h3,p{margin-top:0}h1{font:700 clamp(40px,5vw,64px)/1.04 'Space Grotesk',sans-serif;letter-spacing:-2.8px;margin:22px 0}h1 span{background:linear-gradient(100deg,#b7a1ff,#78c9ff 75%);-webkit-background-clip:text;background-clip:text;color:transparent}.lead{font-size:17px;line-height:1.75;color:var(--muted);max-width:560px}.hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}.btn{border:0;border-radius:12px;padding:13px 18px;font-weight:700;transition:transform .15s,filter .15s}.btn:hover{transform:translateY(-1px);filter:brightness(1.08)}.primary{background:linear-gradient(100deg,var(--purple),var(--blue));color:white;box-shadow:0 10px 28px #6256ee35}.secondary{background:#ffffff08;border:1px solid var(--line);color:var(--text)}.preview{border:1px solid #ffffff16;background:linear-gradient(145deg,#191e33ed,#101423ed);border-radius:24px;padding:22px;box-shadow:0 30px 100px #0005;position:relative;overflow:hidden}.preview:before{content:'';position:absolute;width:200px;height:200px;background:#8b5cf625;filter:blur(50px);top:-100px;right:-50px}.window-head{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:16px;position:relative}.window-dots{display:flex;gap:6px}.window-dots i{width:8px;height:8px;background:#525b78;border-radius:50%}.mini-label{color:var(--muted);font-size:12px}.bot-card{display:flex;gap:14px;align-items:center;margin:22px 0;padding:16px;border:1px solid var(--line);border-radius:16px;background:#ffffff04}.bot-avatar{width:48px;height:48px;border-radius:15px;background:linear-gradient(135deg,#7555ed,#2b9df4);display:grid;place-items:center;font-size:24px}.bot-card strong{display:block;margin-bottom:5px}.online{font-size:12px;color:var(--mint)}.metric-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.metric{border:1px solid var(--line);border-radius:14px;padding:14px;background:#0c1020aa}.metric b{font:600 20px 'Space Grotesk';display:block;margin-bottom:4px}.metric small{color:var(--muted)}.section-title{font:700 27px 'Space Grotesk';letter-spacing:-.8px;margin-bottom:8px}.section-sub{color:var(--muted);line-height:1.65;margin-bottom:24px}.features{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:24px 0 58px}.feature{border:1px solid #ffffff12;background:#ffffff04;padding:21px;border-radius:18px}.feature-icon{height:40px;width:40px;display:grid;place-items:center;background:#8b5cf61c;border-radius:12px;font-size:19px;margin-bottom:16px}.feature h3{font-size:15px;margin-bottom:8px}.feature p{font-size:13px;line-height:1.7;color:var(--muted);margin-bottom:0}.app-section{padding:12px 0 70px;scroll-margin-top:20px}.app-grid{display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start}.side-card,.form-card{border:1px solid var(--line);background:#111525e8;border-radius:20px;padding:22px}.side-card h3{font:600 17px 'Space Grotesk';margin-bottom:14px}.step{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #ffffff0c;color:var(--muted);font-size:13px;line-height:1.5}.step:last-child{border:0}.step-num{width:27px;height:27px;flex:0 0 27px;border-radius:9px;background:#8b5cf620;color:#c7b7ff;display:grid;place-items:center;font-weight:700}.notice{margin-top:18px;background:#61e6c30b;border:1px solid #61e6c32b;border-radius:14px;padding:14px;color:#b6dcd5;font-size:12px;line-height:1.65}.tabs{display:flex;gap:6px;background:#0a0d17;padding:5px;border:1px solid var(--line);border-radius:12px;margin-bottom:20px}.tab{flex:1;border:0;background:transparent;color:var(--muted);padding:10px;border-radius:8px;font-weight:700}.tab.active{background:#242944;color:white}.auth-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{display:flex;flex-direction:column;gap:7px;margin-bottom:15px}.field label{font-size:13px;color:#dce1f4;font-weight:600}.field input,.field select,.field textarea{width:100%;background:#0b0e1a;border:1px solid #303650;border-radius:11px;color:var(--text);padding:12px 13px;outline:none;min-width:0}.field input:focus,.field select:focus,.field textarea:focus{border-color:#8b5cf6;box-shadow:0 0 0 3px #8b5cf61c}.field textarea{min-height:96px;resize:vertical}.hint{font-size:11px;color:var(--muted);line-height:1.5}.full{width:100%}.divider-text{display:flex;gap:12px;align-items:center;color:var(--muted);font-size:12px;margin:17px 0}.divider-text:before,.divider-text:after{content:'';height:1px;background:var(--line);flex:1}.msg{display:none;border-radius:10px;padding:12px;margin:14px 0;font-size:13px;line-height:1.5}.msg.show{display:block}.msg.error{background:#ff8b9b12;border:1px solid #ff8b9b40;color:#ffb4bf}.msg.success{background:#61e6c312;border:1px solid #61e6c340;color:#a7f3df}.signed{display:none}.signed.show{display:block}.hidden{display:none!important}.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{display:flex;gap:8px;align-items:center;border:1px solid var(--line);padding:9px 11px;border-radius:10px;font-size:12px;color:#d6dbef}.chip input{accent-color:var(--purple)}.request-list{display:grid;gap:10px;margin-top:20px}.request-item{border:1px solid var(--line);border-radius:13px;padding:14px;background:#ffffff04}.request-item strong{display:block;margin-bottom:5px}.request-item small{color:var(--muted)}.footer{border-top:1px solid #ffffff12;padding:24px 0 34px;color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap}.footer a{color:#c4b5fd;text-decoration:none}.small-print{font-size:11px;color:var(--muted);line-height:1.65;margin-top:12px}
+    @media(max-width:850px){.hero{grid-template-columns:1fr;padding-top:48px}.preview{max-width:560px}.app-grid{grid-template-columns:1fr}.side-card{order:2}.features{grid-template-columns:1fr 1fr}}@media(max-width:560px){.wrap{padding:0 16px}.topbar{height:70px}.status{font-size:10px}.hero{gap:28px}h1{letter-spacing:-1.8px}.lead{font-size:15px}.features{grid-template-columns:1fr;padding-bottom:40px}.auth-grid{grid-template-columns:1fr}.form-card,.side-card{padding:17px}.section-title{font-size:24px}.preview{padding:16px}}
+  </style>
+</head>
+<body>
+<header class="wrap topbar">
+  <div class="brand"><div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M7 8.5 12 5l5 3.5v7L12 19l-5-3.5v-7Z" stroke="white" stroke-width="1.8"/><path d="m9.5 11 2.5 2 2.5-2" stroke="white" stroke-width="1.8" stroke-linecap="round"/></svg></div>BotHub</div>
+  <div class="status"><span class="dot" style="display:inline-block;margin-right:7px"></span>Portal de solicitações</div>
+</header>
+<main class="wrap">
+  <section class="hero">
+    <div>
+      <div class="eyebrow"><span class="dot"></span> Seu projeto começa aqui</div>
+      <h1>Seu servidor.<br><span>Seu bot. Suas regras.</span></h1>
+      <p class="lead">Conte pra gente o que você precisa e personalize a ideia do seu bot para Discord. Você acompanha o pedido pelo portal e combina os próximos passos com a equipe.</p>
+      <div class="hero-actions"><button class="btn primary" onclick="document.getElementById('portal').scrollIntoView({behavior:'smooth'})">Começar meu projeto ↗</button><button class="btn secondary" onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">Como funciona</button></div>
+      <p class="small-print">O envio de uma solicitação não confirma contratação, prazo ou pagamento. A equipe confirma os detalhes antes de iniciar.</p>
+    </div>
+    <div class="preview" aria-label="Prévia ilustrativa do painel">
+      <div class="window-head"><div class="window-dots"><i></i><i></i><i></i></div><span class="mini-label">VISÃO DO PROJETO</span><span class="mini-label">v1.0</span></div>
+      <div class="bot-card"><div class="bot-avatar">🤖</div><div><strong>Meu bot personalizado</strong><span class="online">● Projeto configurável</span></div></div>
+      <div class="metric-grid"><div class="metric"><b>01</b><small>Solicitação organizada</small></div><div class="metric"><b>24/7*</b><small>Hospedagem a combinar</small></div><div class="metric"><b>Seu estilo</b><small>Nome e personalidade</small></div><div class="metric"><b>Passo a passo</b><small>Suporte humano</small></div></div>
+      <p class="small-print">*Disponibilidade depende do plano e da infraestrutura contratada.</p>
+    </div>
+  </section>
+  <section id="how">
+    <h2 class="section-title">Feito para tirar sua ideia do papel</h2>
+    <p class="section-sub">Um processo claro, sem promessas escondidas e com você no controle do seu aplicativo Discord.</p>
+    <div class="features">
+      <article class="feature"><div class="feature-icon">🎛️</div><h3>Personalize do seu jeito</h3><p>Escolha o tipo de bot, recursos, nome e estilo de comportamento antes de enviar a solicitação.</p></article>
+      <article class="feature"><div class="feature-icon">🧾</div><h3>Pedido organizado</h3><p>As informações ficam reunidas na sua conta para facilitar o acompanhamento e o suporte.</p></article>
+      <article class="feature"><div class="feature-icon">🔐</div><h3>Credenciais com cuidado</h3><p>O portal não pede seu token nesta versão. A forma segura de configurar credenciais será combinada antes da implantação.</p></article>
+    </div>
+  </section>
+  <section class="app-section" id="portal">
+    <h2 class="section-title">Área do cliente</h2>
+    <p class="section-sub">Entre ou crie uma conta para registrar seu projeto.</p>
+    <div class="app-grid">
+      <aside class="side-card">
+        <h3 id="how-title">Como funciona</h3>
+        <div class="step"><span class="step-num">1</span><span><b style="color:var(--text)">Entre na sua conta</b><br>Use Google ou e-mail e senha.</span></div>
+        <div class="step"><span class="step-num">2</span><span><b style="color:var(--text)">Descreva seu bot</b><br>Escolha os recursos e explique sua ideia.</span></div>
+        <div class="step"><span class="step-num">3</span><span><b style="color:var(--text)">Aguarde a análise</b><br>A equipe confirma escopo, valor e prazo.</span></div>
+        <div class="step"><span class="step-num">4</span><span><b style="color:var(--text)">Configure o aplicativo</b><br>Você cria o aplicativo no Discord Developer Portal.</span></div>
+        <div class="notice">🔒 <b>Importante:</b> nunca compartilhe sua senha do Discord ou códigos de autenticação. Não cole o token do bot em mensagens públicas, formulários comuns ou capturas de tela.</div>
+      </aside>
+      <section class="form-card">
+        <div id="auth-panel">
+          <div class="tabs"><button class="tab active" id="tab-login" onclick="setAuthMode('login')">Entrar</button><button class="tab" id="tab-register" onclick="setAuthMode('register')">Criar conta</button></div>
+          <button class="btn secondary full" id="google-btn">Continuar com Google</button>
+          <button class="btn secondary full" id="discord-btn" style="margin-top:10px">Continuar com Discord <span style="color:var(--muted);font-size:11px">(configuração necessária)</span></button>
+          <div class="divider-text">ou use seu e-mail</div>
+          <form id="auth-form">
+            <div class="field"><label for="auth-email">E-mail</label><input id="auth-email" type="email" autocomplete="email" placeholder="voce@exemplo.com" required></div>
+            <div class="field"><label for="auth-password">Senha</label><input id="auth-password" type="password" autocomplete="current-password" minlength="6" placeholder="Mínimo de 6 caracteres" required></div>
+            <button class="btn primary full" id="auth-submit" type="submit">Entrar</button>
+            <button type="button" id="reset-btn" class="btn secondary full" style="margin-top:9px">Esqueci minha senha</button>
+          </form>
+          <div id="auth-msg" class="msg"></div>
+          <p class="small-print">Ao continuar, você concorda em usar o portal de forma legítima e fornecer informações corretas. Adicione seus links de Termos e Privacidade antes de abrir ao público.</p>
+        </div>
+        <div id="client-panel" class="signed">
+          <div style="display:flex;justify-content:space-between;gap:14px;align-items:center;margin-bottom:20px"><div><div class="eyebrow">Conta conectada</div><h3 style="margin:12px 0 4px;font:600 22px 'Space Grotesk'" id="client-name">Olá!</h3><div class="mini-label" id="client-email"></div></div><button class="btn secondary" id="logout-btn">Sair</button></div>
+          <form id="request-form">
+            <div class="field"><label for="bot-name">Nome do projeto</label><input id="bot-name" maxlength="60" placeholder="Ex.: Bot da minha comunidade" required></div>
+            <div class="auth-grid">
+              <div class="field"><label for="bot-type">Tipo de bot</label><select id="bot-type" required><option value="">Selecione...</option><option>Moderação e segurança</option><option>IA e conversação</option><option>Comunidade e utilidades</option><option>Música e entretenimento</option><option>Tickets e atendimento</option><option>Personalizado</option></select></div>
+              <div class="field"><label for="budget">Faixa de orçamento</label><select id="budget" required><option value="">Selecione...</option><option>Quero receber uma cotação</option><option>Até R$ 30</option><option>R$ 31 a R$ 80</option><option>R$ 81 a R$ 200</option><option>Acima de R$ 200</option></select></div>
+            </div>
+            <div class="field"><label>Recursos desejados</label><div class="chips">
+              <label class="chip"><input type="checkbox" name="feature" value="Comandos slash"> Comandos slash</label>
+              <label class="chip"><input type="checkbox" name="feature" value="Moderação"> Moderação</label>
+              <label class="chip"><input type="checkbox" name="feature" value="Inteligência artificial"> Inteligência artificial</label>
+              <label class="chip"><input type="checkbox" name="feature" value="Tickets"> Tickets</label>
+              <label class="chip"><input type="checkbox" name="feature" value="Painel web"> Painel web</label>
+              <label class="chip"><input type="checkbox" name="feature" value="Economia e níveis"> Economia e níveis</label>
+              <label class="chip"><input type="checkbox" name="feature" value="Logs e auditoria"> Logs e auditoria</label>
+              <label class="chip"><input type="checkbox" name="feature" value="Hospedagem"> Hospedagem</label>
+            </div></div>
+            <div class="field"><label for="guild-id">ID do servidor (opcional)</label><input id="guild-id" inputmode="numeric" maxlength="24" placeholder="ID do servidor Discord"><span class="hint">Nunca envie senha, token de usuário ou código de autenticação.</span></div>
+            <div class="field"><label for="bot-description">Conte como o bot deve funcionar</label><textarea id="bot-description" maxlength="3000" placeholder="Quais comandos ele terá? Quem pode usá-los? Como deve responder?..." required></textarea><span class="hint">Não inclua tokens, senhas, chaves de API ou informações privadas.</span></div>
+            <label class="chip" style="margin-bottom:16px"><input id="terms-check" type="checkbox" required> Entendi que esta é uma solicitação e que o valor será confirmado pela equipe.</label>
+            <button class="btn primary full" id="request-submit" type="submit">Enviar solicitação ↗</button>
+          </form>
+          <div id="request-msg" class="msg"></div>
+          <div id="my-requests"></div>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+<footer class="wrap footer"><span>© <span id="year"></span> BotHub · Portal de projetos independentes.</span><span>Pagamento e implantação só após confirmação da equipe. <a href="#portal">Área do cliente</a></span></footer>
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+  import { getAuth, GoogleAuthProvider, signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+  import { getFirestore, collection, addDoc, query, where, orderBy, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+
+  // Cole aqui a configuração WEB do seu projeto Firebase (não é a chave privada de service account).
+  const firebaseConfig = {
+    apiKey: "COLE_SUA_FIREBASE_WEB_API_KEY",
+    authDomain: "SEU_PROJETO.firebaseapp.com",
+    projectId: "SEU_PROJETO",
+    appId: "COLE_SEU_FIREBASE_APP_ID"
+  };
+  const configured = firebaseConfig.apiKey !== "COLE_SUA_FIREBASE_WEB_API_KEY" && firebaseConfig.projectId !== "SEU_PROJETO";
+  const authPanel = document.getElementById('auth-panel');
+  const clientPanel = document.getElementById('client-panel');
+  const authMsg = document.getElementById('auth-msg');
+  const requestMsg = document.getElementById('request-msg');
+  let auth, db, mode = 'login', currentUser = null;
+
+  document.getElementById('year').textContent = new Date().getFullYear();
+  function showMsg(el, text, kind='error'){el.textContent=text;el.className='msg show '+kind}
+  function clearMsg(el){el.textContent='';el.className='msg'}
+  function setBusy(id,busy,label){const b=document.getElementById(id);b.disabled=busy;if(label)b.textContent=label}
+  window.setAuthMode = function(next){mode=next;document.getElementById('tab-login').classList.toggle('active',mode==='login');document.getElementById('tab-register').classList.toggle('active',mode==='register');document.getElementById('auth-submit').textContent=mode==='login'?'Entrar':'Criar minha conta';document.getElementById('auth-password').autocomplete=mode==='login'?'current-password':'new-password';clearMsg(authMsg)};
+  function friendlyError(e){const code=e?.code||'';return ({'auth/invalid-email':'Confira o endereço de e-mail.','auth/user-not-found':'Conta não encontrada. Confira o e-mail ou crie uma conta.','auth/wrong-password':'Senha incorreta.','auth/invalid-credential':'E-mail ou senha incorretos.','auth/email-already-in-use':'Este e-mail já está cadastrado.','auth/weak-password':'Use uma senha com pelo menos 6 caracteres.','auth/popup-closed-by-user':'A janela de autenticação foi fechada.','auth/unauthorized-domain':'Este domínio ainda não está autorizado no Firebase.'})[code] || (e?.message || 'Não foi possível concluir. Tente novamente.');}
+  if(configured){const app=initializeApp(firebaseConfig);auth=getAuth(app);db=getFirestore(app);
+    document.getElementById('google-btn').addEventListener('click',async()=>{clearMsg(authMsg);try{await signInWithPopup(auth,new GoogleAuthProvider())}catch(e){showMsg(authMsg,friendlyError(e))}});
+    document.getElementById('auth-form').addEventListener('submit',async e=>{e.preventDefault();clearMsg(authMsg);setBusy('auth-submit',true,'Aguarde...');try{const email=document.getElementById('auth-email').value.trim();const password=document.getElementById('auth-password').value;if(mode==='register')await createUserWithEmailAndPassword(auth,email,password);else await signInWithEmailAndPassword(auth,email,password)}catch(err){showMsg(authMsg,friendlyError(err))}finally{setBusy('auth-submit',false,mode==='login'?'Entrar':'Criar minha conta')}});
+    document.getElementById('reset-btn').addEventListener('click',async()=>{const email=document.getElementById('auth-email').value.trim();if(!email){showMsg(authMsg,'Digite seu e-mail primeiro.');return}try{await sendPasswordResetEmail(auth,email);showMsg(authMsg,'Se o endereço estiver cadastrado, você receberá as instruções de redefinição.','success')}catch(e){showMsg(authMsg,friendlyError(e))}});
+    document.getElementById('logout-btn').addEventListener('click',()=>signOut(auth));
+    onAuthStateChanged(auth,async user=>{currentUser=user;authPanel.classList.toggle('hidden',!!user);clientPanel.classList.toggle('show',!!user);if(user){document.getElementById('client-name').textContent='Olá, '+(user.displayName||user.email?.split('@')[0]||'cliente')+'!';document.getElementById('client-email').textContent=user.email||'Conta conectada';await loadRequests(user)}});
+    document.getElementById('request-form').addEventListener('submit',async e=>{e.preventDefault();if(!currentUser)return;clearMsg(requestMsg);const name=document.getElementById('bot-name').value.trim(),description=document.getElementById('bot-description').value.trim();if(!name||!description){showMsg(requestMsg,'Preencha o nome e a descrição do projeto.');return}if(/(discord(app)?\.com\/api\/webhooks|mfa\.|[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]{20,})/i.test(description)){showMsg(requestMsg,'Parece que você colou uma credencial. Remova tokens e chaves antes de enviar.');return}
+      setBusy('request-submit',true,'Enviando...');try{const features=[...document.querySelectorAll('input[name="feature"]:checked')].map(x=>x.value);await addDoc(collection(db,'botRequests'),{uid:currentUser.uid,email:currentUser.email||null,displayName:currentUser.displayName||null,botName:name,botType:document.getElementById('bot-type').value,budget:document.getElementById('budget').value,features,guildId:document.getElementById('guild-id').value.trim()||null,description,status:'recebido',createdAt:serverTimestamp()});showMsg(requestMsg,'Solicitação enviada! A equipe poderá analisar os detalhes e entrar em contato.','success');e.target.reset();await loadRequests(currentUser)}catch(err){showMsg(requestMsg,'Não foi possível salvar. Confira a configuração e as regras do Firebase. '+friendlyError(err))}finally{setBusy('request-submit',false,'Enviar solicitação ↗')}});
+  } else {
+    document.getElementById('google-btn').addEventListener('click',()=>showMsg(authMsg,'O login ainda não está conectado. Configure firebaseConfig no arquivo portal/index.html e ative Google no Firebase.'));
+    document.getElementById('auth-form').addEventListener('submit',e=>{e.preventDefault();showMsg(authMsg,'O login ainda não está conectado. Configure o Firebase seguindo portal/README.md.')});
+    document.getElementById('reset-btn').addEventListener('click',()=>showMsg(authMsg,'Configure o Firebase primeiro para habilitar a recuperação de senha.'));
+  }
+  document.getElementById('discord-btn').addEventListener('click',()=>showMsg(authMsg,'Login Discord precisa de uma rota OAuth segura no backend que valide o callback e emita um token Firebase personalizado. Não coloque o segredo OAuth no navegador.'));
+  async function loadRequests(user){const target=document.getElementById('my-requests');target.innerHTML='<h3 style="font:600 17px Space Grotesk;margin:24px 0 10px">Minhas solicitações</h3>';try{const q=query(collection(db,'botRequests'),where('uid','==',user.uid),orderBy('createdAt','desc'));const snap=await getDocs(q);if(snap.empty){target.insertAdjacentHTML('beforeend','<p class="small-print">Você ainda não enviou nenhuma solicitação.</p>');return}const list=document.createElement('div');list.className='request-list';snap.forEach(doc=>{const d=doc.data(),card=document.createElement('div');card.className='request-item';const title=document.createElement('strong');title.textContent=d.botName||'Projeto';const meta=document.createElement('small');meta.textContent=(d.botType||'Bot personalizado')+' · Status: '+(d.status||'recebido');card.append(title,meta);list.appendChild(card)});target.appendChild(list)}catch(e){target.insertAdjacentHTML('beforeend','<p class="small-print">Não foi possível carregar as solicitações. Verifique as regras e o índice do Firestore.</p>')}}
+</script>
+</body>
+</html>
