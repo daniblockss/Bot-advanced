@@ -44,6 +44,10 @@
           ".write": "auth != null && data.parent().child('uid').val() === auth.uid"
         }
       }
+    },
+    "queue": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true"
     }
   }
 }
