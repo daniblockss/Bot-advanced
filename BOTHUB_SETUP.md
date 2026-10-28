@@ -5,6 +5,7 @@ Este sistema é destinado ao administrador do serviço. Não existe painel públ
 ## Arquivos
 - `bothub_api.py`: API central privada, banco SQLite, autenticação, cadastro/ativação/exclusão de bots, alocação por capacidade e fila.
 - `bothub_node.py`: instalador de arquivo único para cada tablet/servidor; instala dependências, envia heartbeat, consulta tarefas e inicia/reinicia bots.
+- `bothub_admin.py`: painel CLI privado do administrador; lista servidores/bots, cadastra bots após validar token no Discord, desativa, reativa e exclui bots.
 - `requirements-bothub.txt`: dependências da API.
 
 ## Segurança obrigatória
@@ -28,6 +29,16 @@ export BOTHUB_DISCORD_USER_ID='SEU_ID_DISCORD'
 uvicorn bothub_api:app --host 127.0.0.1 --port 8000
 ```
 Configure Caddy/Nginx ou o proxy da hospedagem para fornecer HTTPS e encaminhar para localhost:8000. Use armazenamento persistente para `bothub.sqlite3`.
+
+## Painel privado do administrador (recomendado)
+Baixe e execute no seu computador ou celular de administrador:
+
+```bash
+python3 -c "import urllib.request; urllib.request.urlretrieve('https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bothub_admin.py','bothub_admin.py')"
+python3 bothub_admin.py
+```
+
+Na primeira execução, informe a URL da API e o token administrativo. Ele fica salvo localmente em `~/.bothub-admin/config.json` com permissão restrita quando o sistema operacional permite. Não compartilhe essa pasta nem o token. O painel permite cadastrar bots, consultar capacidade/fila e ativar/desativar/excluir bots.
 
 ## Cadastrar bots (somente administrador)
 Envie `POST /api/admin/bots` com cabeçalho `Authorization: Bearer SEU_BOTHUB_ADMIN_TOKEN` e JSON:
