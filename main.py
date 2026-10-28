@@ -3952,6 +3952,15 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
     regras = ler_txt(obter_arquivo_guild(REGRAS_TXT_FILE, guild_id))
 
     prompt = f"{identidade}\n\n{regras}\n\n=========================================\n"
+    try:
+        foto_memoria = os.path.join(BASE_DIR, "foto de perfil.txt")
+        if os.path.isfile(foto_memoria):
+            with open(foto_memoria, "r", encoding="utf-8") as foto_handle:
+                texto_foto = foto_handle.read(3500).strip()
+            if texto_foto:
+                prompt += "MEMÓRIA ATUAL DA FOTO DE PERFIL DO BOT (use para compreender sua aparência e atmosfera):\\n" + texto_foto + "\\n\\n"
+    except Exception:
+        pass
     prompt += (
         f"IDENTIDADE: seu nome é {str(getattr(bot.user, 'name', 'bot'))}. "
         "Apresente-se pelo nome deste bot no Discord. Não afirme ser Nemotron, NVIDIA ou outro modelo "
@@ -7003,6 +7012,77 @@ async def on_presence_update(before, after):
 _inicializar_banco_lembretes()
 
 
+async def atualizar_memoria_foto_perfil(forcar=False):
+    """Mantém foto de perfil.txt sincronizado com o avatar atual e atualiza a descrição visual para a IA."""
+    if not bot.user:
+        return False
+    caminho_txt = os.path.join(BASE_DIR, "foto de perfil.txt")
+    caminho_json = os.path.join(BASE_DIR, "bot_personality.json")
+    avatar_url = str(bot.user.display_avatar.with_size(1024).url)
+    conteudo_anterior = ""
+    try:
+        if os.path.isfile(caminho_txt):
+            with open(caminho_txt, "r", encoding="utf-8") as handle:
+                conteudo_anterior = handle.read()
+    except OSError:
+        pass
+    marcador = "AVATAR_URL: " + avatar_url
+    if not forcar and conteudo_anterior.startswith(marcador + "\\n"):
+        return False
+
+    descricao = ""
+    try:
+        def baixar_avatar_memoria():
+            req = Request(avatar_url, headers={"User-Agent": "BotHub-Profile/1.0"})
+            with urlopen(req, timeout=20) as response:
+                return response.read(8_000_000), response.headers.get("Content-Type", "image/png")
+        image_bytes, mime = await asyncio.to_thread(baixar_avatar_memoria)
+        descricao = await asyncio.to_thread(
+            analisar_imagem_sync,
+            image_bytes,
+            mime,
+            "Descreva para uma IA a aparência visual do avatar deste bot: formas, personagens ilustrados, cores, expressão, roupa e atmosfera. Diga o que é visível e diferencie claramente impressões de fatos. Não tente identificar pessoas reais.",
+            None,
+        )
+        descricao = str(descricao or "").strip()[:2500]
+    except Exception as error:
+        log_console(f"Não foi possível analisar a nova foto de perfil ({type(error).__name__}).")
+        descricao = "A imagem não pôde ser analisada. Use apenas o nome e os metadados do bot até uma nova tentativa."
+
+    texto = (
+        marcador + "\\n"
+        + "NOME_DO_BOT: " + str(bot.user.name) + "\\n"
+        + "ATUALIZADO_EM: " + time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()) + " UTC\\n"
+        + "DESCRICAO_VISUAL_PARA_IA:\\n" + descricao + "\\n"
+    )
+    tmp_txt = caminho_txt + ".tmp"
+    with open(tmp_txt, "w", encoding="utf-8") as handle:
+        handle.write(texto)
+    os.replace(tmp_txt, caminho_txt)
+
+    perfil = {}
+    try:
+        if os.path.isfile(caminho_json):
+            with open(caminho_json, "r", encoding="utf-8") as handle:
+                perfil = json.load(handle)
+        if not isinstance(perfil, dict):
+            perfil = {}
+    except Exception:
+        perfil = {}
+    perfil.update({
+        "name": str(bot.user.name),
+        "avatar_url": avatar_url,
+        "visual_description": descricao[:1600],
+        "avatar_memory_file": "foto de perfil.txt",
+    })
+    tmp_json = caminho_json + ".tmp"
+    with open(tmp_json, "w", encoding="utf-8") as handle:
+        json.dump(perfil, handle, ensure_ascii=False, indent=2)
+    os.replace(tmp_json, caminho_json)
+    log_console("Memória foto de perfil.txt atualizada; descrição visual disponível para a IA.")
+    return True
+
+
 async def garantir_personalidade_inicial():
     """Cria uma identidade persistente na primeira execução usando perfil e avatar do próprio bot."""
     caminho = os.path.join(BASE_DIR, "bot_personality.json")
@@ -7071,6 +7151,10 @@ async def garantir_personalidade_inicial():
 @bot.event
 async def on_ready():
     DISCORD_LOGS.start(bot)
+    try:
+        await atualizar_memoria_foto_perfil()
+    except Exception as error:
+        log_console(f"AVISO: memória da foto de perfil não foi atualizada ({type(error).__name__}).")
     try:
         await garantir_personalidade_inicial()
     except Exception as error:
@@ -13019,6 +13103,11 @@ async def comando_perfil(ctx, *, argumentos=""):
             if imagem is not None:
                 kwargs["avatar"] = imagem
             await bot.user.edit(**kwargs)
+            if imagem is not None:
+                try:
+                    await atualizar_memoria_foto_perfil(forcar=True)
+                except Exception as erro_memoria:
+                    log_console(f"AVISO: avatar alterado, mas a memória visual falhou ({type(erro_memoria).__name__}).")
             if nome is not None:
                 resultados.append("✅ Nome do bot atualizado.")
             if imagem is not None:
