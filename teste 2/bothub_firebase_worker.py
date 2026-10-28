@@ -567,7 +567,7 @@ def start(k,b):
     # Restore Firebase memory before main.py opens local databases.
     sync_bot_state(k, 'pull')
     if not script.exists():
-        url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/main.py"
+        url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"
         r=S.get(url,timeout=30);r.raise_for_status()
         if len(r.content)<10000:raise RuntimeError("Download de main.py incompleto.")
         script.write_bytes(r.content)
@@ -736,7 +736,7 @@ def process_worker_commands(cfg,tok,did,queue):
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
 def download_latest_main(folder):
-    url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/main.py"
+    url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"
     response=S.get(url,timeout=45);response.raise_for_status()
     data=response.content
     if len(data)<10000: raise RuntimeError("main.py baixado está incompleto.")
@@ -799,8 +799,8 @@ def process_release_updates(tok, queue):
 
 
 CLUSTER_UPDATE_URLS={
-    "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/add_cluster_server.py",
-    "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/bothub_firebase_worker.py",
+    "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/add_cluster_server.py",
+    "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bothub_firebase_worker.py",
 }
 
 def process_cluster_update(tok):
