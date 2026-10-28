@@ -73,6 +73,7 @@ def main():
     email = EMAIL_PADRAO
     print(f"E-mail configurado automaticamente: {email}")
     senha = getpass.getpass("Senha Firebase (entrada oculta): ")
+    senha_original = senha
     if not senha:
         print("Senha vazia.")
         return
@@ -106,7 +107,7 @@ def main():
         config["firebase_password"] = senha_original
         config["firebase_uid"] = uid
         tmp_path = config_path.with_suffix(".tmp")
-        tmp_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+        tmp_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         try:
             tmp_path.chmod(0o600)
         except OSError:
