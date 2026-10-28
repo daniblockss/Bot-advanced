@@ -1784,6 +1784,7 @@ class PendingPanel(AdminSection):
                 "São mostradas as primeiras 25 reservas; reabra após resolver as exibidas.")
 
 
+# TESTE 2: todos os arquivos locais do bot devem permanecer nesta pasta.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(BASE_DIR)
 
