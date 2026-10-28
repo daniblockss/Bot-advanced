@@ -2,7 +2,7 @@
 # BotHub Firebase worker installer for Termux/Linux; downloads files and installs missing Python packages.
 set -Eeuo pipefail
 REPO="https://raw.githubusercontent.com/daniblockss/Bot-advanced/main"
-ROOT="${BOTHUB_INSTALL_DIR:-$HOME/.bothub-firebase}"
+ROOT="${BOTHUB_INSTALL_DIR:-$HOME/.bothub}"
 say(){ printf '\n[BotHub] %s\n' "$*"; }
 if ! command -v python3 >/dev/null 2>&1; then
   if command -v pkg >/dev/null 2>&1; then pkg update -y; pkg install -y python curl
