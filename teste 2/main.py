@@ -8148,24 +8148,29 @@ async def executar_ahm7(
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
 
-                settings = monitoring_settings(guild.id) if guild else {}
-                canal_logs_id = settings.get("channel_id")
-                destino_logs = bot.get_channel(canal_logs_id) if canal_logs_id else None
-                if destino_logs is None and canal_logs_id and guild:
-                    try:
-                        destino_logs = await guild.fetch_channel(canal_logs_id)
-                    except (discord.HTTPException, discord.NotFound, discord.Forbidden):
-                        destino_logs = None
-                if isinstance(destino_logs, discord.TextChannel):
-                    try:
-                        await destino_logs.send(
-                            f"🧾 Geração de imagem concluída. Solicitante: {interaction.user} "
-                            f"(ID {interaction.user.id}); canal de origem: "
-                            f"{getattr(interaction.channel, 'id', 'desconhecido')}; "
-                            f"proporção: {proporcao_atual}; imagens: {len(arquivos)}."
-                        )
-                    except (discord.HTTPException, discord.Forbidden):
-                        log_console("AVISO: imagem gerada, mas não foi possível registrar os detalhes no canal de logs.")
+                # Logs são opcionais: falhas de configuração/permissão no log nunca
+                # devem impedir a geração, publicação ou confirmação da imagem.
+                try:
+                    settings = monitoring_settings(guild.id) if guild else {}
+                    canal_logs_id = settings.get("channel_id")
+                    destino_logs = bot.get_channel(canal_logs_id) if canal_logs_id else None
+                    if destino_logs is None and canal_logs_id and guild:
+                        try:
+                            destino_logs = await guild.fetch_channel(canal_logs_id)
+                        except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+                            destino_logs = None
+                    if isinstance(destino_logs, discord.TextChannel):
+                        try:
+                            await destino_logs.send(
+                                f"🧾 Geração de imagem concluída. Solicitante: {interaction.user} "
+                                f"(ID {interaction.user.id}); canal de origem: "
+                                f"{getattr(interaction.channel, 'id', 'desconhecido')}; "
+                                f"proporção: {proporcao_atual}; imagens: {len(arquivos)}."
+                            )
+                        except (discord.HTTPException, discord.Forbidden):
+                            log_console("AVISO: imagem gerada, mas não foi possível registrar os detalhes no canal de logs.")
+                except Exception as error:
+                    log_console(f"AVISO: geração de imagem concluída; logs opcionais indisponíveis ({type(error).__name__}).")
                 await interaction.followup.send(
                     "Imagem gerada e enviada neste canal.",
                     ephemeral=True,
@@ -8934,27 +8939,32 @@ def criar_executor_ferramentas_ahm7(message):
                         )
 
                         # O canal de logs recebe somente um aviso textual, sem anexar a imagem.
-                        guild = getattr(message, "guild", None)
-                        settings = monitoring_settings(guild.id) if guild else {}
-                        canal_logs_id = settings.get("channel_id")
-                        destino_logs = bot.get_channel(canal_logs_id) if canal_logs_id else None
-                        if destino_logs is None and canal_logs_id and guild:
-                            try:
-                                destino_logs = await guild.fetch_channel(canal_logs_id)
-                            except (discord.HTTPException, discord.NotFound, discord.Forbidden):
-                                destino_logs = None
-                        if isinstance(destino_logs, discord.TextChannel):
-                            try:
-                                await destino_logs.send(
-                                    f"🧾 A imagem solicitada por {message.author.mention} "
-                                    f"foi enviada em <#{destino_imagem.id}>.",
-                                    allowed_mentions=discord.AllowedMentions.none(),
-                                )
-                            except (discord.HTTPException, discord.Forbidden):
-                                log_console(
-                                    "AVISO: imagem enviada, mas não foi possível registrar "
-                                    "o aviso textual no canal de logs."
-                                )
+                        # O registro é opcional e isolado: não pode desfazer nem bloquear
+                        # o envio da imagem caso não exista canal de logs ou haja erro nele.
+                        try:
+                            guild = getattr(message, "guild", None)
+                            settings = monitoring_settings(guild.id) if guild else {}
+                            canal_logs_id = settings.get("channel_id")
+                            destino_logs = bot.get_channel(canal_logs_id) if canal_logs_id else None
+                            if destino_logs is None and canal_logs_id and guild:
+                                try:
+                                    destino_logs = await guild.fetch_channel(canal_logs_id)
+                                except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+                                    destino_logs = None
+                            if isinstance(destino_logs, discord.TextChannel):
+                                try:
+                                    await destino_logs.send(
+                                        f"🧾 A imagem solicitada por {message.author.mention} "
+                                        f"foi enviada em <#{destino_imagem.id}>.",
+                                        allowed_mentions=discord.AllowedMentions.none(),
+                                    )
+                                except (discord.HTTPException, discord.Forbidden):
+                                    log_console(
+                                        "AVISO: imagem enviada, mas não foi possível registrar "
+                                        "o aviso textual no canal de logs."
+                                    )
+                        except Exception as error:
+                            log_console(f"AVISO: imagem enviada; logs opcionais indisponíveis ({type(error).__name__}).")
                     else:
                         await message.channel.send(
                             content=content,
