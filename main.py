@@ -7027,7 +7027,7 @@ async def atualizar_memoria_foto_perfil(forcar=False):
     except OSError:
         pass
     marcador = "AVATAR_URL: " + avatar_url
-    if not forcar and conteudo_anterior.startswith(marcador + "\\n"):
+    if not forcar and conteudo_anterior.startswith(marcador + "\n"):
         return False
 
     descricao = ""
@@ -7050,10 +7050,10 @@ async def atualizar_memoria_foto_perfil(forcar=False):
         descricao = "A imagem não pôde ser analisada. Use apenas o nome e os metadados do bot até uma nova tentativa."
 
     texto = (
-        marcador + "\\n"
-        + "NOME_DO_BOT: " + str(bot.user.name) + "\\n"
-        + "ATUALIZADO_EM: " + time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()) + " UTC\\n"
-        + "DESCRICAO_VISUAL_PARA_IA:\\n" + descricao + "\\n"
+        marcador + "\n"
+        + "NOME_DO_BOT: " + str(bot.user.name) + "\n"
+        + "ATUALIZADO_EM: " + time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()) + " UTC\n"
+        + "DESCRICAO_VISUAL_PARA_IA:\n" + descricao + "\n"
     )
     tmp_txt = caminho_txt + ".tmp"
     with open(tmp_txt, "w", encoding="utf-8") as handle:
