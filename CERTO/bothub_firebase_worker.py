@@ -175,6 +175,16 @@ def safe_file_path(bot_id, relative, allow_directory=False):
 
 def file_command(cmd):
     op=cmd.get("operation");bid=str(cmd.get("botId",""));relative=str(cmd.get("path",""))
+    if op=="logs":
+        base=bot_folder(bid)
+        log_path=base/"bot.log"
+        if not log_path.exists(): return {"botId":bid,"logs":"Ainda não existe log para este bot."}
+        with log_path.open("rb") as handle:
+            handle.seek(0,os.SEEK_END);size=handle.tell()
+            handle.seek(max(0,size-24000),os.SEEK_SET)
+            data=handle.read(24000)
+        text=data.decode("utf-8",errors="replace")
+        return {"botId":bid,"logs":text[-18000:],"truncated":size>24000,"size":size}
     base,path=safe_file_path(bid,relative,allow_directory=(op=="list"))
     if not base.exists():
         raise FileNotFoundError("A pasta deste bot ainda não existe neste worker.")
