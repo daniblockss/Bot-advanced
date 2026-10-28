@@ -122,11 +122,11 @@ def stop(k):
         except Exception:pass
 
 def start(k,b):
-    folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main8.py"
+    folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main.py"
     if not script.exists():
-        url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main8.py")
+        url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py")
         r=S.get(url,timeout=30);r.raise_for_status()
-        if len(r.content)<10000:raise RuntimeError("Download de main8.py incompleto.")
+        if len(r.content)<10000:raise RuntimeError("Download de main.py incompleto.")
         script.write_bytes(r.content)
     cfg=dict(b.get("config") or {});cfg["discord_token"]=b["token"]
     cp=folder/"config.json";save_json(cp,cfg)
