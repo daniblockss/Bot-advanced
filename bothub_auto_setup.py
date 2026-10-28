@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # BotHub — diagnóstico automático do Firebase
 # Não grava a senha e não altera permissões de administrador.
-# Informe a Web API Key pública do Firebase quando solicitado.
+# A Web API Key do Firebase e o e-mail padrão ficam configurados abaixo.
 
 import getpass
 import json
@@ -9,6 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+API_KEY = "AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB_URL = "https://bothub-bca02-default-rtdb.firebaseio.com"
 EMAIL_PADRAO = "daniblocks100@gmail.com"
 AUTH_URL = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"
@@ -45,9 +46,9 @@ def main():
     print(" BotHub — configuração e diagnóstico")
     print("=" * 48)
 
-    api_key = getpass.getpass("Firebase Web API Key (entrada oculta): ").strip()
+    api_key = API_KEY.strip()
     if not api_key:
-        print("API Key vazia.")
+        print("Configure API_KEY no início do arquivo.")
         return
 
     email = input(f"E-mail [{EMAIL_PADRAO}]: ").strip() or EMAIL_PADRAO
