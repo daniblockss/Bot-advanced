@@ -652,8 +652,8 @@ CLUSTER_UPDATE_URLS={
 
 def process_cluster_update(tok):
     """Em atualização obrigatória, baixa o instalador e o worker diretamente do GitHub."""
-    release=fb("GET","botHubUpdates/current",tok)
-    if not isinstance(release,dict) or not release.get("updateId") or release.get("type")!="mandatory":
+    release=fb("GET","botHubClusterUpdates/current",tok)
+    if not isinstance(release,dict) or not release.get("updateId"):
         return False
     update_id=str(release.get("updateId"))
     state_path=ROOT/".bothub_cluster_update_state.json"
@@ -662,8 +662,16 @@ def process_cluster_update(tok):
     if state.get("updateId")==update_id and state.get("status") in ("applied","installing"):
         return False
 
+    requested=release.get("files",[])
+    if isinstance(requested,dict):
+        requested=list(requested.keys())
+    if not isinstance(requested,list) or not requested:
+        return False
     clean={}
-    for name,url in CLUSTER_UPDATE_URLS.items():
+    for name in requested:
+        if name not in CLUSTER_UPDATE_URLS:
+            raise RuntimeError("Arquivo de cluster não permitido: "+str(name))
+        url=CLUSTER_UPDATE_URLS[name]
         response=S.get(url,timeout=45)
         response.raise_for_status()
         data=response.content
@@ -708,7 +716,7 @@ os.execv(str(venvpy),[str(venvpy),str(installer)])
     helper_path=ROOT/".bothub_cluster_updater.py"
     helper_path.write_text(helper,encoding="utf-8")
     save_json(state_path,{"updateId":update_id,"status":"installing","requestedAt":int(time.time()*1000)})
-    print("[BotHub] Atualização obrigatória: baixando add_cluster_server.py e bothub_firebase_worker.py do GitHub; reiniciando controlador.",flush=True)
+    print("[BotHub] Atualização do cluster: baixando "+", ".join(clean.keys())+" diretamente do GitHub; reiniciando controlador.",flush=True)
     subprocess.Popen([sys.executable,str(helper_path),str(os.getpid()),str(ROOT),sys.executable],
         cwd=str(ROOT),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
         start_new_session=(os.name!="nt"))
