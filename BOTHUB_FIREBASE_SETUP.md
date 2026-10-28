@@ -6,7 +6,7 @@ Arquitetura correta: o painel HTML central controla os dispositivos pela Firebas
 - `bothub_firebase_panel.html`: painel central com login Firebase Auth, status dos workers, cadastro de bots, distribuição priorizando maior espaço livre, fila e pausa/ativação.
 - `bothub_firebase_worker.py`: worker de cada dispositivo; cria ambiente Python e instala dependências ausentes automaticamente, autentica no Firebase e inicia/paralisa bots.
 - `firebase_database.rules.json`: regras de segurança para importar no Realtime Database.
-- `install_bothub.sh`: instalador anterior do protótipo cluster local; não use para este fluxo Firebase.
+- `install_bothub_firebase.sh`: instalador automático para este fluxo Firebase.\n- Painel publicado em `docs/bothub.html` quando GitHub Pages estiver configurado para a pasta `/docs`.
 
 ## Configuração inicial Firebase (uma vez)
 1. No Firebase Console do projeto `bothub-bca02`, ative Authentication > Sign-in method > Email/Password.
@@ -20,11 +20,17 @@ Arquitetura correta: o painel HTML central controla os dispositivos pela Firebas
 6. Publique o painel em HTTPS (por exemplo, GitHub Pages) e entre com a conta admin. O Firebase web config identifica o projeto; a segurança real depende de Authentication e das regras, não de esconder a apiKey.
 7. Em cada dispositivo, baixe o worker e execute-o. Na primeira execução, informe o ID do dispositivo, e-mail e senha do usuário Firebase daquele worker. O worker guarda a configuração em `~/.bothub/worker.json` com permissão restrita.
 
-## Instalar/rodar worker (Termux ou Linux)
+## Instalar/rodar worker automaticamente (Termux ou Linux)
+
+No dispositivo, rode o instalador, que baixa o worker, prepara o ambiente virtual e instala as dependências ausentes:
+
 ```sh
-python3 bothub_firebase_worker.py
+mkdir -p ~/bothub-setup && cd ~/bothub-setup
+curl -fLsS https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/install_bothub_firebase.sh -o install_bothub_firebase.sh
+bash install_bothub_firebase.sh
 ```
-Na primeira execução ele cria `~/.bothub/venv`, instala `requests`, `psutil`, `discord.py`, `aiohttp` e `Pillow` e reinicia dentro do ambiente. Se o próprio Python/venv não estiver disponível, instale Python pelo gerenciador do sistema/Termux primeiro.
+
+Na primeira execução, informe o ID único do dispositivo e as credenciais do usuário Firebase próprio daquele worker. O worker fica em `~/.bothub`; dependências Python são instaladas automaticamente. O script tenta instalar Python/curl pelo gerenciador quando possível, mas não consegue conceder permissões de sistema que o usuário não tenha.
 
 ## Segurança e limitações desta primeira versão
 - Tokens Discord ficam em `bots/{id}/token` e são copiados para `workerTasks/{deviceId}` do worker escolhido. As regras permitem ler tarefas somente ao admin e ao UID associado ao próprio worker.
