@@ -12817,6 +12817,96 @@ def solicitar_token_discord_ou_sair(timeout_segundos=20):
     return True
 
 
+
+# ==========================
+# Perfil do bot (somente criadores autorizados)
+# ==========================
+@bot.command(name="perfil")
+async def comando_perfil(ctx, *, argumentos=""):
+    """Altera nome, avatar e descrição do bot. Use !perfil [nome] [descrição] e/ou anexe uma imagem."""
+    if not is_creator(ctx.author):
+        await ctx.reply("⛔ Só os criadores cadastrados podem alterar o perfil deste bot.", mention_author=False)
+        return
+
+    import shlex
+    partes = []
+    try:
+        partes = shlex.split(argumentos)
+    except ValueError:
+        await ctx.reply('⚠️ Aspas inválidas. Exemplo: !perfil "Nome do Bot" Minha descrição', mention_author=False)
+        return
+
+    anexo = next((a for a in getattr(ctx.message, "attachments", [])
+                  if (getattr(a, "content_type", "") or "").lower().startswith("image/")), None)
+    if not partes and anexo is None:
+        await ctx.reply(
+            "🛠️ **Como usar o !perfil**\n"
+            "• Envie uma imagem anexada com `!perfil` para mudar o avatar.\n"
+            "• `!perfil NovoNome` para mudar o nome.\n"
+            "• `!perfil NovoNome descrição do bot` para mudar nome e descrição.\n"
+            '• Para nomes com espaços, use aspas: `!perfil "Meu Bot" descrição aqui`.\n'
+            "Apenas criadores autorizados podem usar este comando.",
+            mention_author=False,
+        )
+        return
+
+    nome = partes[0] if partes else None
+    descricao = " ".join(partes[1:]).strip() if len(partes) > 1 else None
+    if nome is not None and not 2 <= len(nome) <= 32:
+        await ctx.reply("⚠️ O nome precisa ter entre 2 e 32 caracteres.", mention_author=False)
+        return
+    if descricao is not None and len(descricao) > 400:
+        await ctx.reply("⚠️ A descrição pode ter no máximo 400 caracteres.", mention_author=False)
+        return
+
+    imagem = None
+    if anexo is not None:
+        tipo = (anexo.content_type or "").lower().split(";", 1)[0]
+        if tipo not in {"image/png", "image/jpeg"}:
+            await ctx.reply("⚠️ Para o avatar, envie uma imagem PNG ou JPEG.", mention_author=False)
+            return
+        if anexo.size > 8 * 1024 * 1024:
+            await ctx.reply("⚠️ A imagem deve ter até 8 MB.", mention_author=False)
+            return
+        try:
+            imagem = await anexo.read()
+        except Exception:
+            await ctx.reply("⚠️ Não consegui baixar a imagem anexada. Tente novamente.", mention_author=False)
+            return
+        if not imagem or len(imagem) > 8 * 1024 * 1024:
+            await ctx.reply("⚠️ A imagem está vazia ou ultrapassa 8 MB.", mention_author=False)
+            return
+
+    resultados = []
+    if nome is not None or imagem is not None:
+        try:
+            kwargs = {}
+            if nome is not None:
+                kwargs["username"] = nome
+            if imagem is not None:
+                kwargs["avatar"] = imagem
+            await bot.user.edit(**kwargs)
+            if nome is not None:
+                resultados.append("✅ Nome do bot atualizado.")
+            if imagem is not None:
+                resultados.append("✅ Foto de perfil atualizada.")
+        except discord.HTTPException as erro:
+            resultados.append("⚠️ Discord não aceitou o nome/avatar: " + str(erro)[:250])
+        except Exception as erro:
+            resultados.append("⚠️ Falha ao alterar nome/avatar: " + str(erro)[:180])
+
+    if descricao is not None:
+        try:
+            app_info = await bot.application_info()
+            await app_info.edit(description=descricao)
+            resultados.append("✅ Descrição da aplicação atualizada.")
+        except discord.HTTPException as erro:
+            resultados.append("⚠️ Discord não permitiu alterar a descrição por este token/versão: " + str(erro)[:250])
+        except Exception as erro:
+            resultados.append("⚠️ Falha ao alterar a descrição: " + str(erro)[:180])
+
+    await ctx.reply("\\n".join(resultados) or "⚠️ Nenhuma alteração foi aplicada.", mention_author=False)
+
 if __name__ == "__main__":
     if not solicitar_token_discord_ou_sair(20):
         raise SystemExit(1)
