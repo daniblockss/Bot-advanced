@@ -611,21 +611,21 @@ def start(k,b):
             pass
     # A configuração recebida do painel fornece a base; preserva a configuração local
     # e aplica por cima o estado sincronizado mais recente (sem tokens/chaves privadas).
+    def merge_cfg(base, overlay):
+        result=dict(base) if isinstance(base,dict) else {}
+        if isinstance(overlay,dict):
+            for key,value in overlay.items():
+                if isinstance(value,dict) and isinstance(result.get(key),dict):
+                    result[key]=merge_cfg(result[key],value)
+                else:
+                    result[key]=value
+        return result
     cfg=dict(b.get("config") or {})
     cp=folder/"config.json"
     if cp.is_file():
         try:
             local_cfg=json.loads(cp.read_text(encoding="utf-8"))
             if isinstance(local_cfg,dict):
-                def merge_cfg(base, overlay):
-                    result=dict(base) if isinstance(base,dict) else {}
-                    if isinstance(overlay,dict):
-                        for key,value in overlay.items():
-                            if isinstance(value,dict) and isinstance(result.get(key),dict):
-                                result[key]=merge_cfg(result[key],value)
-                            else:
-                                result[key]=value
-                    return result
                 cfg=merge_cfg(cfg,local_cfg)
         except Exception as e:
             print("[BotHub] configuração local não pôde ser mesclada:",str(e)[:120],flush=True)
@@ -634,7 +634,7 @@ def start(k,b):
         try:
             persisted=json.loads(safe_state.read_text(encoding="utf-8"))
             if isinstance(persisted,dict):
-                cfg=merge_cfg(cfg,persisted) if "merge_cfg" in locals() else {**cfg,**persisted}
+                cfg=merge_cfg(cfg,persisted)
         except Exception as e:
             print("[BotHub] estado persistido de configurações não pôde ser carregado:",str(e)[:120],flush=True)
     cfg["discord_token"]=b["token"]
