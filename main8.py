@@ -2059,10 +2059,13 @@ def carregar_config():
     dm_settings = cfg.get("dm_settings")
     if not isinstance(dm_settings, dict):
         dm_settings = {}
+    dm_scope = dm_settings.get("sincero_para", "criadores")
+    if not isinstance(dm_scope, str) or dm_scope not in {"todos", "admins", "criadores"}:
+        dm_scope = "criadores"
     cfg["dm_settings"] = {
         "enabled": dm_settings.get("enabled", True) is True,
         "sincero": dm_settings.get("sincero", True) is True,
-        "sincero_para": dm_settings.get("sincero_para", "criadores") if dm_settings.get("sincero_para", "criadores") in {"todos", "admins", "criadores"} else "criadores",
+        "sincero_para": dm_scope,
         "admin_ids": [int(uid) for uid in dm_settings.get("admin_ids", []) if str(uid).isdigit()][:100] if isinstance(dm_settings.get("admin_ids", []), list) else [],
     }
     ai_cfg = cfg.get("ai")
