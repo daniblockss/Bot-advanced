@@ -32,6 +32,52 @@ PROCS = {}
 LOGS = {}
 LOCK = threading.RLock()
 
+FB_API_KEY = os.getenv("BOTHUB_FIREBASE_API_KEY", "")
+FB_DB = os.getenv("BOTHUB_FIREBASE_DB", "")
+FB_EMAIL = os.getenv("BOTHUB_FIREBASE_EMAIL", "")
+FB_PASSWORD = os.getenv("BOTHUB_FIREBASE_PASSWORD", "")
+FB_TOKEN = ""
+FB_TOKEN_EXPIRES = 0
+FB_LAST_REFRESH = 0
+FALLBACK_PEERS = dict(PEERS)
+
+def refresh_firebase_peers(force=False):
+    """Refresh the peer directory from Firebase; keep offline members in membership for safe quorum."""
+    global PEERS, FB_TOKEN, FB_TOKEN_EXPIRES, FB_LAST_REFRESH
+    if not (FB_API_KEY and FB_DB and FB_EMAIL and FB_PASSWORD):
+        return
+    if not force and time.time() - FB_LAST_REFRESH < 15:
+        return
+    try:
+        if not FB_TOKEN or time.time() >= FB_TOKEN_EXPIRES - 120:
+            payload = json.dumps({"email": FB_EMAIL, "password": FB_PASSWORD, "returnSecureToken": True}).encode()
+            req = urllib.request.Request(
+                "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + FB_API_KEY,
+                data=payload, headers={"Content-Type":"application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=12) as response:
+                auth_data = json.loads(response.read().decode())
+            FB_TOKEN = auth_data["idToken"]
+            FB_TOKEN_EXPIRES = time.time() + int(auth_data.get("expiresIn", 3600))
+        url = FB_DB.rstrip("/") + "/clusterServers.json?auth=" + __import__("urllib.parse", fromlist=["quote"]).quote(FB_TOKEN, safe="")
+        req = urllib.request.Request(url, headers={"User-Agent":"BotHub-Cluster/1.0"})
+        with urllib.request.urlopen(req, timeout=12) as response:
+            records = json.loads(response.read().decode()) or {}
+        discovered = dict(FALLBACK_PEERS)
+        for node_id, record in records.items():
+            if not isinstance(record, dict) or node_id == NODE_ID:
+                continue
+            peer_url = str(record.get("url", "")).strip()
+            if peer_url.startswith(("http://", "https://")):
+                discovered[str(node_id)] = peer_url
+        PEERS = discovered
+        FB_LAST_REFRESH = time.time()
+        print("[BotHub] diretório Firebase atualizado:", len(PEERS), "pares conhecidos", flush=True)
+    except Exception as exc:
+        # Do not shrink membership on a Firebase outage; that could weaken quorum.
+        FB_LAST_REFRESH = time.time()
+        print("[BotHub] diretório Firebase indisponível; mantendo pares conhecidos:", str(exc)[:180], flush=True)
+
+
 def canonical(x):
     return json.dumps(x, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
@@ -124,6 +170,7 @@ def node_status():
             "eligible": resources_ok, "available": resources_ok and running < MAX_BOTS}
 
 def all_statuses():
+    refresh_firebase_peers()
     out = {NODE_ID: node_status()}
     for pid in sorted(PEERS):
         try:
@@ -161,6 +208,7 @@ def merge_tasks(incoming):
                 continue
 
 def gossip():
+    refresh_firebase_peers()
     tasks = task_rows()
     for pid in sorted(PEERS):
         try: peer_request(pid, "/v1/replicate", "POST", {"tasks": tasks})
@@ -189,6 +237,7 @@ def vote(task_id, owner):
     return {"granted": True, "until": until_ts}
 
 def current_lease_owner(task_id):
+    refresh_firebase_peers()
     now = int(time.time())
     with dbconn() as d:
         row = d.execute("SELECT owner,until_ts FROM leases WHERE task_id=?", (task_id,)).fetchone()
@@ -210,7 +259,8 @@ def has_valid_local_lease(task_id):
     return bool(row and row["owner"] == NODE_ID and int(row["until_ts"]) > int(time.time()))
 
 def acquire_lease(task_id):
-    # Static membership means majority is computed against all configured members.
+    refresh_firebase_peers()
+    # Membership means majority is computed against all configured members.
     # Fail closed if a majority is unavailable; do not silently reduce quorum.
     members = 1 + len(PEERS)
     quorum = members // 2 + 1
@@ -426,6 +476,7 @@ def admin_cli():
 
 def main():
     require_setup(); init_db()
+    refresh_firebase_peers(force=True)
     # Admin mode is a separate client process; it must not bind a second copy of the server port.
     if len(sys.argv)>1 and sys.argv[1]=="admin":
         admin_cli()
