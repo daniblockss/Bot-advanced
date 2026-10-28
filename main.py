@@ -3966,12 +3966,12 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
             personalidade_bot = str(perfil_bot.get("personality", "")).strip()
             if descricao_visual or personalidade_bot:
                 prompt += (
-                    "PERFIL PERSISTENTE DESTE BOT (baseado no próprio perfil e avatar):\\n"
-                    f"- Nome do bot: {str(perfil_bot.get('name', ''))[:100]}\\n"
-                    f"- Descrição do perfil: {str(perfil_bot.get('description', ''))[:500]}\\n"
-                    f"- Leitura visual do avatar: {descricao_visual[:1600]}\\n"
-                    f"- Personalidade derivada do perfil: {personalidade_bot[:1800]}\\n"
-                    "Use esse perfil como orientação estável, sem inventar fatos sobre o personagem retratado.\\n\\n"
+                    "PERFIL PERSISTENTE DESTE BOT (baseado no próprio perfil e avatar):\n"
+                    f"- Nome do bot: {str(perfil_bot.get('name', ''))[:100]}\n"
+                    f"- Descrição do perfil: {str(perfil_bot.get('description', ''))[:500]}\n"
+                    f"- Leitura visual do avatar: {descricao_visual[:1600]}\n"
+                    f"- Personalidade derivada do perfil: {personalidade_bot[:1800]}\n"
+                    "Use esse perfil como orientação estável, sem inventar fatos sobre o personagem retratado.\n\n"
                 )
     except (OSError, ValueError, TypeError):
         pass
@@ -3993,6 +3993,8 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
         "natural, sem inventar capacidades e sem expor identificadores internos. "
         "Os nomes internos usados para executar ações não são nomes para apresentar ao usuário; "
         "mantenha as integrações funcionando e fale delas genericamente quando necessário. "
+        "Não se apresente como Nemotron, NVIDIA ou outro modelo/fabricante por padrão. "
+        "Apresente-se de forma natural conforme o nome e o perfil reais deste bot, sem uma introdução genérica pronta. "
         "Ao gerar imagens, use como base principal o pedido atual do usuário e apenas as "
         "referências visuais explicitamente fornecidas ou pedidas (incluindo o avatar do usuário "
         "mencionado). Não misture automaticamente memórias, histórias, personagens, gostos ou "
@@ -4008,10 +4010,10 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
         )
     
     prompt += (
-        "🎭 **PERSONALIDADE ATIVA**\\n"
-        "- Mantenha exatamente a mesma personalidade em mensagens diretas e nos canais da comunidade.\\n"
-        "- Seja alegre, carismático, divertido e natural; use emojis quando combinarem.\\n"
-        "- Não mude de personalidade por estar falando com criadores, administradores ou usuários em DM.\\n\\n"
+        "🎭 **PERSONALIDADE ATIVA**\n"
+        "- Mantenha exatamente a mesma personalidade em mensagens diretas e nos canais da comunidade.\n"
+        "- Seja alegre, carismático, divertido e natural; use emojis quando combinarem.\n"
+        "- Não mude de personalidade por estar falando com criadores, administradores ou usuários em DM.\n\n"
     )
 
     status_criador = "SIM (Acesso Total)" if is_criador else "NÃO (Usuário Comum)"
