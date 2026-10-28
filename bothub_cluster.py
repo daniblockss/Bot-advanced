@@ -192,6 +192,11 @@ def current_lease_owner(task_id):
             pass
     return None
 
+def has_valid_local_lease(task_id):
+    with dbconn() as d:
+        row = d.execute("SELECT owner,until_ts FROM leases WHERE task_id=?", (task_id,)).fetchone()
+    return bool(row and row["owner"] == NODE_ID and int(row["until_ts"]) > int(time.time()))
+
 def acquire_lease(task_id):
     # Static membership means majority is computed against all configured members.
     # Fail closed if a majority is unavailable; do not silently reduce quorum.
@@ -268,7 +273,12 @@ def reconcile():
         tid = t["task_id"]
         owner = candidate_for(tid, statuses, current_lease_owner(tid))
         if owner != NODE_ID: continue
-        if not acquire_lease(tid): continue
+        if not acquire_lease(tid):
+            # Keep an already-running bot only while its previously quorum-granted lease is valid.
+            # Once that lease expires without quorum, stop rather than risk split-brain.
+            if has_valid_local_lease(tid) and safe_id(tid) in PROCS and PROCS[safe_id(tid)].poll() is None:
+                desired.add(safe_id(tid))
+            continue
         desired.add(safe_id(tid))
         try: start_task(t)
         except Exception as e: print("[BotHub] falha iniciando", tid, str(e)[:200], flush=True)
