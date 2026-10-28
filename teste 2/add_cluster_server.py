@@ -5,7 +5,7 @@ from __future__ import annotations
 import os, platform, subprocess, sys, urllib.request
 from pathlib import Path
 
-GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202"
+GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 INSTALLER_URL = GITHUB_RAW + "/add_cluster_server.py"
 WORKER_URL = GITHUB_RAW + "/bothub_firebase_worker.py"
 ROOT = Path(__file__).resolve().parent
