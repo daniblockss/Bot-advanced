@@ -420,8 +420,20 @@ def start(k,b):
         script.write_bytes(r.content)
     duplicate_pid = script_already_running(script, b.get("token"))
     if duplicate_pid is not None:
-        print("[BotHub] main.py já está rodando neste dispositivo (PID",duplicate_pid,"); não vou iniciar outra cópia para",k,flush=True)
-        return
+        print("[BotHub] Duplicata de main.py/token detectada (PID",duplicate_pid,"). Encerrando a cópia antiga antes de iniciar a instância correta para",k,flush=True)
+        try:
+            os.kill(duplicate_pid, signal.SIGTERM)
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                try:
+                    os.kill(duplicate_pid, 0)
+                except OSError:
+                    break
+                time.sleep(0.2)
+            else:
+                os.kill(duplicate_pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+        except OSError:
+            pass
     cfg=dict(b.get("config") or {});cfg["discord_token"]=b["token"]
     cp=folder/"config.json";save_json(cp,cfg)
     if k in PROCS and PROCS[k].poll() is None:return
