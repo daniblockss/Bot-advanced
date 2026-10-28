@@ -9466,6 +9466,22 @@ async def clean_channel(ctx, *, args: str = ""):
         pass
 
 
+@bot.command(name="update")
+async def solicitar_atualizacao_bot(ctx):
+    """Solicita ao worker a atualização somente desta instância do bot."""
+    if not is_creator(ctx.author):
+        await ctx.reply("⛔ Somente o criador autorizado pode atualizar este bot.", mention_author=False)
+        return
+    pasta = os.path.dirname(os.path.abspath(__file__))
+    pedido = os.path.join(pasta, ".bothub_update_request")
+    try:
+        with open(pedido, "w", encoding="utf-8") as arquivo:
+            arquivo.write(str(time.time()))
+        await ctx.reply("📦 Pedido recebido! Vou instalar a atualização disponível e reiniciar somente este bot.", mention_author=False)
+    except OSError:
+        await ctx.reply("⚠️ Não consegui registrar o pedido de atualização. Tente novamente mais tarde.", mention_author=False)
+
+
 # ==========================
 # Evento Principal (On Message)
 # ==========================
