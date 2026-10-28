@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Instalador BotHub Firebase Worker para Linux, Windows e Android/Termux."""
+"""Instalador BotHub Firebase Worker: grava todos os arquivos na pasta atual."""
 from __future__ import annotations
 import os, platform, subprocess, sys, urllib.request
 from pathlib import Path
 
 WORKER_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bothub_firebase_worker.py"
-ROOT = Path.home() / ".bothub"
+ROOT = Path.cwd().resolve()
 WORKER = ROOT / "bothub_firebase_worker.py"
 VENV = ROOT / "venv"
 PYTHON = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -52,8 +52,9 @@ def main():
     download()
     print("\n[BotHub Installer] Instalação concluída.")
     print("O worker será iniciado agora. Na primeira execução, informe um ID único e as credenciais Firebase.")
-    print("Pasta do worker:", WORKER)
+    print("Pasta do worker e dos dados:", ROOT)
     print("Para iniciar novamente:", str(PYTHON), str(WORKER))
+    print("Todos os arquivos ficam nesta pasta; nada é criado em ~/.bothub.")
     print("A inicialização automática no boot ainda precisa ser configurada separadamente.")
     os.execv(str(PYTHON), [str(PYTHON), str(WORKER)])
 
