@@ -10,6 +10,12 @@
 <section class="layout"><div class="card"><h2>Dispositivos / workers</h2><div id="workers"><span class="muted">Aguardando workers…</span></div><p class="hint">Os dispositivos executam os bots. O painel distribui automaticamente até 3 bots por worker elegível, priorizando o maior espaço livre. “Vagas estimadas” é uma estimativa pelo limite atual, não uma garantia: o consumo de RAM e disco varia conforme cada bot.</p></div>
 <div class="card"><h2>Cadastrar bot Discord</h2><label>Nome</label><input id="botName" maxlength="100" placeholder="Meu bot"><label>Token do bot</label><input id="botToken" type="password" autocomplete="off" placeholder="Token privado"><button id="createBot">Cadastrar e distribuir</button><div id="createMsg" class="hint"></div><p class="hint">O token é salvo no Firebase com regras privadas; ele não fica no código HTML. Use apenas bots que você controla.</p></div></section>
 <section class="card"><h2>Bots cadastrados</h2><div id="bots"><span class="muted">Aguardando dados…</span></div><div id="queueMsg" class="hint"></div></section>
+<section class="card"><h2>Publicar atualização do BotHub</h2>
+<p class="hint">Você controla quando o anúncio é publicado. Revise o texto antes de enviar. A publicação não detecta mudanças no GitHub automaticamente.</p>
+<label>Tipo de atualização</label><select id="releaseType"><option value="optional">Opcional — o criador escolhe usando !update</option><option value="mandatory">Obrigatória — atualiza automaticamente os bots ativos</option></select>
+<label>Resumo das mudanças</label><textarea id="releaseDescription" rows="5" maxlength="1500" placeholder="Ex.: Corrigidos erros, melhorada a memória e adicionadas novas funções."></textarea>
+<div class="actions"><button id="publishRelease">Revisar e publicar anúncio</button></div><div id="releaseMsg" class="hint"></div>
+<p class="hint">O worker baixa main.py da branch main do GitHub, verifica a sintaxe e reinicia somente o bot afetado. Na opção obrigatória, todos os bots ativos que ainda não receberam esta versão são atualizados automaticamente.</p></section>
 <section class="card"><h2>Logs dos bots</h2><p class="hint">Veja as últimas mensagens de saída e erros do bot selecionado. O painel mostra até aproximadamente 18 KB de log recente.</p><div id="logsOutput" class="hint">Escolha “Ver logs” ao lado de um bot.</div><pre id="logsText" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto;background:#080d18;border:1px solid var(--line);padding:12px;border-radius:10px"></pre></section>
 <section class="card"><h2>Perfil do bot pelo painel</h2><p class="hint">O painel envia a alteração ao worker que executa o bot. O token nunca aparece nesta tela. A mudança depende dos limites e permissões da API do Discord.</p><label>Bot</label><select id="profileBot"><option value="">Selecione um bot</option></select><label>Novo nome (opcional)</label><input id="profileName" maxlength="32" placeholder="Nome do bot"><label>Nova descrição (opcional)</label><textarea id="profileDescription" maxlength="400" rows="3" placeholder="Descrição da aplicação (até 400 caracteres)"></textarea><label>Nova foto de perfil (PNG/JPEG, até 4 MB, opcional)</label><input id="profileAvatar" type="file" accept="image/png,image/jpeg"><button id="saveProfile">Aplicar perfil</button><div id="profileMsg" class="hint"></div></section>
 <section class="card"><h2>Gerenciador de arquivos do bot</h2><p class="hint">Navega somente dentro da pasta do bot escolhido neste worker. Permite ler, criar, editar e excluir arquivos de texto de até 256 KiB. Arquivos privados de configuração, tokens e logs são bloqueados. Não executa comandos de terminal.</p><label>Bot / pasta de trabalho</label><select id="fileBot"><option value="">Selecione um bot</option></select><div class="actions"><button id="loadFiles" class="secondary">Abrir pasta / atualizar</button><button id="restartFileBot" class="secondary">Reiniciar bot</button></div><div id="fileStatus" class="hint"></div><div id="fileList" style="margin-top:10px"></div><label>Arquivo selecionado</label><input id="filePath" placeholder="Ex.: main8.py"><label>Conteúdo UTF-8 (máximo 256 KiB)</label><textarea id="fileContent" rows="12" spellcheck="false" placeholder="Selecione um arquivo na lista ou informe um novo caminho permitido."></textarea><div class="actions"><button id="saveFile">Salvar / criar arquivo</button><button id="deleteFile" class="danger">Excluir arquivo</button></div></section>
@@ -103,6 +109,19 @@ function selectedBotAndWorker(selectId){
   if(!wid||!online(workerData[wid]))throw new Error("Este bot não está atribuído a um worker online.");
   return {id,b,wid};
 }
+$("publishRelease").onclick=async()=>{
+  const msg=$("releaseMsg"),type=$("releaseType").value,description=$("releaseDescription").value.trim();
+  msg.className="hint";
+  try{
+    if(description.length<8)throw new Error("Descreva as mudanças com pelo menos 8 caracteres.");
+    const mode=type==="mandatory"?"OBRIGATÓRIA":"OPCIONAL";
+    if(!confirm("Publicar atualização "+mode+" para os bots ativos?\\n\\n"+description+"\\n\\nEssa ação inicia a distribuição."))return;
+    msg.textContent="Publicando anúncio…";
+    const updateId=crypto.randomUUID().replaceAll("-","");
+    await set(ref(db,"botHubUpdates/current"),{updateId,type,description,createdAt:Date.now(),createdBy:auth.currentUser?.uid||"admin"});
+    msg.className="ok";msg.textContent="Anúncio publicado. Os workers online vão processá-lo.";
+  }catch(e){msg.className="error";msg.textContent=e.message||String(e)}
+};
 $("saveProfile").onclick=async()=>{
   const msg=$("profileMsg");msg.className="hint";msg.textContent="Enviando alteração…";
   try{
