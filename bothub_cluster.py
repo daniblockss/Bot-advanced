@@ -40,10 +40,11 @@ FB_TOKEN = ""
 FB_TOKEN_EXPIRES = 0
 FB_LAST_REFRESH = 0
 FALLBACK_PEERS = dict(PEERS)
+FIREBASE_SERVERS = {}
 
 def refresh_firebase_peers(force=False):
     """Refresh the peer directory from Firebase; keep offline members in membership for safe quorum."""
-    global PEERS, FB_TOKEN, FB_TOKEN_EXPIRES, FB_LAST_REFRESH
+    global PEERS, FB_TOKEN, FB_TOKEN_EXPIRES, FB_LAST_REFRESH, FIREBASE_SERVERS
     if not (FB_API_KEY and FB_DB and FB_EMAIL and FB_PASSWORD):
         return
     if not force and time.time() - FB_LAST_REFRESH < 15:
@@ -62,6 +63,7 @@ def refresh_firebase_peers(force=False):
         req = urllib.request.Request(url, headers={"User-Agent":"BotHub-Cluster/1.0"})
         with urllib.request.urlopen(req, timeout=12) as response:
             records = json.loads(response.read().decode()) or {}
+        FIREBASE_SERVERS = records if isinstance(records, dict) else {}
         discovered = dict(FALLBACK_PEERS)
         for node_id, record in records.items():
             if not isinstance(record, dict) or node_id == NODE_ID:
@@ -415,7 +417,24 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/admin/status":
             if self.client_address[0] not in ("127.0.0.1","::1") or self.headers.get("Authorization") != "Bearer "+ADMIN_TOKEN:
                 return self.send_json(403,{"error":"private admin only"})
-            return self.send_json(200,{"node":node_status(),"peers":all_statuses(),"tasks":[{k:v for k,v in t.items() if k!="token"} for t in task_rows()]})
+            refresh_firebase_peers(force=True)
+            now_ms = int(time.time() * 1000)
+            registry = []
+            for server_id, record in FIREBASE_SERVERS.items():
+                if not isinstance(record, dict):
+                    continue
+                last_seen = int(record.get("last_seen", 0) or 0)
+                registry.append({
+                    "node_id": str(server_id),
+                    "hostname": str(record.get("hostname", "")),
+                    "platform": str(record.get("platform", "")),
+                    "status": "online" if record.get("status") == "online" and now_ms - last_seen <= 60000 else "offline",
+                    "last_seen": last_seen,
+                    "local_ip": str(record.get("local_ip", "")),
+                    "public_ip": str(record.get("public_ip", "")),
+                    "cluster_id": str(record.get("cluster_id", ""))
+                })
+            return self.send_json(200,{"node":node_status(),"peers":all_statuses(),"firebase_servers":registry,"tasks":[{k:v for k,v in t.items() if k!="token"} for t in task_rows()]})
         return self.send_json(404,{"error":"not found"})
     def do_POST(self):
         path = urlparse(self.path).path
