@@ -76,3 +76,19 @@ Alertas por DM ocorrem em transições de capacidade/fila, não a cada heartbeat
 - Se um worker morrer abruptamente, o bot pode demorar até a próxima sincronização para ser reatribuído.
 - A configuração de inicialização automática é best-effort; Android/Termux não garante execução contínua.
 - Proteja o endpoint e o banco: a API entrega o token de cada bot apenas ao worker autorizado que o executa.
+
+
+## Cluster distribuído experimental (novo)
+
+O arquivo `bothub_mesh.py` adiciona descoberta de pares pela rede local sem líder fixo. Leia primeiro `BOTHUB_DISTRIBUTED_ARCHITECTURE.md`.
+
+Teste a descoberta em cada dispositivo (Python 3.9+; não exige dependências extras):
+
+```bash
+export BOTHUB_MESH_SECRET='USE_UM_SEGREDO_ALEATORIO_LONGO_COM_32_CARACTERES_OU_MAIS'
+python3 bothub_mesh.py --node-id tablet-01
+```
+
+Use um ID diferente por dispositivo e o mesmo segredo somente nos nós confiáveis. A porta UDP multicast 47777 precisa ser permitida na rede local. Para consultar uma proposta de colocação determinística, acrescente `--task-id bot-exemplo`.
+
+**Importante:** esta é a primeira camada experimental de descoberta e proposta de distribuição. Ela não inicia nem move bots, não é consenso e não impede sozinha duplicação de processos durante partições de rede. A API e o supervisor antigos ainda fazem atribuição centralizada. Não use `bothub_mesh.py` sozinho em produção; o protocolo de diário replicado e leases confirmadas por quórum ainda precisa ser implementado e testado.
