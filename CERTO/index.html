@@ -18,10 +18,8 @@
 <p class="hint">O worker baixa main.py da branch main do GitHub, verifica a sintaxe e reinicia somente o bot afetado. Na opção obrigatória, todos os bots ativos que ainda não receberam esta versão são atualizados automaticamente.</p></section>
 <section class="card"><h2>Atualizar scripts do cluster</h2>
 <p class="hint">Publique uma versão de um arquivo do controlador. Todos os workers online recebem a atualização, param os bots daquela instalação, validam o Python, substituem o arquivo, reinstalam as dependências necessárias e iniciam o worker novamente. Use somente código confiável.</p>
-<label>Arquivo do cluster</label><select id="clusterFile"><option value="bothub_firebase_worker.py">bothub_firebase_worker.py — controlador</option><option value="add_cluster_server.py">add_cluster_server.py — instalador para novos servidores</option></select>
-<label>Conteúdo completo do arquivo Python</label><textarea id="clusterSource" rows="14" maxlength="262144" spellcheck="false" placeholder="Cole aqui o arquivo Python completo. A atualização será recusada se o código não passar na validação de sintaxe."></textarea>
-<div class="actions"><button id="publishClusterUpdate">Validar e distribuir para o cluster</button></div><div id="clusterUpdateMsg" class="hint"></div>
-<p class="hint">Limite: 256 KiB por arquivo. O instalador add_cluster_server.py é atualizado para futuras instalações; ele não é executado em cada servidor existente. O controlador bothub_firebase_worker.py é substituído e reiniciado automaticamente. A distribuição acontece por meio do Firebase.</p>
+<label>Arquivo do sistema</label><select id="clusterFile"><option value="bothub_firebase_worker.py">bothub_firebase_worker.py — controlador</option><option value="add_cluster_server.py">add_cluster_server.py — instalador</option></select>
+<p class="hint">O painel buscará a versão atual diretamente do GitHub (branch main). Não é necessário colar código. O instalador atualizado vale para novas instalações; o controlador é aplicado nos workers compatíveis.</p>
 </section>
 <section class="card"><h2>Logs dos bots</h2><p class="hint">Veja as últimas mensagens de saída e erros do bot selecionado. O painel mostra até aproximadamente 18 KB de log recente.</p><div id="logsOutput" class="hint">Escolha “Ver logs” ao lado de um bot.</div><pre id="logsText" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto;background:#080d18;border:1px solid var(--line);padding:12px;border-radius:10px"></pre></section>
 <section class="card"><h2>Perfil do bot pelo painel</h2><p class="hint">O painel envia a alteração ao worker que executa o bot. O token nunca aparece nesta tela. A mudança depende dos limites e permissões da API do Discord.</p><label>Bot</label><select id="profileBot"><option value="">Selecione um bot</option></select><label>Novo nome (opcional)</label><input id="profileName" maxlength="32" placeholder="Nome do bot"><label>Nova descrição (opcional)</label><textarea id="profileDescription" maxlength="400" rows="3" placeholder="Descrição da aplicação (até 400 caracteres)"></textarea><label>Nova foto de perfil (PNG/JPEG, até 4 MB, opcional)</label><input id="profileAvatar" type="file" accept="image/png,image/jpeg"><button id="saveProfile">Aplicar perfil</button><div id="profileMsg" class="hint"></div></section>
@@ -117,17 +115,15 @@ function selectedBotAndWorker(selectId){
   return {id,b,wid};
 }
 $("publishClusterUpdate").onclick=async()=>{
-  const msg=$("clusterUpdateMsg"),name=$("clusterFile").value,source=$("clusterSource").value;
+  const msg=$("clusterUpdateMsg"),name=$("clusterFile").value;
   msg.className="hint";
   try{
     if(!["bothub_firebase_worker.py","add_cluster_server.py"].includes(name))throw new Error("Arquivo não permitido.");
-    if(!source.trim())throw new Error("Cole o conteúdo completo do arquivo Python.");
-    if(new TextEncoder().encode(source).length>262144)throw new Error("O arquivo excede 256 KiB.");
-    if(!confirm("Distribuir "+name+" para todos os workers que receberem esta publicação?\n\nOs workers que aplicarem a atualização vão parar temporariamente seus bots e reiniciar o controlador."))return;
-    msg.textContent="Publicando atualização de cluster…";
+    if(!confirm("Buscar a versão atual de "+name+" no GitHub e distribuir para os workers compatíveis?\\n\\nO controlador pode reiniciar e os bots podem ficar indisponíveis por alguns segundos."))return;
+    msg.textContent="Publicando pedido de atualização…";
     const updateId=crypto.randomUUID().replaceAll("-","");
-    await set(ref(db,"botHubClusterUpdates/current"),{updateId,files:{[name]:source},createdAt:Date.now(),createdBy:auth.currentUser?.uid||"admin"});
-    msg.className="ok";msg.textContent="Atualização publicada. Workers com o controlador compatível vão buscá-la no próximo ciclo.";
+    await set(ref(db,"botHubClusterUpdates/current"),{updateId,files:[name],source:"github",createdAt:Date.now(),createdBy:auth.currentUser?.uid||"admin"});
+    msg.className="ok";msg.textContent="Pedido publicado. Os workers compatíveis baixarão o arquivo diretamente do GitHub.";
   }catch(e){msg.className="error";msg.textContent=e.message||String(e)}
 };
 $("publishRelease").onclick=async()=>{
