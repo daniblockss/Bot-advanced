@@ -878,6 +878,10 @@ def main():
             for raw_id,b in queue.items():
                 if not isinstance(b,dict) or not b.get("enabled",True):
                     continue
+                auto_start=b.get("autoStart",True) is not False
+                start_requested=float(b.get("startRequestedAt") or 0)
+                if not auto_start and start_requested <= WORKER_STARTED*1000:
+                    continue
                 k=sid(raw_id)
                 secret=str(b.get("token") or "").strip()
                 if not secret:
