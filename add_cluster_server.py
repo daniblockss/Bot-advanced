@@ -18,7 +18,7 @@ WORKER_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bo
 ROOT = Path.home() / ".bothub"
 VENV = ROOT / "venv"
 WORKER = ROOT / "bothub_firebase_worker.py"
-PACKAGES = ["requests", "psutil", "discord.py", "aiohttp", "Pillow"]
+PACKAGES = ["requests", "discord.py", "aiohttp", "Pillow"] + ([] if "ANDROID_ROOT" in os.environ or "com.termux" in str(Path.home()) else ["psutil"])
 
 
 def run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
@@ -77,9 +77,16 @@ def main() -> int:
             print("Em Debian/Ubuntu, instale python3-venv e python3-pip e rode novamente.")
             return result.returncode or 1
 
+    is_termux = "ANDROID_ROOT" in os.environ or "com.termux" in str(Path.home()) or "termux" in os.environ.get("PREFIX", "")
+    packages = ["requests", "discord.py", "aiohttp", "Pillow"]
+    if not is_termux:
+        packages.append("psutil")
+    else:
+        print("[BotHub] Termux/Android detectado; pulando psutil (RAM será lida do sistema).")
+
     print("[BotHub] Atualizando pip e verificando dependências...")
     run([str(vpy), "-m", "pip", "install", "--upgrade", "pip"])
-    run([str(vpy), "-m", "pip", "install", "--upgrade", *PACKAGES])
+    run([str(vpy), "-m", "pip", "install", "--upgrade", *packages])
 
     download(WORKER_URL, WORKER)
     print("\n[BotHub] Preparação concluída. Iniciando o worker...")
