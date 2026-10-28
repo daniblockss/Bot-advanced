@@ -9469,8 +9469,14 @@ async def clean_channel(ctx, *, args: str = ""):
 @bot.command(name="update")
 async def solicitar_atualizacao_bot(ctx):
     """Solicita ao worker a atualização somente desta instância do bot."""
-    if not is_creator(ctx.author):
-        await ctx.reply("⛔ Somente o criador autorizado pode atualizar este bot.", mention_author=False)
+    dono_id = None
+    try:
+        info_aplicacao = await bot.application_info()
+        dono_id = getattr(getattr(info_aplicacao, "owner", None), "id", None)
+    except Exception:
+        pass
+    if ctx.author.id != dono_id and not is_creator(ctx.author):
+        await ctx.reply("⛔ Somente o dono deste bot ou um criador administrativo autorizado pode atualizá-lo.", mention_author=False)
         return
     pasta = os.path.dirname(os.path.abspath(__file__))
     pedido = os.path.join(pasta, ".bothub_update_request")
