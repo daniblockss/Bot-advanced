@@ -11,6 +11,7 @@ TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
+LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 
 def save_json(path,data):
     tmp=path.with_suffix(path.suffix+".tmp")
@@ -224,8 +225,59 @@ def cleanup_children():
     # Depois encontra e encerra processos órfãos que sobreviveram a uma execução anterior.
     kill_bot_processes_under_root()
 
+def publish_shutdown_status(reason="Servidor desligado"):
+    """Publica o desligamento no Firebase e avisa por DM os donos dos bots."""
+    global LAST_TOKEN, LAST_DID, LAST_QUEUE
+    now = int(time.time() * 1000)
+    stopped_ids = list(LAST_QUEUE.keys()) if isinstance(LAST_QUEUE, dict) else []
+    if LAST_TOKEN and LAST_DID:
+        try:
+            fb("PATCH", "workers/" + LAST_DID, LAST_TOKEN, {
+                "status": "offline", "online": False, "runningBots": 0,
+                "runningBotIds": [], "shutdownAt": now, "shutdownReason": reason,
+                "lastSeen": now, "workerUptimeSeconds": int(time.time() - WORKER_STARTED)
+            })
+            fb("PUT", "workerEvents/" + LAST_DID + "/lastShutdown", LAST_TOKEN, {
+                "status": "offline", "online": False, "reason": reason,
+                "stoppedBotIds": stopped_ids, "timestamp": now
+            })
+            print("[BotHub] Desligamento publicado no Firebase.", flush=True)
+        except Exception as e:
+            print("[BotHub] Não foi possível publicar o desligamento no Firebase:", str(e)[:180], flush=True)
+    seen_owners = set()
+    for bot_id, bot_cfg in (LAST_QUEUE.items() if isinstance(LAST_QUEUE, dict) else []):
+        if not isinstance(bot_cfg, dict) or not bot_cfg.get("token"):
+            continue
+        token_value = bot_cfg.get("token")
+        try:
+            info = discord_api(token_value, "GET", "/applications/@me", None)
+            owner = (info.get("owner") or {}).get("id")
+            if not owner or str(owner) in seen_owners:
+                continue
+            seen_owners.add(str(owner))
+            channel = discord_api(token_value, "POST", "/users/@me/channels", {"recipient_id": str(owner)})
+            msg = (
+                "⚠️ **O bot foi desligado porque o servidor/controlador ficou offline.**\\n\\n"
+                "Isso pode acontecer por alguns motivos:\\n"
+                "1. O servidor está sendo atualizado ou reiniciado.\\n"
+                "2. Ocorreu um erro ou o processo foi encerrado. Não se preocupe: "
+                "se o servidor voltar a funcionar, os bots atribuídos serão iniciados novamente.\\n\\n"
+                "Motivo informado: " + str(reason)[:250] +
+                "\\nBots desta instalação que estavam atribuídos: " + str(len(stopped_ids)) + "."
+            )
+            discord_api(token_value, "POST", "/channels/" + str(channel["id"]) + "/messages",
+                        {"content": msg, "allowed_mentions": {"parse": []}})
+        except Exception as e:
+            print("[BotHub] Falha ao avisar o criador do bot", bot_id, ":", str(e)[:160], flush=True)
+
 def handle_shutdown_signal(signum, frame):
-    print("[BotHub] Controlador sendo desligado; encerrando TODOS os main.py desta instalação...", flush=True)
+    global SHUTDOWN_IN_PROGRESS
+    if SHUTDOWN_IN_PROGRESS:
+        return
+    SHUTDOWN_IN_PROGRESS = True
+    reason = "SIGINT (interrupção manual)" if signum == signal.SIGINT else "SIGTERM (servidor encerrado)"
+    print("[BotHub] Controlador sendo desligado; avisando criadores e publicando status...", flush=True)
+    publish_shutdown_status(reason)
     cleanup_children()
     raise SystemExit(0)
 
@@ -766,8 +818,10 @@ def main():
     while True:
         try:
             t=token(cfg);did=urllib.parse.quote(cfg["device_id"],safe="")
+            LAST_TOKEN=t;LAST_DID=did
             fb("PUT","workers/"+did,t,stats(cfg))
             queue=fb("GET","workerTasks/"+did,t) or {}
+            LAST_QUEUE=queue if isinstance(queue,dict) else {}
             process_worker_commands(cfg,t,did,queue)
             # Uma conta Discord (token) só pode ter uma instância ativa neste worker.
             # Se o painel atribuir o mesmo token a IDs/pastas diferentes, manter apenas a primeira.
