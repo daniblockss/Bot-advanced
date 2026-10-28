@@ -2023,7 +2023,7 @@ def carregar_config():
         "apis": [],
         "criadores_ids": [1252679441629315144],
         "criador_supremo": 1252679441629315144,
-        "dm_settings": {"enabled": True, "sincero": True, "sincero_para": "criadores", "admin_ids": []},
+        "dm_settings": {"enabled": True, "admin_ids": []},
         "raiz_permissoes": {},
         "canais_configurados": {},
         "tell_presets": {},
@@ -2059,13 +2059,8 @@ def carregar_config():
     dm_settings = cfg.get("dm_settings")
     if not isinstance(dm_settings, dict):
         dm_settings = {}
-    dm_scope = dm_settings.get("sincero_para", "criadores")
-    if not isinstance(dm_scope, str) or dm_scope not in {"todos", "admins", "criadores"}:
-        dm_scope = "criadores"
     cfg["dm_settings"] = {
         "enabled": dm_settings.get("enabled", True) is True,
-        "sincero": dm_settings.get("sincero", True) is True,
-        "sincero_para": dm_scope,
         "admin_ids": [int(uid) for uid in dm_settings.get("admin_ids", []) if str(uid).isdigit()][:100] if isinstance(dm_settings.get("admin_ids", []), list) else [],
     }
     ai_cfg = cfg.get("ai")
@@ -3958,19 +3953,39 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
 
     prompt = f"{identidade}\n\n{regras}\n\n=========================================\n"
     try:
+        foto_memoria = os.path.join(BASE_DIR, "foto de perfil.txt")
+        if os.path.isfile(foto_memoria):
+            with open(foto_memoria, "r", encoding="utf-8") as foto_handle:
+                texto_foto = foto_handle.read(3500).strip()
+            if texto_foto:
+                prompt += "MEMÓRIA ATUAL DA FOTO DE PERFIL DO BOT (use para compreender sua aparência e atmosfera):\\n" + texto_foto + "\\n\\n"
+    except Exception:
+        pass
+    prompt += (
+        f"IDENTIDADE: seu nome é {str(getattr(bot.user, 'name', 'bot'))}. "
+        "Apresente-se pelo nome deste bot no Discord. Não afirme ser Nemotron, NVIDIA ou outro modelo "
+        "e não invente fabricante/modelo. Use sempre a mesma personalidade no servidor, nas DMs e com criadores.\n\n"
+    )
+    try:
         perfil_path = os.path.join(BASE_DIR, "bot_personality.json")
         if os.path.isfile(perfil_path):
             with open(perfil_path, "r", encoding="utf-8") as perfil_handle:
                 perfil_bot = json.load(perfil_handle)
             descricao_visual = str(perfil_bot.get("visual_description", "")).strip()
             personalidade_bot = str(perfil_bot.get("personality", "")).strip()
-            if descricao_visual or personalidade_bot:
+            regras_personalidade = perfil_bot.get("rules", [])
+            if isinstance(regras_personalidade, list):
+                regras_personalidade = "\n".join("- " + str(item)[:300] for item in regras_personalidade[:12])
+            else:
+                regras_personalidade = str(regras_personalidade or "")[:1800]
+            if descricao_visual or personalidade_bot or regras_personalidade:
                 prompt += (
                     "PERFIL PERSISTENTE DESTE BOT (baseado no próprio perfil e avatar):\n"
                     f"- Nome do bot: {str(perfil_bot.get('name', ''))[:100]}\n"
                     f"- Descrição do perfil: {str(perfil_bot.get('description', ''))[:500]}\n"
                     f"- Leitura visual do avatar: {descricao_visual[:1600]}\n"
                     f"- Personalidade derivada do perfil: {personalidade_bot[:1800]}\n"
+                    f"- Regras de comportamento derivadas do perfil: {regras_personalidade[:1800]}\n"
                     "Use esse perfil como orientação estável, sem inventar fatos sobre o personagem retratado.\n\n"
                 )
     except (OSError, ValueError, TypeError):
@@ -6997,13 +7012,84 @@ async def on_presence_update(before, after):
 _inicializar_banco_lembretes()
 
 
+async def atualizar_memoria_foto_perfil(forcar=False):
+    """Mantém foto de perfil.txt sincronizado com o avatar atual e atualiza a descrição visual para a IA."""
+    if not bot.user:
+        return False
+    caminho_txt = os.path.join(BASE_DIR, "foto de perfil.txt")
+    caminho_json = os.path.join(BASE_DIR, "bot_personality.json")
+    avatar_url = str(bot.user.display_avatar.with_size(1024).url)
+    conteudo_anterior = ""
+    try:
+        if os.path.isfile(caminho_txt):
+            with open(caminho_txt, "r", encoding="utf-8") as handle:
+                conteudo_anterior = handle.read()
+    except OSError:
+        pass
+    marcador = "AVATAR_URL: " + avatar_url
+    if not forcar and conteudo_anterior.startswith(marcador + "\n"):
+        return False
+
+    descricao = ""
+    try:
+        def baixar_avatar_memoria():
+            req = Request(avatar_url, headers={"User-Agent": "BotHub-Profile/1.0"})
+            with urlopen(req, timeout=20) as response:
+                return response.read(8_000_000), response.headers.get("Content-Type", "image/png")
+        image_bytes, mime = await asyncio.to_thread(baixar_avatar_memoria)
+        descricao = await asyncio.to_thread(
+            analisar_imagem_sync,
+            image_bytes,
+            mime,
+            "Descreva para uma IA a aparência visual do avatar deste bot: formas, personagens ilustrados, cores, expressão, roupa e atmosfera. Diga o que é visível e diferencie claramente impressões de fatos. Não tente identificar pessoas reais.",
+            None,
+        )
+        descricao = str(descricao or "").strip()[:2500]
+    except Exception as error:
+        log_console(f"Não foi possível analisar a nova foto de perfil ({type(error).__name__}).")
+        descricao = "A imagem não pôde ser analisada. Use apenas o nome e os metadados do bot até uma nova tentativa."
+
+    texto = (
+        marcador + "\n"
+        + "NOME_DO_BOT: " + str(bot.user.name) + "\n"
+        + "ATUALIZADO_EM: " + time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()) + " UTC\n"
+        + "DESCRICAO_VISUAL_PARA_IA:\n" + descricao + "\n"
+    )
+    tmp_txt = caminho_txt + ".tmp"
+    with open(tmp_txt, "w", encoding="utf-8") as handle:
+        handle.write(texto)
+    os.replace(tmp_txt, caminho_txt)
+
+    perfil = {}
+    try:
+        if os.path.isfile(caminho_json):
+            with open(caminho_json, "r", encoding="utf-8") as handle:
+                perfil = json.load(handle)
+        if not isinstance(perfil, dict):
+            perfil = {}
+    except Exception:
+        perfil = {}
+    perfil.update({
+        "name": str(bot.user.name),
+        "avatar_url": avatar_url,
+        "visual_description": descricao[:1600],
+        "avatar_memory_file": "foto de perfil.txt",
+    })
+    tmp_json = caminho_json + ".tmp"
+    with open(tmp_json, "w", encoding="utf-8") as handle:
+        json.dump(perfil, handle, ensure_ascii=False, indent=2)
+    os.replace(tmp_json, caminho_json)
+    log_console("Memória foto de perfil.txt atualizada; descrição visual disponível para a IA.")
+    return True
+
+
 async def garantir_personalidade_inicial():
     """Cria uma identidade persistente na primeira execução usando perfil e avatar do próprio bot."""
     caminho = os.path.join(BASE_DIR, "bot_personality.json")
     if os.path.exists(caminho) or not bot.user:
         return
     perfil = {"name": str(bot.user.name), "description": "", "avatar_url": str(bot.user.display_avatar.url),
-              "visual_description": "", "personality": ""}
+              "visual_description": "", "personality": "", "rules": []}
     try:
         try:
             app = await bot.application_info()
@@ -7025,16 +7111,32 @@ async def garantir_personalidade_inicial():
         except Exception as error:
             log_console(f"Perfil visual inicial indisponível ({type(error).__name__}); usando metadados do bot.")
         prompt_personalidade = (
-            "Crie uma personalidade curta, natural e consistente para um bot de comunidade Discord. "
-            "Use apenas o nome, descrição e leitura visual abaixo como inspiração; não invente biografia, "
-            "modelo de IA, fabricante ou capacidades. A personalidade deve funcionar igual em DM e no servidor, "
-            "ser simpática, animada e útil, e não deve se apresentar com frases genéricas de assistente. "
-            "Deixe as regras operacionais vazias; escreva apenas 3 a 6 frases de personalidade.\\n"
+            "Crie uma personalidade e regras iniciais para este bot Discord com base apenas no nome, "
+            "descrição e avatar. A imagem pode inspirar um estilo alegre, misterioso, assustador, calmo, "
+            "bravo ou divertido, mas não invente fatos reais sobre pessoas. A personalidade deve ter 3 a 6 "
+            "frases naturais. Crie de 3 a 8 regras seguras, úteis e coerentes com o estilo. Não mencione modelo, "
+            "fabricante ou provedor de IA. Retorne SOMENTE JSON válido no formato "
+            '{"personality":"texto","rules":["regra 1","regra 2"]}.\\n'
             + json.dumps(perfil, ensure_ascii=False)
         )
         try:
-            personalidade = await consultar_ia_simples(prompt_personalidade)
-            perfil["personality"] = str(personalidade or "").strip()[:1800]
+            gerado = await consultar_ia_simples(prompt_personalidade)
+            bruto = str(gerado or "").strip()
+            if bruto.startswith("```"):
+                bruto = bruto.strip("`")
+                if bruto.lower().startswith("json"):
+                    bruto = bruto[4:].strip()
+            try:
+                resultado = json.loads(bruto)
+            except (json.JSONDecodeError, TypeError):
+                resultado = {}
+            if isinstance(resultado, dict) and resultado.get("personality"):
+                perfil["personality"] = str(resultado["personality"]).strip()[:1800]
+                regras_geradas = resultado.get("rules", [])
+                if isinstance(regras_geradas, list):
+                    perfil["rules"] = [str(item).strip()[:300] for item in regras_geradas[:8] if str(item).strip()]
+            else:
+                perfil["personality"] = bruto[:1800]
         except Exception as error:
             log_console(f"Personalidade inicial indisponível ({type(error).__name__}).")
         tmp = caminho + ".tmp"
@@ -7049,6 +7151,10 @@ async def garantir_personalidade_inicial():
 @bot.event
 async def on_ready():
     DISCORD_LOGS.start(bot)
+    try:
+        await atualizar_memoria_foto_perfil()
+    except Exception as error:
+        log_console(f"AVISO: memória da foto de perfil não foi atualizada ({type(error).__name__}).")
     try:
         await garantir_personalidade_inicial()
     except Exception as error:
@@ -7810,27 +7916,7 @@ async def cmd_bot_profile_role(interaction: discord.Interaction, cargo: discord.
 
 
 
-@bot.tree.command(name="dm-configurar", description="Configura respostas do bot por mensagem direta")
-@discord.app_commands.choices(sincero_para=[
-    discord.app_commands.Choice(name="Todos os usuários", value="todos"),
-    discord.app_commands.Choice(name="Somente administradores", value="admins"),
-    discord.app_commands.Choice(name="Somente criadores", value="criadores"),
-])
-async def dm_configurar(interaction: discord.Interaction, permitir_dms: bool, modo_sincero: bool, sincero_para: discord.app_commands.Choice[str]):
-    if not interaction_e_criador(interaction):
-        return await interaction.response.send_message("❌ Somente um criador do bot pode alterar as configurações de DM.", ephemeral=True)
-    dm_cfg = config.setdefault("dm_settings", {"enabled": True, "sincero": True, "sincero_para": "criadores", "admin_ids": []})
-    dm_cfg["enabled"] = bool(permitir_dms)
-    dm_cfg["sincero"] = bool(modo_sincero)
-    dm_cfg["sincero_para"] = sincero_para.value
-    salvar_config(config)
-    estado_dm = "permitidas" if permitir_dms else "desativadas"
-    estado_sincero = "ativado" if modo_sincero else "desativado"
-    await interaction.response.send_message(
-        f"✅ Configurações de DM salvas. DMs: **{estado_dm}**. Modo sincero: **{estado_sincero}**; escopo: **{sincero_para.name}**.\n"
-        "Padrão: modo amigável para usuários comuns e sincero para criadores.",
-        ephemeral=True,
-    )
+
 
 @bot.tree.command(name="reset", description="Limpa seu histórico de conversa atual (DM ou Canal)")
 async def cmd_reset(interaction: discord.Interaction):
@@ -13017,6 +13103,11 @@ async def comando_perfil(ctx, *, argumentos=""):
             if imagem is not None:
                 kwargs["avatar"] = imagem
             await bot.user.edit(**kwargs)
+            if imagem is not None:
+                try:
+                    await atualizar_memoria_foto_perfil(forcar=True)
+                except Exception as erro_memoria:
+                    log_console(f"AVISO: avatar alterado, mas a memória visual falhou ({type(erro_memoria).__name__}).")
             if nome is not None:
                 resultados.append("✅ Nome do bot atualizado.")
             if imagem is not None:
