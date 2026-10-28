@@ -504,7 +504,8 @@ def _pid_is_this_worker(pid):
 
 def acquire_worker_lock():
     """O controlador novo encerra a instância antiga desta instalação e assume o controle."""
-    lock_path = ROOT / ".bothub_worker.lock"
+    # Um único controlador por usuário/dispositivo, mesmo se as instalações estiverem em pastas diferentes.
+    lock_path = Path.home() / ".bothub_worker.lock"
     # O arquivo guarda o PID da instância que atualmente possui o bloqueio.
     old_pid = None
     try:
