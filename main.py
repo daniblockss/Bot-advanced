@@ -3957,6 +3957,24 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
     regras = ler_txt(obter_arquivo_guild(REGRAS_TXT_FILE, guild_id))
 
     prompt = f"{identidade}\n\n{regras}\n\n=========================================\n"
+    try:
+        perfil_path = os.path.join(BASE_DIR, "bot_personality.json")
+        if os.path.isfile(perfil_path):
+            with open(perfil_path, "r", encoding="utf-8") as perfil_handle:
+                perfil_bot = json.load(perfil_handle)
+            descricao_visual = str(perfil_bot.get("visual_description", "")).strip()
+            personalidade_bot = str(perfil_bot.get("personality", "")).strip()
+            if descricao_visual or personalidade_bot:
+                prompt += (
+                    "PERFIL PERSISTENTE DESTE BOT (baseado no próprio perfil e avatar):\\n"
+                    f"- Nome do bot: {str(perfil_bot.get('name', ''))[:100]}\\n"
+                    f"- Descrição do perfil: {str(perfil_bot.get('description', ''))[:500]}\\n"
+                    f"- Leitura visual do avatar: {descricao_visual[:1600]}\\n"
+                    f"- Personalidade derivada do perfil: {personalidade_bot[:1800]}\\n"
+                    "Use esse perfil como orientação estável, sem inventar fatos sobre o personagem retratado.\\n\\n"
+                )
+    except (OSError, ValueError, TypeError):
+        pass
     prompt += (
         "CONTEXTO INTERNO: não anuncie nem revele a data, a hora ou o fuso horário "
         "espontaneamente; só informe data/hora se o usuário perguntar diretamente. "
@@ -6977,9 +6995,62 @@ async def on_presence_update(before, after):
 _inicializar_banco_lembretes()
 
 
+async def garantir_personalidade_inicial():
+    """Cria uma identidade persistente na primeira execução usando perfil e avatar do próprio bot."""
+    caminho = os.path.join(BASE_DIR, "bot_personality.json")
+    if os.path.exists(caminho) or not bot.user:
+        return
+    perfil = {"name": str(bot.user.name), "description": "", "avatar_url": str(bot.user.display_avatar.url),
+              "visual_description": "", "personality": ""}
+    try:
+        try:
+            app = await bot.application_info()
+            perfil["description"] = str(getattr(app, "description", "") or "")[:500]
+        except Exception:
+            pass
+        try:
+            def baixar_avatar():
+                req = Request(perfil["avatar_url"], headers={"User-Agent": "BotHub-Profile/1.0"})
+                with urlopen(req, timeout=20) as response:
+                    return response.read(8_000_000), response.headers.get("Content-Type", "image/png")
+            image_bytes, mime = await asyncio.to_thread(baixar_avatar)
+            descricao = await asyncio.to_thread(
+                analisar_imagem_sync, image_bytes, mime,
+                "Descreva objetivamente o avatar deste bot: elementos visuais, cores, expressão e impressão de personalidade que a imagem sugere. Separe claramente o que é visível do que é apenas uma impressão. Não identifique pessoas reais.",
+                None,
+            )
+            perfil["visual_description"] = str(descricao or "")[:1600]
+        except Exception as error:
+            log_console(f"Perfil visual inicial indisponível ({type(error).__name__}); usando metadados do bot.")
+        prompt_personalidade = (
+            "Crie uma personalidade curta, natural e consistente para um bot de comunidade Discord. "
+            "Use apenas o nome, descrição e leitura visual abaixo como inspiração; não invente biografia, "
+            "modelo de IA, fabricante ou capacidades. A personalidade deve funcionar igual em DM e no servidor, "
+            "ser simpática, animada e útil, e não deve se apresentar com frases genéricas de assistente. "
+            "Deixe as regras operacionais vazias; escreva apenas 3 a 6 frases de personalidade.\\n"
+            + json.dumps(perfil, ensure_ascii=False)
+        )
+        try:
+            personalidade = await consultar_ia_simples(prompt_personalidade)
+            perfil["personality"] = str(personalidade or "").strip()[:1800]
+        except Exception as error:
+            log_console(f"Personalidade inicial indisponível ({type(error).__name__}).")
+        tmp = caminho + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(perfil, handle, ensure_ascii=False, indent=2)
+        os.replace(tmp, caminho)
+        log_console("Perfil e personalidade inicial do bot armazenados.")
+    except Exception as error:
+        log_console(f"Não foi possível armazenar a personalidade inicial ({type(error).__name__}).")
+
+
 @bot.event
 async def on_ready():
     DISCORD_LOGS.start(bot)
+    try:
+        await garantir_personalidade_inicial()
+    except Exception as error:
+        log_console(f"AVISO: perfil inicial não foi criado ({type(error).__name__}).")
     safe_event("inicializacao", "Bot conectado; sincronizando comandos e recuperando sistemas.")
     try:
         await bot.tree.sync()
