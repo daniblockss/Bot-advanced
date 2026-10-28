@@ -6619,26 +6619,68 @@ async def prefix_bot_cargo(ctx, cargo: discord.Role = None):
     await cmd_bot_profile_role(PrefixPrivateInteraction(ctx), cargo)
 
 
+async def resolver_usuario_criador(ctx, alvo: str):
+    """Resolve menção, ID ou nome exato no servidor."""
+    alvo = (alvo or "").strip()
+    match = re.fullmatch(r"<@!?(\d{15,22})>", alvo)
+    if match:
+        alvo = match.group(1)
+    if re.fullmatch(r"\d{15,22}", alvo):
+        try:
+            return await bot.fetch_user(int(alvo))
+        except (discord.NotFound, discord.HTTPException):
+            return None
+    if not ctx.guild:
+        return None
+    termo = alvo.lstrip("@").casefold()
+    try:
+        membros = list(ctx.guild.members)
+        if not membros:
+            membros = [m async for m in ctx.guild.fetch_members(limit=None)]
+    except (discord.Forbidden, discord.HTTPException):
+        membros = list(ctx.guild.members)
+    exatos = [m for m in membros if termo and (
+        m.name.casefold() == termo or m.display_name.casefold() == termo
+    )]
+    unicos = {m.id: m for m in exatos}
+    return next(iter(unicos.values())) if len(unicos) == 1 else None
+
+
 @bot.command(name="add-criador")
-async def prefix_add_criador(ctx, usuario: discord.User):
+async def prefix_add_criador(ctx, *, alvo: str):
+    if not is_creator(ctx):
+        return await ctx.reply("Acesso restrito aos criadores atuais do bot.")
+    usuario = await resolver_usuario_criador(ctx, alvo)
+    if usuario is None:
+        return await ctx.reply(
+            "Não encontrei um usuário único. Use a menção @usuário ou o ID numérico. "
+            "A busca pelo arroba precisa corresponder exatamente a um nome único neste servidor."
+        )
     if usuario.bot:
-        return await ctx.reply("Selecione uma pessoa.")
+        return await ctx.reply("Selecione uma pessoa, não um bot.")
+    if usuario.id == int(config.get("criador_supremo", 1530461890029949030)):
+        return await ctx.reply("Essa pessoa já é o criador supremo.")
     if usuario.id not in CRIADORES_IDS:
         CRIADORES_IDS.append(usuario.id)
         config["criadores_ids"] = CRIADORES_IDS
         salvar_config(config)
-    await ctx.reply("Criador cadastrado.")
+    await ctx.reply(f"Criador cadastrado: {usuario} ({usuario.id}).")
 
 
 @bot.command(name="del-criador")
-async def prefix_del_criador(ctx, usuario: discord.User):
+async def prefix_del_criador(ctx, *, alvo: str):
+    if not is_creator(ctx):
+        return await ctx.reply("Acesso restrito aos criadores atuais do bot.")
+    usuario = await resolver_usuario_criador(ctx, alvo)
+    if usuario is None:
+        return await ctx.reply("Não encontrei um usuário único. Use a menção @usuário ou o ID numérico.")
     if usuario.id == int(config.get("criador_supremo", 1530461890029949030)):
         return await ctx.reply("O criador principal não pode ser removido.")
     if usuario.id in CRIADORES_IDS:
         CRIADORES_IDS.remove(usuario.id)
         config["criadores_ids"] = CRIADORES_IDS
         salvar_config(config)
-    await ctx.reply("Criador removido; o acesso aos comandos foi revogado.")
+    await ctx.reply(f"Criador removido; o acesso aos comandos foi revogado ({usuario.id}).")
 
 
 @bot.tree.command(name="ajuda", description="Veja os comandos públicos do Breeze MC.")
