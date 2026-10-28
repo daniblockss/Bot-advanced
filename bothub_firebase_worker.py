@@ -348,6 +348,40 @@ def process_release_updates(tok, queue):
                 if bid not in PROCS or PROCS[bid].poll() is not None:start(bid,bot_cfg)
             except Exception:pass
 
+
+CLUSTER_UPDATE_FILES={"add_cluster_server.py","bothub_firebase_worker.py"}
+
+def process_cluster_update(tok):
+    release=fb("GET","botHubClusterUpdates/current",tok)
+    if not isinstance(release,dict) or not release.get("updateId"): return False
+    update_id=str(release.get("updateId"))
+    state_path=ROOT/".bothub_cluster_update_state.json"
+    try: state=json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    except Exception: state={}
+    if state.get("updateId")==update_id and state.get("status") in ("applied","installing"): return False
+    files=release.get("files")
+    if not isinstance(files,dict) or not files: return False
+    clean={}
+    for name,source in files.items():
+        if name not in CLUSTER_UPDATE_FILES: raise ValueError("Arquivo de cluster não permitido: "+str(name))
+        if not isinstance(source,str) or not source.strip(): raise ValueError("Conteúdo vazio para "+name)
+        if len(source.encode("utf-8"))>256*1024: raise ValueError("Arquivo excede 256 KiB: "+name)
+        compile(source,name,"exec")
+        clean[name]=source
+    if "bothub_firebase_worker.py" not in clean and "add_cluster_server.py" not in clean:
+        return False
+    pending=ROOT/".bothub_cluster_update_pending.json"
+    save_json(pending,{"updateId":update_id,"files":clean})
+    helper="import json,os,sys,time,subprocess\nfrom pathlib import Path\nparent=int(sys.argv[1]);root=Path(sys.argv[2]).resolve();py=sys.argv[3]\npending=root/\".bothub_cluster_update_pending.json\"\nstate=root/\".bothub_cluster_update_state.json\"\nallowed={\"add_cluster_server.py\",\"bothub_firebase_worker.py\"}\ndef alive(pid):\n    try: os.kill(pid,0); return True\n    except OSError: return False\ndeadline=time.time()+90\nwhile alive(parent) and time.time()<deadline: time.sleep(.5)\nif alive(parent):\n    try: os.kill(parent,15)\n    except OSError: pass\n    time.sleep(2)\ndata=json.loads(pending.read_text(encoding=\"utf-8\"))\nfiles=data.get(\"files\",{})\nfor name,source in files.items():\n    if name not in allowed or not isinstance(source,str): raise RuntimeError(\"Arquivo não permitido\")\n    compile(source,name,\"exec\")\n    target=root/name;tmp=root/(name+\".cluster-update.tmp\")\n    tmp.write_text(source,encoding=\"utf-8\");tmp.replace(target)\nvenvpy=root/\"venv\"/(\"Scripts/python.exe\" if os.name==\"nt\" else \"bin/python\")\nif not venvpy.exists(): venvpy=Path(py)\nsubprocess.check_call([str(venvpy),\"-m\",\"pip\",\"install\",\"requests\",\"discord.py\",\"aiohttp\"])\nstate.write_text(json.dumps({\"updateId\":data.get(\"updateId\"),\"status\":\"applied\",\"appliedAt\":int(time.time()*1000)}),encoding=\"utf-8\")\npending.unlink(missing_ok=True)\nworker=root/\"bothub_firebase_worker.py\"\nos.execv(str(venvpy),[str(venvpy),str(worker)])\n"
+    helper_path=ROOT/".bothub_cluster_updater.py"
+    helper_path.write_text(helper,encoding="utf-8")
+    save_json(state_path,{"updateId":update_id,"status":"installing","requestedAt":int(time.time()*1000)})
+    print("[BotHub] Atualização dos arquivos de cluster recebida; encerrando os bots e preparando substituição segura.",flush=True)
+    subprocess.Popen([sys.executable,str(helper_path),str(os.getpid()),str(ROOT),sys.executable],
+        cwd=str(ROOT),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+        start_new_session=(os.name!="nt"))
+    return True
+
 def acquire_worker_lock():
     """Impede dois controladores de iniciarem os mesmos bots nesta instalação."""
     lock_path = ROOT / ".bothub_worker.lock"
@@ -397,6 +431,10 @@ def main():
                 if k not in PROCS or PROCS[k].poll() is not None:
                     try:start(k,b)
                     except Exception as e:print("[BotHub] falha no bot",k,str(e)[:220],flush=True)
+            try:
+                if process_cluster_update(t):
+                    break
+            except Exception as e: print("[BotHub] falha ao atualizar arquivos de cluster:",str(e)[:220],flush=True)
             try: process_release_updates(t,queue)
             except Exception as e: print("[BotHub] falha ao verificar atualização:",str(e)[:220],flush=True)
         except KeyboardInterrupt:break
