@@ -12561,7 +12561,7 @@ def registrar_raiz(app):
                 "estrutura": [{k: v for k, v in c.items() if k != "permissoes"} for c in estado],
                 "amostras": fontes}, ensure_ascii=False)}]
         def extrair_json_plano(texto):
-            texto = str(texto or "").strip().lstrip("\\ufeff")
+            texto = str(texto or "").strip().lstrip("\ufeff")
             # Aceita JSON cercado por markdown ou precedido por uma frase do modelo.
             if texto.startswith("\x60\x60\x60"):
                 linhas = texto.splitlines()
@@ -12611,7 +12611,7 @@ def registrar_raiz(app):
                     await ctx.send("Revise a proposta acima. Nenhuma alteração foi aplicada.", view=view)
                     return
                 except (app["FalhaProvedor"], ValueError, TypeError, KeyError) as error:
-                    detalhe = re.sub(r"(?i)(bearer\\s+|(?:sk|gsk|AIza)[-_])[A-Za-z0-9._-]{8,}", "[credencial ocultada]", str(error))
+                    detalhe = re.sub(r"(?i)(bearer\s+|(?:sk|gsk|AIza)[-_])[A-Za-z0-9._-]{8,}", "[credencial ocultada]", str(error))
                     falhas.append(f"{provedor}: {type(error).__name__}" + (f" ({detalhe[:100]})" if detalhe else ""))
         resumo_falhas = "; ".join(falhas[-3:])
         await ctx.send(
