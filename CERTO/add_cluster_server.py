@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import os
+import signal
+import time
 import platform
 import subprocess
 import sys
@@ -42,6 +44,44 @@ def download():
     except OSError:
         pass
 
+
+
+def stop_existing_termux_processes():
+    """Encerra processos antigos desta instalação antes de iniciar o supervisor novo."""
+    if not TERMUX or not Path("/proc").is_dir():
+        return
+    worker_path = str(WORKER.resolve())
+    supervisor_path = str(SUPERVISOR.resolve())
+    bots_path = str((ROOT / "bots").resolve()) + "/"
+    targets = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid == os.getpid():
+            continue
+        try:
+            raw = (entry / "cmdline").read_bytes()
+            cmd = raw.replace(b"\\x00", b" ").decode("utf-8", errors="ignore")
+        except (OSError, ProcessLookupError):
+            continue
+        if not cmd:
+            continue
+        # Mata apenas processos identificados como pertencentes a esta instalação.
+        if supervisor_path in cmd:
+            targets.append((0, pid, "supervisor"))
+        elif worker_path in cmd:
+            targets.append((1, pid, "worker"))
+        elif bots_path in cmd and "/main.py" in cmd:
+            targets.append((2, pid, "bot"))
+    for _, pid, label in sorted(targets):
+        try:
+            os.kill(pid, signal.SIGTERM)
+            print(f"[BotHub Installer] Encerrando processo antigo ({label}, PID {pid})...", flush=True)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+    if targets:
+        time.sleep(2)
 
 def install_termux_autostart():
     """Cria supervisor e script Termux:Boot; não requer root."""
@@ -93,6 +133,9 @@ def main():
                         start_new_session=True,
                     )
                     code = process.wait()
+                if code == 73:
+                    log("Já existe outro worker ativo nesta pasta; supervisor encerrado para evitar loop.")
+                    return 0
                 log(f"Worker encerrou (código {code}); reinício em 5 segundos.")
             except KeyboardInterrupt:
                 log("Supervisor interrompido pelo usuário.")
