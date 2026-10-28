@@ -34,7 +34,11 @@ def fb(method,path,tok,data=None):
  if r.status_code>=300:raise RuntimeError("Firebase "+str(r.status_code)+": "+r.text[:200])
  return r.json() if r.text else None
 def stats(cfg):
- d=shutil.disk_usage(str(Path.home()));running=[k for k,p in PROCS.items() if p.poll() is None];x={"deviceId":cfg["device_id"],"hostname":socket.gethostname(),"label":socket.gethostname(),"platform":platform.platform(),"diskFreeBytes":d.free,"diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"runningBots":len(running),"runningBotIds":running,"lastSeen":int(time.time()*1000),"uptimeSeconds":int(time.time()-WORKER_STARTED),"workerStartedAt":int(WORKER_STARTED*1000)}
+ d=shutil.disk_usage(str(Path.home()));running=[k for k,p in PROCS.items() if p.poll() is None];x={"deviceId":cfg["device_id"],"hostname":socket.gethostname(),"label":socket.gethostname(),"platform":platform.platform(),"diskFreeBytes":d.free,"diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"runningBots":len(running),"runningBotIds":running,"lastSeen":int(time.time()*1000),"uptimeSeconds":int(time.time()-WORKER_STARTED),"workerUptimeSeconds":int(time.time()-WORKER_STARTED),"workerStartedAt":int(WORKER_STARTED*1000)}
+ try:
+  uptime_text=Path("/proc/uptime").read_text().split()[0]
+  x["uptimeSeconds"]=int(float(uptime_text))
+ except Exception:pass
  try:
   x["publicIp"]=S.get("https://api.ipify.org?format=json",timeout=4).json().get("ip","")
  except Exception:x["publicIp"]=""
