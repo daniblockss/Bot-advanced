@@ -1,102 +1,146 @@
 #!/usr/bin/env python3
-"""BotHub one-file cluster server installer.
-
-Run with: python3 add_cluster_server.py
-Requires Python 3.10+ and internet access. It prepares ~/.bothub/venv,
-installs worker dependencies, downloads the official worker, then starts it.
-"""
+# -*- coding: utf-8 -*-
+"""Instalador BotHub P2P. Cria start.py na pasta atual e inicia o cluster."""
 from __future__ import annotations
 
 import os
-import platform
+import secrets
 import subprocess
 import sys
 import urllib.request
 from pathlib import Path
 
-WORKER_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bothub_firebase_worker.py"
-ROOT = Path.home() / ".bothub"
+ROOT = Path.cwd().resolve()
 VENV = ROOT / "venv"
-WORKER = ROOT / "bothub_firebase_worker.py"
+CLUSTER = ROOT / "bothub_cluster.py"
+START = ROOT / "start.py"
+CLUSTER_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bothub_cluster.py"
 
+START_TEMPLATE = r'''#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Inicializador do nó BotHub P2P. Todos os dados ficam na pasta atual."""
+from __future__ import annotations
+import json, os, secrets, subprocess, sys
+from pathlib import Path
+from getpass import getpass
 
-def run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
+ROOT = Path(__file__).resolve().parent
+CONFIG = ROOT / "cluster_config.json"
+CLUSTER = ROOT / "bothub_cluster.py"
+PYTHON = ROOT / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+def write_config(cfg):
+    tmp = CONFIG.with_suffix(".tmp")
+    tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    try: tmp.chmod(0o600)
+    except OSError: pass
+    tmp.replace(CONFIG)
+
+def main():
+    if not CLUSTER.exists():
+        print("[BotHub] Não encontrei bothub_cluster.py na pasta:", ROOT)
+        return 2
+    cfg = {}
+    if CONFIG.exists():
+        try: cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+        except Exception: cfg = {}
+    if not cfg.get("node_id") or not cfg.get("secret") or not cfg.get("admin_token"):
+        print("\n=== Configuração inicial do nó BotHub P2P ===")
+        print("Use o MESMO segredo de cluster em todos os servidores que devem confiar uns nos outros.")
+        node = input("Nome deste servidor (ex.: server1): ").strip() or ("server-" + secrets.token_hex(3))
+        secret = getpass("Segredo compartilhado do cluster (mínimo 32 caracteres; guarde-o): ").strip()
+        if len(secret) < 32:
+            print("O segredo precisa ter pelo menos 32 caracteres.")
+            return 2
+        admin = secrets.token_urlsafe(32)
+        print("\nToken administrativo local gerado (guarde-o):")
+        print(admin)
+        peers = {}
+        print("\nPares conhecidos no formato ID=URL, por exemplo server1=http://192.168.1.10:47800")
+        print("Deixe o ID vazio para terminar. Para internet, o nó remoto precisa estar acessível e a porta configurada.")
+        while True:
+            line = input("Par (ID=URL, vazio para terminar): ").strip()
+            if not line: break
+            if "=" not in line:
+                print("Formato inválido; use ID=URL.")
+                continue
+            pid, url = line.split("=", 1)
+            pid, url = pid.strip(), url.strip()
+            if not pid or pid == node or not url.startswith(("http://", "https://")):
+                print("ID/URL inválido ou ID igual ao deste nó.")
+                continue
+            peers[pid] = url
+        cfg = {"node_id": node, "secret": secret, "admin_token": admin, "peers": peers}
+        write_config(cfg)
+    env = os.environ.copy()
+    env.update({
+        "BOTHUB_CLUSTER_HOME": str(ROOT),
+        "BOTHUB_NODE_ID": cfg["node_id"],
+        "BOTHUB_CLUSTER_SECRET": cfg["secret"],
+        "BOTHUB_ADMIN_TOKEN": cfg["admin_token"],
+        "BOTHUB_CLUSTER_PEERS_JSON": json.dumps(cfg.get("peers", {})),
+    })
+    print("\n[BotHub] Iniciando nó", cfg["node_id"], "na pasta", ROOT)
+    print("[BotHub] Administração: execute novamente start.py e use o modo admin quando solicitado.")
+    if len(sys.argv) > 1 and sys.argv[1] == "admin":
+        return subprocess.call([str(PYTHON), str(CLUSTER), "admin"], cwd=str(ROOT), env=env)
+    return subprocess.call([str(PYTHON), str(CLUSTER)], cwd=str(ROOT), env=env)
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+def run(args: list[str], check: bool = True):
     print("\n[BotHub] $", " ".join(map(str, args)), flush=True)
-    return subprocess.run(args, check=check)
+    return subprocess.run(args, check=check, cwd=str(ROOT))
 
-
-def download(url: str, destination: Path) -> None:
-    print(f"[BotHub] Baixando {destination.name}...", flush=True)
-    request = urllib.request.Request(
-        url, headers={"User-Agent": "BotHub-Cluster-Installer/1.0"}
-    )
-    with urllib.request.urlopen(request, timeout=45) as response:
+def download(url: str, destination: Path):
+    print("[BotHub] Baixando", destination.name, "...", flush=True)
+    req = urllib.request.Request(url, headers={"User-Agent": "BotHub-P2P-Installer/1.0"})
+    with urllib.request.urlopen(req, timeout=45) as response:
         data = response.read()
     if len(data) < 1000:
-        raise RuntimeError("O arquivo baixado parece incompleto; nada foi executado.")
+        raise RuntimeError("O arquivo baixado parece incompleto; nada será iniciado.")
     destination.write_bytes(data)
-    try:
-        destination.chmod(0o700)
-    except OSError:
-        pass
-    print(f"[BotHub] Download concluído ({len(data)} bytes).", flush=True)
+    try: destination.chmod(0o700)
+    except OSError: pass
 
-
-def main() -> int:
+def main():
     if sys.version_info < (3, 10):
-        print("[BotHub] ERRO: instale Python 3.10 ou superior e rode este script novamente.")
+        print("[BotHub] ERRO: Python 3.10 ou superior é necessário.")
         return 2
-
-    if platform.system() == "Windows":
-        vpy = VENV / "Scripts" / "python.exe"
-        pip = VENV / "Scripts" / "pip.exe"
-    else:
-        vpy = VENV / "bin" / "python"
-        pip = VENV / "bin" / "pip"
-
-    ROOT.mkdir(parents=True, exist_ok=True)
-
-    if not vpy.exists():
-        print("[BotHub] Ambiente virtual não encontrado; criando...")
-        result = run([sys.executable, "-m", "venv", str(VENV)], check=False)
-        if result.returncode != 0:
-            print("\n[BotHub] Não consegui criar o venv. Em Debian/Ubuntu, tente:")
-            print("  sudo apt update && sudo apt install -y python3-venv python3-pip")
-            print("Depois execute este instalador novamente.")
-            return result.returncode or 1
-    else:
-        print("[BotHub] Ambiente virtual já existe; vou reutilizá-lo.")
-
-    # Some Python installations create a venv without pip; bootstrap it if needed.
-    if not pip.exists():
-        print("[BotHub] pip não encontrado no venv; tentando instalar com ensurepip...")
-        result = run([str(vpy), "-m", "ensurepip", "--upgrade"], check=False)
-        if result.returncode != 0:
-            print("[BotHub] Não foi possível ativar o pip automaticamente.")
-            print("Em Debian/Ubuntu, instale python3-venv e python3-pip e rode novamente.")
-            return result.returncode or 1
-
-    is_termux = "ANDROID_ROOT" in os.environ or "com.termux" in str(Path.home()) or "termux" in os.environ.get("PREFIX", "")
-    packages = ["requests", "discord.py", "aiohttp"]
-    print("[BotHub] Instalando somente requests, discord.py e aiohttp.")
-
-    print("[BotHub] Atualizando pip e verificando dependências...")
-    run([str(vpy), "-m", "pip", "install", "--upgrade", "pip"])
-    run([str(vpy), "-m", "pip", "install", "--upgrade", *packages])
-
-    download(WORKER_URL, WORKER)
-    print("\n[BotHub] Preparação concluída. Iniciando o worker...")
-    print("[BotHub] Na primeira execução, informe um ID exclusivo e as credenciais Firebase do worker.")
-    os.execv(str(vpy), [str(vpy), str(WORKER)])
-
+    if START.exists():
+        answer = input("[BotHub] start.py já existe. Substituir? [s/N] ").strip().lower()
+        if answer != "s":
+            print("[BotHub] Instalação cancelada para preservar o start.py existente.")
+            return 1
+    venv_python = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    run([sys.executable, "-m", "venv", str(VENV)], check=False)
+    if not venv_python.exists():
+        print("[BotHub] Não consegui criar o ambiente virtual. Em Debian/Ubuntu: sudo apt install python3-venv")
+        return 2
+    run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"])
+    run([str(venv_python), "-m", "pip", "install", "--upgrade", "discord.py", "aiohttp", "requests", "psutil"])
+    download(CLUSTER_URL, CLUSTER)
+    START.write_text(START_TEMPLATE, encoding="utf-8")
+    try: START.chmod(0o700)
+    except OSError: pass
+    print("\n[BotHub] Arquivos preparados em:", ROOT)
+    print("[BotHub] O instalador vai se apagar e executar start.py.")
+    installer = Path(__file__).resolve()
+    try:
+        installer.unlink()
+    except OSError as exc:
+        print("[BotHub] Aviso: não consegui apagar o instalador:", exc)
+    os.execv(str(venv_python), [str(venv_python), str(START)])
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except KeyboardInterrupt:
-        print("\n[BotHub] Instalação interrompida pelo usuário.")
+        print("\n[BotHub] Operação cancelada.")
         raise SystemExit(130)
     except Exception as exc:
-        print(f"\n[BotHub] ERRO: {exc}", file=sys.stderr)
-        print("[BotHub] Confira a conexão com a internet e tente novamente.", file=sys.stderr)
+        print("\n[BotHub] ERRO:", exc, file=sys.stderr)
+        print("[BotHub] O instalador não será apagado se a preparação falhar.", file=sys.stderr)
         raise SystemExit(1)
