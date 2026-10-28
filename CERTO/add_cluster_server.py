@@ -62,7 +62,7 @@ def stop_existing_termux_processes():
             continue
         try:
             raw = (entry / "cmdline").read_bytes()
-            cmd = raw.replace(b"\\x00", b" ").decode("utf-8", errors="ignore")
+            cmd = raw.replace(b"\x00", b" ").decode("utf-8", errors="ignore")
         except (OSError, ProcessLookupError):
             continue
         if not cmd:
@@ -203,6 +203,8 @@ def main():
         print("[BotHub Installer] Termux detectado: não instala psutil; usa /proc como alternativa.")
     run([str(PYTHON), "-m", "pip", "install", "--upgrade", *packages])
     download()
+    if TERMUX:
+        stop_existing_termux_processes()
 
     print("\n[BotHub Installer] Arquivos instalados em:", ROOT)
     print("[BotHub Installer] O worker vai gerar um ID e autenticar sem pedir e-mail/senha.")
