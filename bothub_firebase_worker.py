@@ -158,6 +158,40 @@ def handle_shutdown_signal(signum, frame):
     cleanup_children()
     raise SystemExit(0)
 
+def script_already_running(script):
+    """Detecta outro processo Python executando exatamente este main.py."""
+    target = str(script.resolve())
+    current_pid = os.getpid()
+    if sys.platform.startswith("linux") and Path("/proc").is_dir():
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit() or int(entry.name) in (current_pid, os.getppid()):
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes()
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
+                if len(args) >= 2 and any(
+                    arg.endswith(".py") and str(Path(arg).resolve()) == target
+                    for arg in args[1:]
+                ):
+                    return int(entry.name)
+            except (OSError, ValueError, RuntimeError):
+                continue
+    else:
+        try:
+            import psutil
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                if proc.info["pid"] == current_pid:
+                    continue
+                args = proc.info.get("cmdline") or []
+                if any(
+                    arg.endswith(".py") and str(Path(arg).resolve()) == target
+                    for arg in args[1:]
+                ):
+                    return proc.info["pid"]
+        except Exception:
+            pass
+    return None
+
 def start(k,b):
     folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main.py"
     if not script.exists():
@@ -165,6 +199,10 @@ def start(k,b):
         r=S.get(url,timeout=30);r.raise_for_status()
         if len(r.content)<10000:raise RuntimeError("Download de main.py incompleto.")
         script.write_bytes(r.content)
+    duplicate_pid = script_already_running(script)
+    if duplicate_pid is not None:
+        print("[BotHub] main.py já está rodando neste dispositivo (PID",duplicate_pid,"); não vou iniciar outra cópia para",k,flush=True)
+        return
     cfg=dict(b.get("config") or {});cfg["discord_token"]=b["token"]
     cp=folder/"config.json";save_json(cp,cfg)
     if k in PROCS and PROCS[k].poll() is None:return
