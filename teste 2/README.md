@@ -8,7 +8,7 @@ Esta pasta é uma cópia de teste. Os arquivos desta instalação usam o diretó
 - bothub_firebase_worker.py: controlador do cluster; os bots que ele executa ficam em teste 2/bots/.
 - docs/bothub.html: painel com namespace Firebase separado teste2/.
 - docs/cluster-cooperativo.md: documentação desta cópia.
-- .github/workflows/validate-cluster.yml: valida os arquivos Python dentro desta pasta.
+- .github/workflows/validate-cluster.yml: cópia de configuração de validação; o GitHub só executa workflows localizados na pasta .github/workflows da raiz, então este arquivo dentro de teste 2 não roda automaticamente.
 
 ## Isolamento
 - Os downloads de atualização usam a branch teste-2 e o caminho teste 2/.
