@@ -3,7 +3,7 @@
 import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse
 from pathlib import Path
 import requests
-ROOT=Path.home()/".bothub";ROOT.mkdir(parents=True,exist_ok=True)
+ROOT=Path(__file__).resolve().parent;ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json";TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
