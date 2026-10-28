@@ -6,6 +6,8 @@ on:
     paths:
       - "bothub_mesh.py"
       - "test_bothub_mesh.py"
+      - "bothub_cluster.py"
+      - "test_bothub_cluster.py"
       - ".github/workflows/bothub-mesh-tests.yml"
   pull_request:
     paths:
@@ -24,4 +26,4 @@ jobs:
       - name: Run mesh unit tests
         env:
           BOTHUB_MESH_SECRET: test-only-secret-do-not-use-in-production-0000000000
-        run: python -m unittest -v test_bothub_mesh.py
+        run: python -m unittest -v test_bothub_mesh.py test_bothub_cluster.py
