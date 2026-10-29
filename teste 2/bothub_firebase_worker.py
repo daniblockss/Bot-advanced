@@ -160,13 +160,21 @@ def sid(v):
 def stop(k):
     p=PROCS.pop(k,None);l=LOGS.pop(k,None)
     if p and p.poll() is None:
-        try:p.terminate();p.wait(timeout=5)
+        try:
+            p.terminate()
+            p.wait(timeout=8)
         except Exception:
-            try:p.kill()
-            except Exception:pass
+            try:
+                p.kill()
+                p.wait(timeout=3)
+            except Exception:
+                pass
     if l:
-        try:l.close()
-        except Exception:pass
+        try:
+            l.flush()
+            l.close()
+        except Exception:
+            pass
 
 def child_parent_death_signal():
     """Linux: encerra o bot se o controlador morrer abruptamente."""
@@ -619,6 +627,36 @@ def start(k,b):
                 os.kill(duplicate_pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         except OSError:
             pass
+    cfg=dict(b.get("config") or {});cfg["discord_token"]=b["token"]
+    cp=folder/"config.json";save_json(cp,cfg)
+    if k in PROCS and PROCS[k].poll() is None:return
+    log=open(folder/"bot.log","ab",buffering=0)
+    popen_kwargs = {}
+    if sys.platform.startswith("linux"):
+        popen_kwargs["preexec_fn"] = child_parent_death_signal
+    p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
+        stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),**popen_kwargs)
+    PROCS[k]=p;LOGS[k]=log
+    # Detecta falhas imediatas no main.py para que o loop possa tentar novamente.
+    time.sleep(1.5)
+    if p.poll() is not None:
+        PROCS.pop(k, None);LOGS.pop(k, None)
+        try:
+            log.flush()
+            log.close()
+        except Exception:
+            pass
+        detail=""
+        try:
+            with (folder/"bot.log").open("rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                size=handle.tell()
+                handle.seek(max(0,size-1800), os.SEEK_SET)
+                detail=handle.read().decode("utf-8",errors="replace")[-1200:]
+        except Exception:
+            pass
+        raise RuntimeError("main.py encerrou durante a inicialização." + ((" Log: "+detail) if detail else ""))
+    print("[BotHub] iniciado",b.get("name",k),"PID",p.pid,flush=True)
     # Preserva as configurações locais e aplica o estado sincronizado mais recente.
     def merge_cfg(base, overlay):
         result=dict(base) if isinstance(base,dict) else {}
@@ -784,6 +822,42 @@ def discord_api(token_value, method, endpoint, payload):
         raise RuntimeError("Discord HTTP "+str(response.status_code)+": "+str(body.get("message","falha"))[:180])
     return body
 
+def process_bot_deletions(tok, device_id):
+    """Aplica exclusões solicitadas pelo painel, mesmo se o worker ficou offline."""
+    records = fb("GET", "botHubDeletions", tok) or {}
+    if not isinstance(records, dict):
+        return
+    did_key = urllib.parse.quote(str(device_id), safe="")
+    for raw_id, record in list(records.items()):
+        if not isinstance(record, dict):
+            continue
+        target = str(record.get("workerId") or "")
+        if target and target != str(device_id):
+            continue
+        processed = record.get("processed") or {}
+        if isinstance(processed, dict) and processed.get(did_key):
+            continue
+        bid = sid(raw_id)
+        try:
+            stop(bid)
+            shutil.rmtree(ROOT / "bots" / bid, ignore_errors=True)
+            # Remove qualquer estado remoto que tenha sobrado de uma execução anterior.
+            for remote_path in (
+                "botState/" + urllib.parse.quote(bid, safe=""),
+                "botLeases/" + urllib.parse.quote(bid, safe=""),
+                "workerTasks/" + did_key + "/" + urllib.parse.quote(bid, safe=""),
+            ):
+                try:
+                    fb("DELETE", remote_path, tok)
+                except Exception as e:
+                    print("[BotHub] limpeza remota pendente para", bid, ":", str(e)[:100], flush=True)
+            fb("PUT", "botHubDeletions/" + urllib.parse.quote(str(raw_id), safe="") +
+               "/processed/" + did_key, tok, True)
+            print("[BotHub] exclusão aplicada; pasta local removida:", bid, flush=True)
+        except Exception as e:
+            print("[BotHub] falha ao aplicar exclusão de", bid, ":", str(e)[:180], flush=True)
+
+
 def process_worker_commands(cfg,tok,did,queue):
     commands=fb("GET","workerCommands/"+did,tok) or {}
     if not isinstance(commands,dict): return
@@ -876,27 +950,32 @@ def process_release_updates(tok, queue):
         accepted=request_file.exists()
         if state.get("updateId")==update_id and state.get("updated"):continue
         if not mandatory and not accepted:continue
+        backup=folder/"main.py.update.backup"
+        had_old=(folder/"main.py").is_file()
         try:
             stop(bid)
+            if had_old:
+                shutil.copy2(folder/"main.py", backup)
             size=download_latest_main(folder)
             start(bid,bot_cfg)
             state.update(updateId=update_id,announced=True,updated=True,updatedAt=int(time.time()*1000),bytes=size)
             save_json(state_file,state)
             if request_file.exists():request_file.unlink()
-            print("[BotHub] bot atualizado:",raw_id,"bytes:",size,flush=True)
+            try: backup.unlink(missing_ok=True)
+            except Exception: pass
+            print("[BotHub] bot atualizado e reiniciado:",raw_id,"bytes:",size,flush=True)
         except Exception as e:
-            print("[BotHub] falha ao atualizar",raw_id,":",str(e)[:220],flush=True)
+            print("[BotHub] falha ao atualizar/reiniciar",raw_id,":",str(e)[:220],flush=True)
+            # Se a versão nova não inicializar, restaura a anterior e tenta ligar o bot.
             try:
-                backup=folder/".main.py.last-good"
+                stop(bid)
                 if backup.is_file():
-                    restored=folder/"main.py.restore.tmp"
-                    restored.write_bytes(backup.read_bytes())
-                    restored.replace(folder/"main.py")
+                    backup.replace(folder/"main.py")
                     print("[BotHub] versão anterior restaurada para",raw_id,flush=True)
                 if bid not in PROCS or PROCS[bid].poll() is not None:
                     start(bid,bot_cfg)
-            except Exception as recovery_error:
-                print("[BotHub] recuperação após atualização falhou para",raw_id,":",str(recovery_error)[:220],flush=True)
+            except Exception as restart_error:
+                print("[BotHub] também falhou ao reiniciar",raw_id,":",str(restart_error)[:180],flush=True)
 
 
 CLUSTER_UPDATE_URLS={
@@ -942,7 +1021,7 @@ from pathlib import Path
 parent=int(sys.argv[1]);root=Path(sys.argv[2]).resolve();py=sys.argv[3]
 pending=root/".bothub_cluster_update_pending.json"
 state=root/".bothub_cluster_update_state.json"
-allowed={"add_cluster_server.py","bothub_firebase_worker.py"}
+allowed={"start.py","add_cluster_server.py","bothub_firebase_worker.py"}
 def alive(pid):
     try: os.kill(pid,0); return True
     except OSError: return False
@@ -962,10 +1041,12 @@ venvpy=root/"venv"/("Scripts/python.exe" if os.name=="nt" else "bin/python")
 if not venvpy.exists(): venvpy=Path(py)
 state.write_text(json.dumps({"updateId":data.get("updateId"),"status":"applied","appliedAt":int(time.time()*1000)}),encoding="utf-8")
 pending.unlink(missing_ok=True)
-installer=root/"add_cluster_server.py"
-if not installer.exists():
-    raise RuntimeError("Instalador atualizado não foi encontrado; não é possível reiniciar a instalação.")
-os.execv(str(venvpy),[str(venvpy),str(installer)])
+launcher=root/"start.py"
+if not launcher.exists():
+    launcher=root/"add_cluster_server.py"
+if not launcher.exists():
+    raise RuntimeError("Nem start.py nem add_cluster_server.py foram encontrados; não é possível reiniciar.")
+os.execv(str(venvpy),[str(venvpy),str(launcher)])
 """
     helper_path=ROOT/".bothub_cluster_updater.py"
     helper_path.write_text(helper,encoding="utf-8")
@@ -1122,6 +1203,7 @@ def main():
             t=token(cfg);did=urllib.parse.quote(cfg["device_id"],safe="")
             LAST_TOKEN=t;LAST_DID=did;CURRENT_FIREBASE_TOKEN=t
             fb("PUT","workers/"+did,t,stats(cfg))
+            process_bot_deletions(t, cfg["device_id"])
             queue=fb("GET","workerTasks/"+did,t) or {}
             LAST_QUEUE=queue if isinstance(queue,dict) else {}
             process_worker_commands(cfg,t,did,queue)
