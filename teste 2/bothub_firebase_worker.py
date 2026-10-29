@@ -875,6 +875,8 @@ def process_release_updates(tok, queue):
 
 
 CLUSTER_UPDATE_URLS={
+    "start.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/start.py",
+    "server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/server.py",
     "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/add_cluster_server.py",
     "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/bothub_firebase_worker.py",
 }
@@ -917,7 +919,7 @@ from pathlib import Path
 parent=int(sys.argv[1]);root=Path(sys.argv[2]).resolve();py=sys.argv[3]
 pending=root/".bothub_cluster_update_pending.json"
 state=root/".bothub_cluster_update_state.json"
-allowed={"add_cluster_server.py","bothub_firebase_worker.py"}
+allowed={"start.py","server.py","add_cluster_server.py","bothub_firebase_worker.py"}
 def alive(pid):
     try: os.kill(pid,0); return True
     except OSError: return False
@@ -937,10 +939,12 @@ venvpy=root/"venv"/("Scripts/python.exe" if os.name=="nt" else "bin/python")
 if not venvpy.exists(): venvpy=Path(py)
 state.write_text(json.dumps({"updateId":data.get("updateId"),"status":"applied","appliedAt":int(time.time()*1000)}),encoding="utf-8")
 pending.unlink(missing_ok=True)
-installer=root/"add_cluster_server.py"
-if not installer.exists():
-    raise RuntimeError("Instalador atualizado não foi encontrado; não é possível reiniciar a instalação.")
-os.execv(str(venvpy),[str(venvpy),str(installer)])
+launcher=root/"start.py"
+if not launcher.exists():
+    launcher=root/"add_cluster_server.py"
+if not launcher.exists():
+    raise RuntimeError("Nem start.py nem add_cluster_server.py foram encontrados; não é possível reiniciar.")
+os.execv(str(venvpy),[str(venvpy),str(launcher)])
 """
     helper_path=ROOT/".bothub_cluster_updater.py"
     helper_path.write_text(helper,encoding="utf-8")
