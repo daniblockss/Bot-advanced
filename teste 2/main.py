@@ -6782,8 +6782,10 @@ async def prefix_allow_comunidade(ctx):
 
 @bot.command(name="add-criador")
 async def prefix_add_criador(ctx, *, alvo: str):
-    if not is_creator(ctx):
-        return await ctx.reply("Acesso restrito ao dono desta comunidade e aos criadores autorizados do bot.")
+    # Criador local/dono da guild NÃO pode conceder criador global.
+    # Somente quem já está na lista global (incluindo o criador supremo) pode.
+    if ctx.author.id not in obter_ids_criadores():
+        return await ctx.reply("⛔ Somente criadores globais já cadastrados podem adicionar novos criadores.")
     usuario = await resolver_usuario_criador(ctx, alvo)
     if usuario is None:
         return await ctx.reply(
@@ -6792,7 +6794,7 @@ async def prefix_add_criador(ctx, *, alvo: str):
         )
     if usuario.bot:
         return await ctx.reply("Selecione uma pessoa, não um bot.")
-    if usuario.id == int(config.get("criador_supremo", 1530461890029949030)):
+    if usuario.id == int(config.get("criador_supremo", 1252679441629315144)):
         return await ctx.reply("Essa pessoa já é o criador supremo.")
     if usuario.id not in CRIADORES_IDS:
         CRIADORES_IDS.append(usuario.id)
@@ -6803,8 +6805,9 @@ async def prefix_add_criador(ctx, *, alvo: str):
 
 @bot.command(name="del-criador")
 async def prefix_del_criador(ctx, *, alvo: str):
-    if not is_creator(ctx):
-        return await ctx.reply("Acesso restrito aos criadores atuais do bot.")
+    # A lista global só pode ser alterada por criadores globais existentes.
+    if ctx.author.id not in obter_ids_criadores():
+        return await ctx.reply("⛔ Somente criadores globais já cadastrados podem remover criadores.")
     usuario = await resolver_usuario_criador(ctx, alvo)
     if usuario is None:
         return await ctx.reply("Não encontrei um usuário único. Use a menção @usuário ou o ID numérico.")
