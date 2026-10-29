@@ -21,7 +21,7 @@ Esta pasta é uma cópia de teste. Os arquivos desta instalação usam o diretó
 Baixe/copie a pasta inteira para o servidor e execute o instalador a partir dela:
 ```bash
 cd "teste 2"
-python3 add_cluster_server.py
+python3 start.py
 ```
 O instalador usa a própria pasta do script como diretório de trabalho, mesmo se for iniciado por outro caminho.
 
