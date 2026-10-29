@@ -5248,6 +5248,12 @@ async def carregar_historico_canal_discord(message, pergunta):
                         for termo in grupo
                     ):
                         canais_relacionados.append(item)
+                if not canais_relacionados:
+                    return (
+                        "[Não encontrei um canal conectado relacionado a esta pergunta. "
+                        "Informe que não foi possível confirmar as informações específicas do servidor; "
+                        "não invente regras, comandos ou avisos.]"
+                    )
                 if len(canais_relacionados) == 1:
                     canal = canais_relacionados[0]
                 elif len(canais_relacionados) > 1:
@@ -5261,7 +5267,7 @@ async def carregar_historico_canal_discord(message, pergunta):
                     if resultados:
                         return (
                             "[Conteúdo dos canais conectados relacionados à pergunta. "
-                            "Responda com base nestas fontes e cite o canal de origem.]\\n\\n"
+                            "Responda com base nestas fontes e cite o canal de origem.]\n\n"
                             + "\\n\\n".join(resultados)
                         )
                     return "[Não consegui ler os canais relacionados. Verifique as permissões do bot e do usuário.]"
