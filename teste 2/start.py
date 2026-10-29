@@ -13,7 +13,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-BASE_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202"
+BASE_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 ROOT = Path(__file__).resolve().parent
 LOG_FILE = ROOT / "start.log"
 INSTALLER = ROOT / "add_cluster_server.py"
