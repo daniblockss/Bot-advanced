@@ -979,23 +979,6 @@ def process_release_updates(tok, queue):
 
 
 CLUSTER_UPDATE_URLS={
-    "start.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/start.py",
-    "server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/server.py",
-    "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/add_cluster_server.py",
-    "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/bothub_firebase_worker.py",
-                backup=folder/".main.py.last-good"
-                if backup.is_file():
-                    restored=folder/"main.py.restore.tmp"
-                    restored.write_bytes(backup.read_bytes())
-                    restored.replace(folder/"main.py")
-                    print("[BotHub] versão anterior restaurada para",raw_id,flush=True)
-                if bid not in PROCS or PROCS[bid].poll() is not None:
-                    start(bid,bot_cfg)
-            except Exception as recovery_error:
-                print("[BotHub] recuperação após atualização falhou para",raw_id,":",str(recovery_error)[:220],flush=True)
-
-
-CLUSTER_UPDATE_URLS={
     "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/add_cluster_server.py",
     "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bothub_firebase_worker.py",
 }
@@ -1038,7 +1021,7 @@ from pathlib import Path
 parent=int(sys.argv[1]);root=Path(sys.argv[2]).resolve();py=sys.argv[3]
 pending=root/".bothub_cluster_update_pending.json"
 state=root/".bothub_cluster_update_state.json"
-allowed={"start.py","server.py","add_cluster_server.py","bothub_firebase_worker.py"}
+allowed={"start.py","add_cluster_server.py","bothub_firebase_worker.py"}
 def alive(pid):
     try: os.kill(pid,0); return True
     except OSError: return False
