@@ -9,7 +9,7 @@ ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
 TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
-DB="https://bothub-bca02-default-rtdb.firebaseio.com/teste2"
+DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 
@@ -466,7 +466,7 @@ def kill_existing_bothub_bots():
 
 # --- Cooperative leases and Firebase-backed memory state ---
 LEASE_SECONDS = max(45, int(os.getenv('BOTHUB_LEASE_SECONDS', '75')))
-STATE_FIXED_FILES = {'bot_personality.json','foto de perfil.txt','image_history.json','memory.sqlite3','reminders.sqlite3','memoria_geral','importantes','geral_avisos','identidade','regras','identidade-padrao.txt','regras-padrao.txt'}
+STATE_FIXED_FILES = {'bot_personality.json','foto de perfil.txt','image_history.json','memory.sqlite3','reminders.sqlite3','memoria_geral','importantes','geral_avisos','identidade','regras','identidade-padrao.txt','regras-padrao.txt','bot_settings.json'}
 ACTIVE_LEASES = {}
 CURRENT_DEVICE_ID = ''
 CURRENT_FIREBASE_TOKEN = ''
@@ -545,6 +545,28 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
     if not isinstance(owner,dict) or owner.get('owner') != device_id or int(owner.get('fence') or 0) != int(lease['fence']):
         ACTIVE_LEASES.pop(bid,None); raise RuntimeError('Lease perdido; estado compartilhado protegido.')
     folder=ROOT/'bots'/bid; folder.mkdir(parents=True,exist_ok=True); url=_state_url(bid)
+    # Antes de enviar o estado, cria uma cópia sincronizável da configuração sem segredos.
+    # config.json nunca é enviado diretamente porque contém token e possíveis chaves de API.
+    if mode == 'push':
+        try:
+            local_cfg_path = folder/'config.json'
+            if local_cfg_path.is_file():
+                local_cfg = json.loads(local_cfg_path.read_text(encoding='utf-8'))
+                if isinstance(local_cfg, dict):
+                    def strip_secrets(value):
+                        blocked = {'discord_token','token','api_key','apikey','secret','password','authorization'}
+                        if isinstance(value, dict):
+                            return {str(key): strip_secrets(item) for key,item in value.items()
+                                    if str(key).lower() not in blocked and str(key).lower() not in {'apis'}}
+                        if isinstance(value, list):
+                            return [strip_secrets(item) for item in value]
+                        return value
+                    safe_cfg = strip_secrets(local_cfg)
+                    if isinstance(safe_cfg.get('ai'), dict):
+                        safe_cfg['ai'].pop('api_keys', None)
+                    save_json(folder/'bot_settings.json', safe_cfg)
+        except Exception as e:
+            print('[BotHub] não foi possível preparar configurações seguras para sincronização:',str(e)[:120],flush=True)
     r=_req_json('GET',url+'.json',tok); remote=r.json() if r.text else {}
     if not isinstance(remote,dict): remote={}
     if mode == 'pull' and remote:
@@ -572,13 +594,23 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
 
 def start(k,b):
     folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main.py"
+    if k in PROCS and PROCS[k].poll() is None:
+        return
     # Restore Firebase memory before main.py opens local databases.
     sync_bot_state(k, 'pull')
-    if not script.exists():
-        url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/main.py"
-        r=S.get(url,timeout=30);r.raise_for_status()
-        if len(r.content)<10000:raise RuntimeError("Download de main.py incompleto.")
-        script.write_bytes(r.content)
+    # Sincroniza a versão do GitHub sem perder a cópia local se a rede falhar.
+    try:
+        size = download_latest_main(folder)
+        print("[BotHub] main.py sincronizado com teste 2/main.py do GitHub:", k, "bytes:", size, flush=True)
+    except Exception as e:
+        if not script.exists():
+            raise
+        print("[BotHub] AVISO: não consegui atualizar main.py; usando a cópia local existente para",
+              k, "-", str(e)[:180], flush=True)
+    try:
+        compile(script.read_text(encoding="utf-8"),str(script),"exec")
+    except Exception as exc:
+        raise RuntimeError("main.py não passou na validação de sintaxe: "+str(exc)[:180])
     duplicate_pid = script_already_running(script, b.get("token"))
     if duplicate_pid is not None:
         print("[BotHub] Duplicata de main.py/token detectada (PID",duplicate_pid,"). Encerrando a cópia antiga antes de iniciar a instância correta para",k,flush=True)
@@ -625,6 +657,71 @@ def start(k,b):
             pass
         raise RuntimeError("main.py encerrou durante a inicialização." + ((" Log: "+detail) if detail else ""))
     print("[BotHub] iniciado",b.get("name",k),"PID",p.pid,flush=True)
+    # Preserva as configurações locais e aplica o estado sincronizado mais recente.
+    def merge_cfg(base, overlay):
+        result=dict(base) if isinstance(base,dict) else {}
+        if isinstance(overlay,dict):
+            for key,value in overlay.items():
+                if isinstance(value,dict) and isinstance(result.get(key),dict):
+                    result[key]=merge_cfg(result[key],value)
+                else:
+                    result[key]=value
+        return result
+    cfg=dict(b.get("config") or {})
+    cp=folder/"config.json"
+    if cp.is_file():
+        try:
+            local_cfg=json.loads(cp.read_text(encoding="utf-8"))
+            if isinstance(local_cfg,dict):
+                cfg=merge_cfg(cfg,local_cfg)
+        except Exception as e:
+            print("[BotHub] configuração local não pôde ser mesclada:",str(e)[:120],flush=True)
+    safe_state=folder/"bot_settings.json"
+    if safe_state.is_file():
+        try:
+            persisted=json.loads(safe_state.read_text(encoding="utf-8"))
+            if isinstance(persisted,dict):
+                cfg=merge_cfg(cfg,persisted)
+        except Exception as e:
+            print("[BotHub] estado persistido de configurações não pôde ser carregado:",str(e)[:120],flush=True)
+    cfg["discord_token"]=b["token"]
+    save_json(cp,cfg)
+
+    last_error=""
+    for attempt in range(1,4):
+        if k in PROCS:
+            stop(k)
+        log=open(folder/"bot.log","ab",buffering=0)
+        popen_kwargs = {}
+        if sys.platform.startswith("linux"):
+            popen_kwargs["preexec_fn"] = child_parent_death_signal
+        try:
+            p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
+                stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),**popen_kwargs)
+        except Exception:
+            log.close()
+            raise
+        PROCS[k]=p;LOGS[k]=log
+        print("[BotHub] iniciando",b.get("name",k),"PID",p.pid,"tentativa",attempt,"/3",flush=True)
+        deadline=time.time()+3
+        while time.time()<deadline and p.poll() is None:
+            time.sleep(0.25)
+        if p.poll() is None:
+            print("[BotHub] processo permaneceu ativo após a verificação inicial:",b.get("name",k),flush=True)
+            return
+        try:
+            log.flush()
+            with open(folder/"bot.log","r",encoding="utf-8",errors="replace") as handle:
+                last_error="\n".join(handle.readlines()[-18:])[-1800:]
+        except Exception:
+            last_error="sem detalhes adicionais no log"
+        print("[BotHub] processo encerrou durante a inicialização (código",p.returncode,"):",last_error[-700:],flush=True)
+        PROCS.pop(k,None);LOGS.pop(k,None)
+        try: log.close()
+        except Exception: pass
+        if attempt<3:
+            time.sleep(attempt)
+    raise RuntimeError("main.py encerrou nas 3 tentativas. Últimas linhas do log: "+last_error[-900:])
 
 
 # File manager seguro: somente a pasta do bot selecionado; sem shell arbitrário.
@@ -799,12 +896,19 @@ def process_worker_commands(cfg,tok,did,queue):
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
 def download_latest_main(folder):
-    url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/main.py"
+    url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"
     response=S.get(url,timeout=45);response.raise_for_status()
     data=response.content
     if len(data)<10000: raise RuntimeError("main.py baixado está incompleto.")
     compile(data.decode("utf-8"),"main.py","exec")
     target=folder/"main.py";tmp=folder/"main.py.update.tmp"
+    backup=folder/".main.py.last-good"
+    if target.exists():
+        old=target.read_bytes()
+        if len(old)>=10000:
+            compile(old.decode("utf-8"),"main.py (versão anterior)","exec")
+            backup_tmp=backup.with_suffix(".tmp")
+            backup_tmp.write_bytes(old);backup_tmp.replace(backup)
     tmp.write_bytes(data);tmp.replace(target)
     return len(data)
 
@@ -879,6 +983,21 @@ CLUSTER_UPDATE_URLS={
     "server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/server.py",
     "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/add_cluster_server.py",
     "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/bothub_firebase_worker.py",
+                backup=folder/".main.py.last-good"
+                if backup.is_file():
+                    restored=folder/"main.py.restore.tmp"
+                    restored.write_bytes(backup.read_bytes())
+                    restored.replace(folder/"main.py")
+                    print("[BotHub] versão anterior restaurada para",raw_id,flush=True)
+                if bid not in PROCS or PROCS[bid].poll() is not None:
+                    start(bid,bot_cfg)
+            except Exception as recovery_error:
+                print("[BotHub] recuperação após atualização falhou para",raw_id,":",str(recovery_error)[:220],flush=True)
+
+
+CLUSTER_UPDATE_URLS={
+    "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/add_cluster_server.py",
+    "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bothub_firebase_worker.py",
 }
 
 def process_cluster_update(tok):
@@ -1140,9 +1259,9 @@ def main():
                     try: sync_bot_state(k,'push',t,cfg['device_id'])
                     except Exception: pass
                     release_bot_lease(k,cfg['device_id'],t)
-                    if k not in leased:
-                        shutil.rmtree(ROOT/'bots'/sid(k),ignore_errors=True)
-                    print("[BotHub] bot parado/transferido:",k,flush=True)
+                    # Não apagar a pasta ao transferir/desatribuir o bot: ela contém
+                    # arquivos locais e cópias de recuperação. O estado é sincronizado acima.
+                    print("[BotHub] bot parado/transferido; arquivos locais preservados:",k,flush=True)
             for k,bot_cfg in leased.items():
                 try:
                     if k not in PROCS or PROCS[k].poll() is not None:

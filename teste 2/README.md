@@ -11,7 +11,7 @@ Esta pasta é uma cópia de teste. Os arquivos desta instalação usam o diretó
 - .github/workflows/validate-cluster.yml: cópia de configuração de validação; o GitHub só executa workflows localizados na pasta .github/workflows da raiz, então este arquivo dentro de teste 2 não roda automaticamente.
 
 ## Isolamento
-- Os downloads de atualização usam a branch teste-2 e o caminho teste 2/.
+- Os downloads de atualização usam a versão publicada na branch principal (`main`), dentro do caminho `teste 2/`.
 - O worker salva o ambiente virtual, logs, configuração, estado e bots dentro da pasta onde está instalado.
 - O painel e o worker usam o prefixo teste2/ no Firebase para não misturar a fila de bots desta cópia com a raiz do painel antigo.
 - A detecção de processos duplicados só considera bots dentro da pasta bots/ desta instalação. Ela não encerra bots de outras pastas.
