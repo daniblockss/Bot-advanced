@@ -4,13 +4,11 @@
 from __future__ import annotations
 import hashlib
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import platform
-import subprocess
 import sys
 import time
-import traceback
-import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -34,7 +32,7 @@ def configurar_logs():
     console.setFormatter(fmt)
     logger.addHandler(console)
     try:
-        arquivo = logging.FileHandler(LOG_FILE, encoding="utf-8")
+        arquivo = RotatingFileHandler(LOG_FILE, maxBytes=2 * 1024 * 1024, backupCount=5, encoding="utf-8")
         arquivo.setLevel(logging.DEBUG)
         arquivo.setFormatter(fmt)
         logger.addHandler(arquivo)
