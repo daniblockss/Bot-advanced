@@ -527,13 +527,23 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
 
 def start(k,b):
     folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main.py"
+    if k in PROCS and PROCS[k].poll() is None:
+        return
     # Restore Firebase memory before main.py opens local databases.
     sync_bot_state(k, 'pull')
     if not script.exists():
         url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py")
-        r=S.get(url,timeout=30);r.raise_for_status()
+        r=S.get(url,timeout=45);r.raise_for_status()
         if len(r.content)<10000:raise RuntimeError("Download de main.py incompleto.")
-        script.write_bytes(r.content)
+        source=r.content.decode("utf-8")
+        compile(source,str(script),"exec")
+        tmp=script.with_suffix(".py.download.tmp")
+        tmp.write_bytes(r.content);tmp.replace(script)
+    # Detecta erro de sintaxe antes de criar um processo que morreria imediatamente.
+    try:
+        compile(script.read_text(encoding="utf-8"),str(script),"exec")
+    except Exception as exc:
+        raise RuntimeError("main.py não passou na validação de sintaxe: "+str(exc)[:180])
     duplicate_pid = script_already_running(script, b.get("token"))
     if duplicate_pid is not None:
         print("[BotHub] Duplicata de main.py/token detectada (PID",duplicate_pid,"). Encerrando a cópia antiga antes de iniciar a instância correta para",k,flush=True)
@@ -552,15 +562,45 @@ def start(k,b):
             pass
     cfg=dict(b.get("config") or {});cfg["discord_token"]=b["token"]
     cp=folder/"config.json";save_json(cp,cfg)
-    if k in PROCS and PROCS[k].poll() is None:return
-    log=open(folder/"bot.log","ab",buffering=0)
-    popen_kwargs = {}
-    if sys.platform.startswith("linux"):
-        popen_kwargs["preexec_fn"] = child_parent_death_signal
-    p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
-        stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),**popen_kwargs)
-    PROCS[k]=p;LOGS[k]=log
-    print("[BotHub] iniciado",b.get("name",k),"PID",p.pid,flush=True)
+
+    # Tenta iniciar mais de uma vez se o processo cair imediatamente (ex.: falha transitória).
+    last_error=""
+    for attempt in range(1,4):
+        if k in PROCS:
+            stop(k)
+        log=open(folder/"bot.log","ab",buffering=0)
+        popen_kwargs = {}
+        if sys.platform.startswith("linux"):
+            popen_kwargs["preexec_fn"] = child_parent_death_signal
+        try:
+            p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
+                stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),**popen_kwargs)
+        except Exception:
+            log.close()
+            raise
+        PROCS[k]=p;LOGS[k]=log
+        print("[BotHub] iniciando",b.get("name",k),"PID",p.pid,"tentativa",attempt,"/3",flush=True)
+        # Pequena janela de saúde: processos que morrem logo após o Popen não são marcados como iniciados.
+        deadline=time.time()+3
+        while time.time()<deadline and p.poll() is None:
+            time.sleep(0.25)
+        if p.poll() is None:
+            print("[BotHub] processo permaneceu ativo após a verificação inicial:",b.get("name",k),flush=True)
+            return
+        try:
+            log.flush()
+            with open(folder/"bot.log","r",encoding="utf-8",errors="replace") as handle:
+                last_error="\\n".join(handle.readlines()[-18:])[-1800:]
+        except Exception:
+            last_error="sem detalhes adicionais no log"
+        print("[BotHub] o processo encerrou durante a inicialização (código",p.returncode,"):",last_error[-700:],flush=True)
+        PROCS.pop(k,None)
+        LOGS.pop(k,None)
+        try: log.close()
+        except Exception: pass
+        if attempt<3:
+            time.sleep(attempt)
+    raise RuntimeError("main.py encerrou nas 3 tentativas. Últimas linhas do log: "+last_error[-900:])
 
 
 # File manager seguro: somente a pasta do bot selecionado; sem shell arbitrário.
@@ -705,6 +745,13 @@ def download_latest_main(folder):
     if len(data)<10000: raise RuntimeError("main.py baixado está incompleto.")
     compile(data.decode("utf-8"),"main.py","exec")
     target=folder/"main.py";tmp=folder/"main.py.update.tmp"
+    backup=folder/".main.py.last-good"
+    if target.exists():
+        old=target.read_bytes()
+        if len(old)>=10000:
+            compile(old.decode("utf-8"),"main.py (versão anterior)","exec")
+            backup_tmp=backup.with_suffix(".tmp")
+            backup_tmp.write_bytes(old);backup_tmp.replace(backup)
     tmp.write_bytes(data);tmp.replace(target)
     return len(data)
 
@@ -756,9 +803,18 @@ def process_release_updates(tok, queue):
             print("[BotHub] bot atualizado:",raw_id,"bytes:",size,flush=True)
         except Exception as e:
             print("[BotHub] falha ao atualizar",raw_id,":",str(e)[:220],flush=True)
+            # Se a versão nova não iniciar, restaura a última versão válida e tenta recuperá-la.
             try:
-                if bid not in PROCS or PROCS[bid].poll() is not None:start(bid,bot_cfg)
-            except Exception:pass
+                backup=folder/".main.py.last-good"
+                if backup.is_file():
+                    restored=folder/"main.py.restore.tmp"
+                    restored.write_bytes(backup.read_bytes())
+                    restored.replace(folder/"main.py")
+                    print("[BotHub] versão anterior restaurada para",raw_id,flush=True)
+                if bid not in PROCS or PROCS[bid].poll() is not None:
+                    start(bid,bot_cfg)
+            except Exception as recovery_error:
+                print("[BotHub] recuperação após atualização falhou para",raw_id,":",str(recovery_error)[:220],flush=True)
 
 
 CLUSTER_UPDATE_URLS={
