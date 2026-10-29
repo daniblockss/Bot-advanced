@@ -5199,44 +5199,72 @@ async def carregar_historico_canal_discord(message, pergunta):
                 canal = correspondencias[0]
             elif any(
                 termo in texto_normalizado
-                for termo in ("regras", "regra", "normas", "regulamento", "politica")
+                for termo in (
+                    "regras", "regra", "normas", "regulamento", "politica",
+                    "avisos", "anuncios", "noticias", "comandos", "comando",
+                    "cargos", "permissoes", "punicoes", "banimentos",
+                    "eventos", "whitelist", "duvidas", "ajuda", "suporte",
+                    "faq", "chatgeral", "historico", "ultimasconversas",
+                    "sobreoservidor", "informacoes",
+                )
             ):
-                canais_regras = [
-                    item
-                    for _, cinfo, item in canais_configurados
-                    if (
-                        normalizar(item.name).find("regra") >= 0
-                        or normalizar(item.name).find("norma") >= 0
-                        or (
-                            isinstance(cinfo, dict)
-                            and any(
-                                termo in normalizar(cinfo.get("finalidade", ""))
-                                for termo in (
-                                    "regras", "normas", "politica", "regulamento"
-                                )
-                            )
-                        )
-                    )
+                # Relaciona a intenção da pergunta com nomes e finalidades cadastradas.
+                categorias_canais = (
+                    (("regras", "regra", "normas", "regulamento", "politica"),
+                     ("regras", "normas", "regulamento", "politica", "diretrizes")),
+                    (("avisos", "anuncios", "comunicados"),
+                     ("avisos", "anuncios", "comunicado", "announcement")),
+                    (("noticias", "news", "atualizacoes"),
+                     ("noticias", "news", "update", "atualizac")),
+                    (("comandos", "comando", "slash", "prefixo"),
+                     ("comandos", "comando", "bot", "ajuda", "faq")),
+                    (("cargos", "cargo", "permissoes", "permissao"),
+                     ("cargos", "cargo", "permiss")),
+                    (("punicoes", "banimentos", "advertencias"),
+                     ("punicao", "banimento", "advertencia", "moderacao")),
+                    (("eventos", "evento"),
+                     ("eventos", "evento")),
+                    (("whitelist", "listabranca"),
+                     ("whitelist", "listabranca")),
+                    (("duvidas", "ajuda", "suporte", "faq"),
+                     ("duvidas", "ajuda", "suporte", "faq")),
+                    (("chatgeral", "historico", "ultimasconversas"),
+                     ("chat", "geral", "conversa")),
+                )
+                termos_categorias_pedidas = [
+                    termos_canal
+                    for termos_pergunta, termos_canal in categorias_canais
+                    if any(termo in texto_normalizado for termo in termos_pergunta)
                 ]
-                if len(canais_regras) == 1:
-                    canal = canais_regras[0]
-                elif len(canais_regras) > 1:
-                    # Leia os canais relacionados em conjunto, em vez de obrigar
-                    # o usuário a adivinhar qual deles contém cada regra.
+                canais_relacionados = []
+                for _, cinfo, item in canais_configurados:
+                    nome_canal_normalizado = normalizar(item.name)
+                    finalidade_canal = normalizar(
+                        cinfo.get("finalidade", "") if isinstance(cinfo, dict) else ""
+                    )
+                    if any(
+                        termo in nome_canal_normalizado or termo in finalidade_canal
+                        for grupo in termos_categorias_pedidas
+                        for termo in grupo
+                    ):
+                        canais_relacionados.append(item)
+                if len(canais_relacionados) == 1:
+                    canal = canais_relacionados[0]
+                elif len(canais_relacionados) > 1:
                     resultados = []
-                    for canal_regra in canais_regras[:3]:
+                    for canal_relacionado in canais_relacionados[:3]:
                         resultado = await carregar_historico_canal_discord(
-                            message, f"<#{canal_regra.id}>"
+                            message, f"<#{canal_relacionado.id}>"
                         )
                         if resultado and resultado.startswith("[HISTORICO_CANAL:"):
                             resultados.append(resultado)
                     if resultados:
                         return (
-                            "[Fontes de regras encontradas nos canais conectados. "
-                            "Use somente o conteúdo abaixo e cite o canal de origem. ]\n\n"
-                            + "\n\n".join(resultados)
+                            "[Conteúdo dos canais conectados relacionados à pergunta. "
+                            "Responda com base nestas fontes e cite o canal de origem.]\\n\\n"
+                            + "\\n\\n".join(resultados)
                         )
-                    return "[Não consegui ler os canais de regras conectados. Verifique as permissões do bot e do usuário.]"
+                    return "[Não consegui ler os canais relacionados. Verifique as permissões do bot e do usuário.]"
             elif pedido_txt and any(
                 str(message.channel.id) == cid for cid, _, _ in canais_configurados
             ):
