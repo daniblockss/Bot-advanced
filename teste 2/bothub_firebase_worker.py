@@ -627,8 +627,30 @@ def start(k,b):
                 os.kill(duplicate_pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         except OSError:
             pass
-    cfg=dict(b.get("config") or {});cfg["discord_token"]=b["token"]
-    cp=folder/"config.json";save_json(cp,cfg)
+    # Mescla a configuração recebida do Firebase com a configuração local
+    # ANTES de gravar/iniciar main.py. As chaves de API são segredos locais e
+    # não são sincronizadas pelo Firebase; portanto, devem sobreviver a reinícios.
+    def merge_cfg(base, overlay):
+        result=dict(base) if isinstance(base,dict) else {}
+        if isinstance(overlay,dict):
+            for key,value in overlay.items():
+                if isinstance(value,dict) and isinstance(result.get(key),dict):
+                    result[key]=merge_cfg(result[key],value)
+                else:
+                    result[key]=value
+        return result
+
+    cp=folder/"config.json"
+    cfg=dict(b.get("config") or {})
+    if cp.is_file():
+        try:
+            local_cfg=json.loads(cp.read_text(encoding="utf-8"))
+            if isinstance(local_cfg,dict):
+                cfg=merge_cfg(cfg,local_cfg)
+        except Exception as e:
+            print("[BotHub] configuração local não pôde ser preservada antes da inicialização:",str(e)[:160],flush=True)
+    cfg["discord_token"]=b["token"]
+    save_json(cp,cfg)
     if k in PROCS and PROCS[k].poll() is None:return
     log=open(folder/"bot.log","ab",buffering=0)
     popen_kwargs = {}
@@ -657,16 +679,7 @@ def start(k,b):
             pass
         raise RuntimeError("main.py encerrou durante a inicialização." + ((" Log: "+detail) if detail else ""))
     print("[BotHub] iniciado",b.get("name",k),"PID",p.pid,flush=True)
-    # Preserva as configurações locais e aplica o estado sincronizado mais recente.
-    def merge_cfg(base, overlay):
-        result=dict(base) if isinstance(base,dict) else {}
-        if isinstance(overlay,dict):
-            for key,value in overlay.items():
-                if isinstance(value,dict) and isinstance(result.get(key),dict):
-                    result[key]=merge_cfg(result[key],value)
-                else:
-                    result[key]=value
-        return result
+    # Aplica novamente as configurações persistidas sem substituir segredos locais.
     cfg=dict(b.get("config") or {})
     cp=folder/"config.json"
     if cp.is_file():
