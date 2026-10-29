@@ -6643,7 +6643,7 @@ async def somente_criadores_prefixo(ctx):
     comando = getattr(ctx, "command", None)
     # Em comunidades não autorizadas, só o criador principal pode executar !allow.
     if ctx.guild is not None and not comunidade_autorizada(ctx.guild.id):
-        if comando and comando.name == "allow" and ctx.author.id == int(config.get("criador_supremo", 1252679441629315144)):
+        if comando and comando.name == "allow" and ctx.author.id in obter_ids_criadores():
             return True
         if comando and comando.name in {"ping", "info"}:
             return True
@@ -6790,9 +6790,10 @@ async def resolver_usuario_criador(ctx, alvo: str):
 @bot.command(name="allow")
 @commands.guild_only()
 async def prefix_allow_comunidade(ctx):
-    criador_principal = int(config.get("criador_supremo", 1252679441629315144))
-    if ctx.author.id != criador_principal:
-        return await ctx.reply("⛔ Só o criador principal do bot pode autorizar comunidades com `!allow`.")
+    # Apenas criadores globais cadastrados podem autorizar o uso do bot numa comunidade.
+    # Ser dono local do servidor, por si só, não concede autorização global.
+    if ctx.author.id not in obter_ids_criadores():
+        return await ctx.reply("⛔ Só um criador global cadastrado pode autorizar comunidades com `!allow`.")
     guild_id = int(ctx.guild.id)
     autorizadas = config.setdefault("comunidades_autorizadas", [])
     if guild_id not in {int(value) for value in autorizadas if str(value).isdigit()}:
@@ -9845,7 +9846,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Em comunidade pendente, não responda a menções, usuários ou IA. Só aceita !allow do criador principal.
+    # Em comunidade pendente, não responda a menções, usuários ou IA. Só aceita !allow de um criador global cadastrado.
     if message.guild is not None and not comunidade_autorizada(message.guild.id):
         comando_pendente = (message.content or "").strip().split(maxsplit=1)
         if comando_pendente and comando_pendente[0].lower() == "!allow":
