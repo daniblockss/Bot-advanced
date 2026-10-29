@@ -5573,6 +5573,52 @@ def buscar_internet_sync(consulta):
     )
 
 
+def _pedido_nova_imagem_independente(pergunta):
+    """Distingue uma nova geração de imagem de ajustes incrementais na imagem atual."""
+    pedidos = _detectar_pedidos_multimidia(pergunta)
+    if not any(nome == "pixelster" for nome, _ in pedidos):
+        return False
+    texto = unicodedata.normalize("NFD", (pergunta or "").lower())
+    texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
+    continuacao = re.search(
+        r"\\b(?:adicione|adiciona|adicionar|inclua|inclui|incluir|"
+        r"mude|muda|mudar|altere|altera|alterar|troque|troca|trocar|"
+        r"remova|remove|remover|tire|tira|tirar|coloque|coloca|colocar|"
+        r"acrescente|acrescenta|acrescentar|ajuste|ajusta|ajustar|"
+        r"edite|edita|editar|modifique|modifica|modificar|"
+        r"mantendo|continue|continua|continuar|mesma imagem|"
+        r"nessa imagem|nesta imagem|na imagem anterior|"
+        r"imagem atual|imagem que voce criou|sem mudar|sem alterar)\\b",
+        texto,
+    )
+    return not bool(continuacao)
+
+
+def _remover_turnos_antigos_de_imagem(historico):
+    """Remove do histórico apenas turnos ligados a imagens, preservando o restante do chat."""
+    resultado = []
+    remover_resposta_seguinte = False
+    padrao_imagem = re.compile(
+        r"\\b(?:imagem|imagens|foto|fotos|ilustracao|desenho|arte|"
+        r"pixelster|gerada-\\d+-imagem)\\b",
+        re.IGNORECASE,
+    )
+    for item in historico or []:
+        if not isinstance(item, dict):
+            resultado.append(item)
+            continue
+        role = item.get("role")
+        content = item.get("content", "")
+        if role == "user" and isinstance(content, str) and padrao_imagem.search(content):
+            remover_resposta_seguinte = True
+            continue
+        if role == "assistant" and remover_resposta_seguinte:
+            remover_resposta_seguinte = False
+            continue
+        resultado.append(item)
+    return resultado
+
+
 async def perguntar_ia(chave_contexto, user_id, user_name, pergunta, bot_instance,
                        canal_id=None, is_dm=False, guild_id=None, img_url=None,
                        img_data=None, msg_resposta=None, vision_fallback=None,
@@ -5585,6 +5631,13 @@ async def perguntar_ia(chave_contexto, user_id, user_name, pergunta, bot_instanc
             logging.getLogger("breeze.sistema").exception("Falha ao aprender memoria")
     pedidos_multimidia = _detectar_pedidos_multimidia(pergunta)
     if pedidos_multimidia and ahm7_tool_runner:
+        if _pedido_nova_imagem_independente(pergunta):
+            historico_imagens = historico_conversa.get(chave_contexto)
+            if historico_imagens is None:
+                historico_imagens = carregar_conversa_sqlite(chave_contexto)
+            historico_conversa[chave_contexto] = _remover_turnos_antigos_de_imagem(
+                historico_imagens
+            )
         resultados_multimidia = []
         for ferramenta, argumentos in pedidos_multimidia:
             if ferramenta == "speechster" and not argumentos["consulta"]:
