@@ -77,21 +77,22 @@ def configure_autostart():
             unit_dir = Path.home() / ".config" / "systemd" / "user"
         unit_dir.mkdir(parents=True, exist_ok=True)
         unit_file = unit_dir / "bothub-worker.service"
+        wanted_by = "multi-user.target" if os.geteuid() == 0 else "default.target"
         unit_file.write_text(
-            "[Unit]\\n"
-            "Description=BotHub persistent worker\\n"
-            "After=network-online.target\\n"
-            "Wants=network-online.target\\n\\n"
-            "[Service]\\n"
-            "Type=simple\\n"
-            "WorkingDirectory=" + str(ROOT) + "\\n"
-            "ExecStart=" + str(PYTHON) + " " + str(WORKER) + "\\n"
-            "Restart=always\\n"
-            "RestartSec=5\\n"
-            "KillMode=mixed\\n"
-            "TimeoutStopSec=15\\n\\n"
-            "[Install]\\n"
-            "WantedBy=multi-user.target\\n",
+            "[Unit]\n"
+            "Description=BotHub persistent worker\n"
+            "After=network-online.target\n"
+            "Wants=network-online.target\n\n"
+            "[Service]\n"
+            "Type=simple\n"
+            "WorkingDirectory=" + str(ROOT) + "\n"
+            "ExecStart=" + str(PYTHON) + " " + str(WORKER) + "\n"
+            "Restart=always\n"
+            "RestartSec=5\n"
+            "KillMode=mixed\n"
+            "TimeoutStopSec=15\n\n"
+            "[Install]\n"
+            "WantedBy=" + wanted_by + "\n",
             encoding="utf-8",
         )
         if os.geteuid() == 0:
@@ -100,7 +101,10 @@ def configure_autostart():
         else:
             subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, timeout=30)
             subprocess.run(["systemctl", "--user", "enable", "--now", "bothub-worker.service"], check=True, timeout=45)
-            print("[BotHub Installer] Serviço de usuário configurado. Para iniciar sem sessão aberta, o host precisa permitir linger.")
+            try:
+                subprocess.run(["loginctl", "enable-linger", __import__("getpass").getuser()], check=True, timeout=15)
+            except Exception:
+                print("[BotHub Installer] Atenção: o host não permitiu habilitar linger; confirme com o administrador se o serviço inicia após reboot.")
         print("[BotHub Installer] Inicialização automática configurada: bothub-worker.service", flush=True)
         return True
     except Exception as exc:
