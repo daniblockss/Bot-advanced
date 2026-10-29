@@ -5016,7 +5016,11 @@ def _solicita_historico_canal(pergunta):
             "historico", "mensagens", "ultimasconversas",
             "ultimasmensagens", "oquetalfalou", "oquefoidito",
             "regras", "regra", "normas", "regulamento", "politica",
-            "avisos", "anuncios", "noticias",
+            "avisos", "anuncios", "noticias", "comandos", "cargos",
+            "punicoes", "banimentos", "eventos", "whitelist", "faq",
+            "ajuda", "duvidas", "chatgeral", "apresentacoes",
+            "recrutamento", "economia", "sobreoservidor",
+            "informacoes", "qualaregra", "quaisasregras",
         )
     )
 
@@ -5217,10 +5221,22 @@ async def carregar_historico_canal_discord(message, pergunta):
                 if len(canais_regras) == 1:
                     canal = canais_regras[0]
                 elif len(canais_regras) > 1:
-                    return (
-                        "[Resultado da leitura do histórico: há mais de um canal "
-                        "conectado sobre regras; peça ao usuário para especificar.]"
-                    )
+                    # Leia os canais relacionados em conjunto, em vez de obrigar
+                    # o usuário a adivinhar qual deles contém cada regra.
+                    resultados = []
+                    for canal_regra in canais_regras[:3]:
+                        resultado = await carregar_historico_canal_discord(
+                            message, f"<#{canal_regra.id}>"
+                        )
+                        if resultado and resultado.startswith("[HISTORICO_CANAL:"):
+                            resultados.append(resultado)
+                    if resultados:
+                        return (
+                            "[Fontes de regras encontradas nos canais conectados. "
+                            "Use somente o conteúdo abaixo e cite o canal de origem. ]\n\n"
+                            + "\n\n".join(resultados)
+                        )
+                    return "[Não consegui ler os canais de regras conectados. Verifique as permissões do bot e do usuário.]"
             elif pedido_txt and any(
                 str(message.channel.id) == cid for cid, _, _ in canais_configurados
             ):
@@ -7368,8 +7384,8 @@ async def cmd_canal(interaction: discord.Interaction, acao: app_commands.Choice[
                 f"nesta importação (limite: {MAX_CHANNEL_IMPORT_MEDIA})."
             )
         await interaction.followup.send(
-            f"✅ Adicionado! Finalidade: **{finalidade}**; modo de resposta: "
-            f"`{modo_atual}`. {estado_historico} {estado_midias}",
+            f"✅ Adicionado como **{finalidade}**! "
+            f"{estado_historico} {estado_midias}",
             ephemeral=True,
         )
 
@@ -10186,6 +10202,22 @@ async def on_message(message):
             if erro_imagem_link:
                 txt += f"\n[Não foi possível ler a imagem por link: {erro_imagem_link}. Informe a falha sem inventar o conteúdo.]"
             
+            # Consulta automática aos canais conectados quando a pergunta pede
+            # regras, avisos, comandos, ajuda, histórico ou cita um canal pelo nome.
+            if not is_dm and message.guild and (
+                _solicita_historico_canal(txt)
+                or re.search(r"<#\d+>", txt)
+                or re.search(r"(?:canal|#)\s+[^\s,!?<>]+", txt, flags=re.IGNORECASE)
+            ):
+                try:
+                    contexto_canais = await carregar_historico_canal_discord(message, txt)
+                    if contexto_canais:
+                        txt += "\n\n" + contexto_canais
+                except (discord.HTTPException, OSError, ValueError) as error:
+                    log_console(
+                        f"AVISO: consulta automática de canais falhou: {type(error).__name__}"
+                    )
+
             # Repassar dados pra IA
             if txt_extraido:
                 txt += f"\n[Áudio Transcrito recebido do usuário]: {txt_extraido.strip()}"
