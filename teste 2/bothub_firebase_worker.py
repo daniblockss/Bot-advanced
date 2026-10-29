@@ -1047,6 +1047,7 @@ def process_release_updates(tok, queue):
 
 
 CLUSTER_UPDATE_URLS={
+    "start.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/start.py",
     "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/add_cluster_server.py",
     "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bothub_firebase_worker.py",
 }
