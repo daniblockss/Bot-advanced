@@ -7159,10 +7159,58 @@ async def atualizar_memoria_foto_perfil(forcar=False):
 
 
 async def garantir_personalidade_inicial():
-    """Cria uma identidade persistente na primeira execução usando perfil e avatar do próprio bot."""
+    """Gera o perfil inicial e salva a identidade/regras nos arquivos padrão, sem tocar nos arquivos atuais."""
     caminho = os.path.join(BASE_DIR, "bot_personality.json")
-    if os.path.exists(caminho) or not bot.user:
+    identidade_padrao_path = os.path.join(BASE_DIR, IDENTIDADE_PADRAO_TXT)
+    regras_padrao_path = os.path.join(BASE_DIR, REGRAS_PADRAO_TXT)
+
+    def salvar_arquivos_padrao(perfil_salvo):
+        personalidade = str(perfil_salvo.get("personality", "") or "").strip()
+        descricao_visual = str(perfil_salvo.get("visual_description", "") or "").strip()
+        regras = perfil_salvo.get("rules", [])
+        if not isinstance(regras, list):
+            regras = [str(regras)] if str(regras or "").strip() else []
+        regras = [str(regra).strip() for regra in regras[:12] if str(regra).strip()]
+
+        # Só preenche arquivos padrão vazios/inexistentes; nunca sobrescreve
+        # padrões já personalizados e nunca altera identidade.txt/regras.txt atuais.
+        if (personalidade or descricao_visual) and (
+            not os.path.exists(identidade_padrao_path)
+            or not ler_txt(identidade_padrao_path).strip()
+        ):
+            partes_identidade = []
+            if personalidade:
+                partes_identidade.append("Personalidade do bot:\\n" + personalidade)
+            if descricao_visual:
+                partes_identidade.append("Descrição visual do avatar:\\n" + descricao_visual)
+            nome = str(perfil_salvo.get("name", "") or "").strip()
+            if nome:
+                partes_identidade.insert(0, "Nome do bot: " + nome)
+            texto_identidade = "\\n\\n".join(partes_identidade).strip()
+            if texto_identidade:
+                with open(identidade_padrao_path, "w", encoding="utf-8") as handle:
+                    handle.write(texto_identidade + "\\n")
+
+        if regras and (
+            not os.path.exists(regras_padrao_path)
+            or not ler_txt(regras_padrao_path).strip()
+        ):
+            texto_regras = "\\n".join("- " + regra for regra in regras)
+            with open(regras_padrao_path, "w", encoding="utf-8") as handle:
+                handle.write(texto_regras + "\\n")
+
+    if not bot.user:
         return
+    if os.path.exists(caminho):
+        try:
+            with open(caminho, "r", encoding="utf-8") as handle:
+                perfil_existente = json.load(handle)
+            if isinstance(perfil_existente, dict):
+                salvar_arquivos_padrao(perfil_existente)
+        except Exception as error:
+            log_console(f"Não foi possível recuperar o perfil inicial ({type(error).__name__}).")
+        return
+
     perfil = {"name": str(bot.user.name), "description": "", "avatar_url": str(bot.user.display_avatar.url),
               "visual_description": "", "personality": "", "rules": []}
     try:
@@ -7218,7 +7266,8 @@ async def garantir_personalidade_inicial():
         with open(tmp, "w", encoding="utf-8") as handle:
             json.dump(perfil, handle, ensure_ascii=False, indent=2)
         os.replace(tmp, caminho)
-        log_console("Perfil e personalidade inicial do bot armazenados.")
+        salvar_arquivos_padrao(perfil)
+        log_console("Perfil inicial armazenado nos arquivos padrão de personalidade e regras.")
     except Exception as error:
         log_console(f"Não foi possível armazenar a personalidade inicial ({type(error).__name__}).")
 
