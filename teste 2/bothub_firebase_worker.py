@@ -588,11 +588,17 @@ def start(k,b):
     folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main.py"
     # Restore Firebase memory before main.py opens local databases.
     sync_bot_state(k, 'pull')
-    if not script.exists():
-        url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"
-        r=S.get(url,timeout=30);r.raise_for_status()
-        if len(r.content)<10000:raise RuntimeError("Download de main.py incompleto.")
-        script.write_bytes(r.content)
+    # Sempre sincroniza o main.py do bot com teste 2/main.py no GitHub.
+    # Se a rede falhar, mantém a cópia local existente; se não houver cópia,
+    # propaga o erro para não iniciar um arquivo ausente/incompleto.
+    try:
+        size = download_latest_main(folder)
+        print("[BotHub] main.py sincronizado com teste 2/main.py do GitHub:", k, "bytes:", size, flush=True)
+    except Exception as e:
+        if not script.exists():
+            raise
+        print("[BotHub] AVISO: não consegui atualizar main.py; usando a cópia local existente para",
+              k, "-", str(e)[:180], flush=True)
     duplicate_pid = script_already_running(script, b.get("token"))
     if duplicate_pid is not None:
         print("[BotHub] Duplicata de main.py/token detectada (PID",duplicate_pid,"). Encerrando a cópia antiga antes de iniciar a instância correta para",k,flush=True)
