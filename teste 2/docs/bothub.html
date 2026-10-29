@@ -98,7 +98,7 @@ async function deleteBot(id){
     for(const wid of new Set([...Object.keys(workerData),...Object.keys(await get(testRef('workerTasks')).then(s=>s.val()||{})),...(workerId?[workerId]:[])])){
       updates['workerTasks/'+wid+'/'+id]=null;
     }
-    await update(ref(db,'teste2'),updates);
+    await update(ref(db),updates);
     lastAssignment='';
     await refreshData();
   }catch(e){alert('Não foi possível excluir: '+e.message)}
