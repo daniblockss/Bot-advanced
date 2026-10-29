@@ -4242,6 +4242,17 @@ def _tempo_restante_cooldown_ia():
     return min(restantes) if restantes else 0
 
 
+def _todas_as_apis_disponiveis_em_cooldown():
+    """True somente quando cada modo/chave disponível ainda está em espera."""
+    encontrou_alternativa = False
+    for provedor in obter_ordem_provedores():
+        for indice, _ in enumerate(obter_chaves_provedor(provedor), 1):
+            encontrou_alternativa = True
+            if _tempo_restante_provedor(provedor, indice) == 0:
+                return False
+    return encontrou_alternativa
+
+
 def _mensagem_cooldown_ia(segundos, ja_em_cooldown=False):
     tempo = f"{int(segundos)} segundos ({_formatar_tempo_espera(segundos)})"
     if ja_em_cooldown:
@@ -5914,7 +5925,7 @@ async def perguntar_ia(chave_contexto, user_id, user_name, pergunta, bot_instanc
         return resposta_multimidia
 
     tempo_restante = _tempo_restante_cooldown_ia()
-    if tempo_restante:
+    if tempo_restante and _todas_as_apis_disponiveis_em_cooldown():
         resposta_historico = _resposta_historico_durante_cooldown(pergunta)
         if resposta_historico:
             return resposta_historico
@@ -9883,6 +9894,7 @@ async def on_message(message):
     if (
         deve_responder
         and tempo_restante
+        and _todas_as_apis_disponiveis_em_cooldown()
         and not _detectar_pedidos_multimidia(message.content)
         and not _solicita_historico_canal(message.content)
         and not anexos_audio
