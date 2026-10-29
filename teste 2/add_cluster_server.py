@@ -62,6 +62,53 @@ def download():
     except OSError:
         pass
 
+def configure_autostart():
+    """Instala um serviço systemd quando a máquina permite; assim o worker volta após reboot."""
+    if os.name == "nt" or TERMUX or not sys.platform.startswith("linux"):
+        print("[BotHub Installer] Inicialização automática do sistema não configurada nesta plataforma.")
+        return False
+    if not Path("/run/systemd/system").exists():
+        print("[BotHub Installer] systemd não está disponível. Configure o worker no gerenciador de processos do host.")
+        return False
+    try:
+        if os.geteuid() == 0:
+            unit_dir = Path("/etc/systemd/system")
+        else:
+            unit_dir = Path.home() / ".config" / "systemd" / "user"
+        unit_dir.mkdir(parents=True, exist_ok=True)
+        unit_file = unit_dir / "bothub-worker.service"
+        unit_file.write_text(
+            "[Unit]\\n"
+            "Description=BotHub persistent worker\\n"
+            "After=network-online.target\\n"
+            "Wants=network-online.target\\n\\n"
+            "[Service]\\n"
+            "Type=simple\\n"
+            "WorkingDirectory=" + str(ROOT) + "\\n"
+            "ExecStart=" + str(PYTHON) + " " + str(WORKER) + "\\n"
+            "Restart=always\\n"
+            "RestartSec=5\\n"
+            "KillMode=mixed\\n"
+            "TimeoutStopSec=15\\n\\n"
+            "[Install]\\n"
+            "WantedBy=multi-user.target\\n",
+            encoding="utf-8",
+        )
+        if os.geteuid() == 0:
+            subprocess.run(["systemctl", "daemon-reload"], check=True, timeout=30)
+            subprocess.run(["systemctl", "enable", "--now", "bothub-worker.service"], check=True, timeout=45)
+        else:
+            subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, timeout=30)
+            subprocess.run(["systemctl", "--user", "enable", "--now", "bothub-worker.service"], check=True, timeout=45)
+            print("[BotHub Installer] Serviço de usuário configurado. Para iniciar sem sessão aberta, o host precisa permitir linger.")
+        print("[BotHub Installer] Inicialização automática configurada: bothub-worker.service", flush=True)
+        return True
+    except Exception as exc:
+        print("[BotHub Installer] Não consegui configurar o serviço automaticamente:", str(exc)[:180], flush=True)
+        print("[BotHub Installer] Inicie manualmente com:", str(PYTHON), str(WORKER), flush=True)
+        return False
+
+
 def main():
     if sys.version_info < (3, 10):
         print("ERRO: é necessário Python 3.10 ou superior.")
@@ -89,7 +136,10 @@ def main():
     print("[BotHub Installer] Para iniciar novamente:")
     print(" ", str(PYTHON), str(WORKER))
     print("[BotHub Installer] Observação: ative Anonymous em Firebase Authentication > Sign-in method antes da primeira execução.")
-    print("[BotHub Installer] O início automático após reiniciar o dispositivo depende do sistema operacional.")
+    service_started = configure_autostart()
+    if service_started:
+        print("[BotHub Installer] O serviço cuidará de manter o worker ligado após reinicializações.")
+        return 0
     os.execv(str(PYTHON), [str(PYTHON), str(WORKER)])
 
 if __name__ == "__main__":
