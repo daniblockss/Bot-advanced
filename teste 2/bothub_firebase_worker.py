@@ -908,6 +908,61 @@ def process_worker_commands(cfg,tok,did,queue):
         except Exception as e:
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
+def load_worker_queue(tok, device_id):
+    """
+    Recupera a intenção persistente diretamente do cadastro Firebase.
+    workerTasks continua como cache/compatibilidade, mas o painel não é
+    mais necessário para reconstruir a fila depois de um reboot.
+    """
+    did_key = urllib.parse.quote(str(device_id), safe="")
+    try:
+        cached = fb("GET", "workerTasks/" + did_key, tok) or {}
+        if not isinstance(cached, dict):
+            cached = {}
+    except Exception as exc:
+        print("[BotHub] não foi possível ler workerTasks:", str(exc)[:160], flush=True)
+        cached = {}
+
+    try:
+        registry = fb("GET", "bots", tok)
+    except Exception as exc:
+        print("[BotHub] não foi possível consultar /bots; usando a fila salva:", str(exc)[:180], flush=True)
+        return cached
+
+    if not isinstance(registry, dict):
+        return cached
+
+    queue = {}
+    for raw_id, record in registry.items():
+        if not isinstance(record, dict):
+            continue
+        assigned_worker = str(record.get("workerId") or "")
+        if assigned_worker != str(device_id):
+            continue
+
+        bot_id = sid(raw_id)
+        enabled = record.get("enabled", True) is not False
+        if str(record.get("desiredState") or "").lower() == "off":
+            enabled = False
+
+        item = {
+            "name": record.get("name") or bot_id,
+            "token": record.get("token") or "",
+            "config": record.get("config") if isinstance(record.get("config"), dict) else {},
+            "enabled": enabled,
+            "desiredState": "on" if enabled else "off",
+            "updatedAt": record.get("updatedAt") or record.get("createdAt") or 0,
+        }
+        if item["token"]:
+            queue[bot_id] = item
+        elif enabled:
+            print("[BotHub] bot atribuído sem token no cadastro Firebase:", bot_id, flush=True)
+
+    # Se o cadastro foi lido com sucesso, ele é a fonte de verdade.
+    # Isso também faz bots removidos/desatribuídos saírem da fila antiga.
+    return queue
+
+
 def download_latest_main(folder):
     url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"
     response=S.get(url,timeout=45);response.raise_for_status()
@@ -1217,7 +1272,7 @@ def main():
             LAST_TOKEN=t;LAST_DID=did;CURRENT_FIREBASE_TOKEN=t
             fb("PUT","workers/"+did,t,stats(cfg))
             process_bot_deletions(t, cfg["device_id"])
-            queue=fb("GET","workerTasks/"+did,t) or {}
+            queue=load_worker_queue(t, cfg["device_id"]) or {}
             LAST_QUEUE=queue if isinstance(queue,dict) else {}
             process_worker_commands(cfg,t,did,queue)
             # Uma conta Discord (token) só pode ter uma instância ativa neste worker.
@@ -1263,9 +1318,9 @@ def main():
                     if k not in PROCS or PROCS[k].poll() is not None:
                         sync_bot_state(k,'pull',t,cfg['device_id'])
                         sync_bot_state(k,'push',t,cfg['device_id'])
-                        auto_start=bot_cfg.get("autoStart",True) is not False
-                        start_requested=float(bot_cfg.get("startRequestedAt") or 0)
-                        if not auto_start and start_requested <= WORKER_STARTED*1000: continue
+                        desired_state=str(bot_cfg.get("desiredState") or "on").lower()
+                        if bot_cfg.get("enabled", True) is False or desired_state == "off":
+                            continue
                         start(k,bot_cfg)
                 except Exception as e: print("[BotHub] falha no bot",k,str(e)[:220],flush=True)
             try:
