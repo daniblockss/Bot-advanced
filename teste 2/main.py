@@ -4358,7 +4358,13 @@ def ahm7_json_sync(path, params=None, payload=None, max_bytes=25_000_000):
         raise FalhaProvedor("AHM7 retornou JSON inválido") from error
     if isinstance(data, dict) and data.get("success") is False:
         detail = data.get("error") or data.get("message")
-        raise FalhaProvedor(str(detail)[:300] if detail else "AHM7 recusou a solicitação")
+        # A API remota pode marcar a operação como não publicada por falta de
+        # canal de logs, mesmo quando já devolveu a URL da imagem. Nesse caso,
+        # não tratar isso como falha: o bot local baixa e publica a imagem no
+        # canal em que o pedido foi feito. Logs são opcionais.
+        imagem_gerada = path in {"/tti", "/pti"} and bool(ahm7_media_urls(data))
+        if not imagem_gerada:
+            raise FalhaProvedor(str(detail)[:300] if detail else "AHM7 recusou a solicitação")
     return data
 
 
