@@ -5268,7 +5268,7 @@ async def carregar_historico_canal_discord(message, pergunta):
                         return (
                             "[Conteúdo dos canais conectados relacionados à pergunta. "
                             "Responda com base nestas fontes e cite o canal de origem.]\n\n"
-                            + "\\n\\n".join(resultados)
+                            + "\n\n".join(resultados)
                         )
                     return "[Não consegui ler os canais relacionados. Verifique as permissões do bot e do usuário.]"
             elif pedido_txt and any(
