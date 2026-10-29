@@ -3963,8 +3963,13 @@ class ViewPainelComandos(CreatorView):
 # ==========================
 
 def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=False, is_criador=False, pergunta="", guild_id=None):
-    identidade = ler_txt(obter_arquivo_guild(IDENTIDADE_TXT_FILE, guild_id))
-    regras = ler_txt(obter_arquivo_guild(REGRAS_TXT_FILE, guild_id))
+    identidade = ler_txt(obter_arquivo_guild(IDENTIDADE_TXT_FILE, guild_id)).strip()
+    regras = ler_txt(obter_arquivo_guild(REGRAS_TXT_FILE, guild_id)).strip()
+    # Os arquivos editáveis têm prioridade; os padrões só entram como fallback se estiverem vazios.
+    if not identidade:
+        identidade = ler_txt(os.path.join(BASE_DIR, IDENTIDADE_PADRAO_TXT)).strip()
+    if not regras:
+        regras = ler_txt(os.path.join(BASE_DIR, REGRAS_PADRAO_TXT)).strip()
 
     prompt = f"{identidade}\n\n{regras}\n\n=========================================\n"
     try:
@@ -3987,21 +3992,11 @@ def montar_system_prompt(canal_atual_id=None, user_id=None, user_name="", is_dm=
             with open(perfil_path, "r", encoding="utf-8") as perfil_handle:
                 perfil_bot = json.load(perfil_handle)
             descricao_visual = str(perfil_bot.get("visual_description", "")).strip()
-            personalidade_bot = str(perfil_bot.get("personality", "")).strip()
-            regras_personalidade = perfil_bot.get("rules", [])
-            if isinstance(regras_personalidade, list):
-                regras_personalidade = "\n".join("- " + str(item)[:300] for item in regras_personalidade[:12])
-            else:
-                regras_personalidade = str(regras_personalidade or "")[:1800]
-            if descricao_visual or personalidade_bot or regras_personalidade:
+            if descricao_visual:
                 prompt += (
-                    "PERFIL PERSISTENTE DESTE BOT (baseado no próprio perfil e avatar):\n"
-                    f"- Nome do bot: {str(perfil_bot.get('name', ''))[:100]}\n"
-                    f"- Descrição do perfil: {str(perfil_bot.get('description', ''))[:500]}\n"
-                    f"- Leitura visual do avatar: {descricao_visual[:1600]}\n"
-                    f"- Personalidade derivada do perfil: {personalidade_bot[:1800]}\n"
-                    f"- Regras de comportamento derivadas do perfil: {regras_personalidade[:1800]}\n"
-                    "Use esse perfil como orientação estável, sem inventar fatos sobre o personagem retratado.\n\n"
+                    "REFERÊNCIA VISUAL DO AVATAR DO BOT (a personalidade e as regras vêm dos arquivos "
+                    "de identidade/regras, usando os arquivos padrão apenas como fallback):\n"
+                    f"{descricao_visual[:1600]}\n\n"
                 )
     except (OSError, ValueError, TypeError):
         pass
