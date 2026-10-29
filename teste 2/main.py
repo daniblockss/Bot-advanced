@@ -7180,24 +7180,24 @@ async def garantir_personalidade_inicial():
         ):
             partes_identidade = []
             if personalidade:
-                partes_identidade.append("Personalidade do bot:\\n" + personalidade)
+                partes_identidade.append("Personalidade do bot:\n" + personalidade)
             if descricao_visual:
-                partes_identidade.append("Descrição visual do avatar:\\n" + descricao_visual)
+                partes_identidade.append("Descrição visual do avatar:\n" + descricao_visual)
             nome = str(perfil_salvo.get("name", "") or "").strip()
             if nome:
                 partes_identidade.insert(0, "Nome do bot: " + nome)
-            texto_identidade = "\\n\\n".join(partes_identidade).strip()
+            texto_identidade = "\n\n".join(partes_identidade).strip()
             if texto_identidade:
                 with open(identidade_padrao_path, "w", encoding="utf-8") as handle:
-                    handle.write(texto_identidade + "\\n")
+                    handle.write(texto_identidade + "\n")
 
         if regras and (
             not os.path.exists(regras_padrao_path)
             or not ler_txt(regras_padrao_path).strip()
         ):
-            texto_regras = "\\n".join("- " + regra for regra in regras)
+            texto_regras = "\n".join("- " + regra for regra in regras)
             with open(regras_padrao_path, "w", encoding="utf-8") as handle:
-                handle.write(texto_regras + "\\n")
+                handle.write(texto_regras + "\n")
 
     if not bot.user:
         return
@@ -7239,7 +7239,7 @@ async def garantir_personalidade_inicial():
             "bravo ou divertido, mas não invente fatos reais sobre pessoas. A personalidade deve ter 3 a 6 "
             "frases naturais. Crie de 3 a 8 regras seguras, úteis e coerentes com o estilo. Não mencione modelo, "
             "fabricante ou provedor de IA. Retorne SOMENTE JSON válido no formato "
-            '{"personality":"texto","rules":["regra 1","regra 2"]}.\\n'
+            '{"personality":"texto","rules":["regra 1","regra 2"]}.\n'
             + json.dumps(perfil, ensure_ascii=False)
         )
         try:
