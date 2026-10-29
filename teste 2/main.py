@@ -8151,8 +8151,9 @@ async def executar_ahm7(
                 destino_imagem = getattr(interaction, "channel", None)
                 if destino_imagem is None or not hasattr(destino_imagem, "send"):
                     raise FalhaProvedor("não encontrei um canal válido para publicar a imagem")
+                # A imagem é publicada sem uma legenda genérica; a confirmação
+                # privada abaixo usa o pedido original do usuário.
                 await destino_imagem.send(
-                    content=f"🖼️ Imagem gerada para {interaction.user.mention}.",
                     files=arquivos,
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
@@ -8180,8 +8181,13 @@ async def executar_ahm7(
                             log_console("AVISO: imagem gerada, mas não foi possível registrar os detalhes no canal de logs.")
                 except Exception as error:
                     log_console(f"AVISO: geração de imagem concluída; logs opcionais indisponíveis ({type(error).__name__}).")
+                resumo_pedido = " ".join(consulta.split())[:700]
+                confirmacao = (
+                    f"✨ Pronto, criei sua imagem: {resumo_pedido}"
+                    if resumo_pedido else "✨ Pronto, criei sua imagem!"
+                )
                 await interaction.followup.send(
-                    "Imagem gerada e enviada neste canal.",
+                    confirmacao,
                     ephemeral=True,
                     allowed_mentions=NO_MENTIONS,
                 )
@@ -8938,13 +8944,15 @@ def criar_executor_ferramentas_ahm7(message):
                     if tool_name == "pixelster":
                         # A imagem deve ser publicada no canal do pedido, nunca no canal de logs.
                         destino_imagem = message.channel
+                        pedido_imagem = " ".join(str(args.get("consulta") or "").split())[:700]
+                        legenda_imagem = (
+                            f"✨ Pronto, criei sua imagem: {pedido_imagem}"
+                            if pedido_imagem else "✨ Pronto, criei sua imagem!"
+                        )
                         await destino_imagem.send(
-                            content=f"🖼️ Imagem gerada para {message.author.mention}.",
+                            content=legenda_imagem,
                             files=arquivos,
                             allowed_mentions=discord.AllowedMentions.none(),
-                        )
-                        resultados.append(
-                            f"Imagem enviada em <#{destino_imagem.id}>."
                         )
 
                         # O canal de logs recebe somente um aviso textual, sem anexar a imagem.
