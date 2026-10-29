@@ -5581,14 +5581,14 @@ def _pedido_nova_imagem_independente(pergunta):
     texto = unicodedata.normalize("NFD", (pergunta or "").lower())
     texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
     continuacao = re.search(
-        r"\\b(?:adicione|adiciona|adicionar|inclua|inclui|incluir|"
+        r"\b(?:adicione|adiciona|adicionar|inclua|inclui|incluir|"
         r"mude|muda|mudar|altere|altera|alterar|troque|troca|trocar|"
         r"remova|remove|remover|tire|tira|tirar|coloque|coloca|colocar|"
         r"acrescente|acrescenta|acrescentar|ajuste|ajusta|ajustar|"
         r"edite|edita|editar|modifique|modifica|modificar|"
         r"mantendo|continue|continua|continuar|mesma imagem|"
         r"nessa imagem|nesta imagem|na imagem anterior|"
-        r"imagem atual|imagem que voce criou|sem mudar|sem alterar)\\b",
+        r"imagem atual|imagem que voce criou|sem mudar|sem alterar)\b",
         texto,
     )
     return not bool(continuacao)
@@ -5599,8 +5599,8 @@ def _remover_turnos_antigos_de_imagem(historico):
     resultado = []
     remover_resposta_seguinte = False
     padrao_imagem = re.compile(
-        r"\\b(?:imagem|imagens|foto|fotos|ilustracao|desenho|arte|"
-        r"pixelster|gerada-\\d+-imagem)\\b",
+        r"\b(?:imagem|imagens|foto|fotos|ilustracao|desenho|arte|"
+        r"pixelster|gerada-\d+-imagem)\b",
         re.IGNORECASE,
     )
     for item in historico or []:
