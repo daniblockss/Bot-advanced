@@ -4231,13 +4231,14 @@ def _tempo_restante_provedor(provedor, indice_chave):
 
 
 def _tempo_restante_cooldown_ia():
+    # Só comunica espera depois de verificar todas as alternativas. Quando
+    # alguma API ainda pode ser tentada, o loop de fallback deve continuar.
     restantes = []
     for provedor in obter_ordem_provedores():
         for indice, _ in enumerate(obter_chaves_provedor(provedor), 1):
             restante = _tempo_restante_provedor(provedor, indice)
-            if restante == 0:
-                return 0
-            restantes.append(restante)
+            if restante > 0:
+                restantes.append(restante)
     return min(restantes) if restantes else 0
 
 
@@ -5534,30 +5535,30 @@ def _requisitar_chat_sync(
 
 
 def obter_ordem_provedores():
-    preferido_configurado = AI_CONFIG["default_provider"]
-    preferido_env = os.getenv("AI_DEFAULT_PROVIDER", "").strip().lower()
-    ordem_env = os.getenv("AI_FALLBACK_ORDER")
-    if ordem_env:
-        candidatos = [provider.strip().lower() for provider in ordem_env.split(",")]
-        ordem = [provider for provider in candidatos if provider in AI_PROVIDER_NAMES]
-        if not ordem:
-            ordem = list(AI_CONFIG["fallback_order"])
-        preferido = preferido_env or preferido_configurado
+    # Ordem de contingência fixa: APIs principais primeiro, LLM7 depois e
+    # BlockRun por último. Uma preferência antiga não pode furar essa ordem.
+    primarios = ("chatgpt", "openrouter", "groq")
+    disponiveis = [
+        provider for provider in primarios
+        if obter_chaves_provedor(provider)
+    ]
+    if disponiveis:
+        ordem = [*disponiveis, "llm7", "blockrun"]
     else:
-        # APIs principais configuradas primeiro; sem elas, LLM7 e depois BlockRun.
-        primarios = ("chatgpt", "openrouter", "groq")
-        disponiveis = {provider: bool(obter_chaves_provedor(provider)) for provider in primarios}
-        if any(disponiveis.values()):
-            ordem = [provider for provider in primarios if disponiveis[provider]]
-            ordem.extend(["llm7", "blockrun"])
-        else:
-            ordem = ["llm7", "blockrun"]
-        preferido = preferido_env or (ordem[0] if ordem else preferido_configurado)
-    if preferido not in AI_PROVIDER_NAMES:
-        log_console(f"AVISO: AI_DEFAULT_PROVIDER inválido ({preferido}); usando {preferido_configurado}.")
-        preferido = preferido_configurado
-    ordem = [preferido] + ordem + list(AI_PROVIDER_NAMES)
-    return list(dict.fromkeys(p for p in ordem if p in AI_PROVIDER_NAMES))
+        ordem = ["llm7", "blockrun"]
+
+    # Permite personalizar explicitamente a ordem das APIs principais, sem
+    # permitir que LLM7/BlockRun passem à frente das principais configuradas.
+    ordem_env = os.getenv("AI_FALLBACK_ORDER", "").strip()
+    if ordem_env and disponiveis:
+        candidatos = [
+            provider.strip().lower()
+            for provider in ordem_env.split(",")
+            if provider.strip().lower() in disponiveis
+        ]
+        if candidatos:
+            ordem = list(dict.fromkeys([*candidatos, *disponiveis, "llm7", "blockrun"]))
+    return list(dict.fromkeys(provider for provider in ordem if provider in AI_PROVIDER_NAMES))
 
 
 def obter_chaves_provedor(provedor):
@@ -5743,9 +5744,7 @@ async def requisitar_provedor(
 
 
 async def consultar_ia_simples(pergunta):
-    tempo_restante = _tempo_restante_cooldown_ia()
-    if tempo_restante:
-        return ""
+    # Não pare por causa do cooldown de uma chave: tente as demais APIs.
     mensagens = [{"role": "user", "content": pergunta}]
     falhas = []
     for provedor in obter_ordem_provedores():
