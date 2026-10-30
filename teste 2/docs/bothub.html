@@ -7,6 +7,7 @@
 <section id="login" class="card"><h2>Entrar no BotHub</h2><div class="hint">Entre com sua conta administradora do Firebase.</div><label>E-mail</label><input id="email" type="email" autocomplete="username" value="daniblocks100@gmail.com"><label>Senha do Firebase</label><input id="password" type="password" autocomplete="current-password" placeholder="Senha da conta Firebase"><button id="loginBtn">Entrar no painel</button><div id="loginMsg" class="error"></div></section>
 <div id="dashboard" class="hidden">
 <section class="card"><h2>Controlador do cluster</h2><p class="hint">Atualiza o instalador e o worker a partir do GitHub. Cada worker usa um processo auxiliar para encerrar o controlador antigo, substituir os arquivos e iniciar a versão nova.</p><div class="actions"><button id="updateCluster">Atualizar arquivos do Cefilu</button></div><div id="clusterUpdateMsg" class="hint"></div></section>
+<section class="card"><h2>📡 Histórico de ações dos servidores</h2><p class="hint">Acompanhe cada ação: enviada, aguardando servidor, recebida, em execução, concluída ou falhou.</p><div id="actionLog" class="hint">Nenhuma ação registrada nesta sessão.</div></section>
 <section class="card"><h2>Atualizar main.py dos bots</h2><p class="hint">Publica uma atualização para os bots individuais. A atualização obrigatória é instalada automaticamente; a opcional avisa o criador e só instala quando ele digitar <code>!update</code> na conversa privada com o bot.</p><label>Tipo de atualização</label><select id="mainUpdateType"><option value="optional">Opcional — o criador decide</option><option value="mandatory">Obrigatória — instalar automaticamente</option></select><label>Descrição da atualização</label><textarea id="mainUpdateDescription" rows="3" maxlength="1500" placeholder="Descreva as correções e melhorias do main.py"></textarea><div class="actions"><button id="publishMainUpdate">Publicar atualização do main.py</button></div><div id="mainUpdateMsg" class="hint"></div></section>
 <section class="grid"><div class="card"><div class="muted">Dispositivos online</div><div id="online" class="metric">0</div></div><div class="card"><div class="muted">Com capacidade</div><div id="capacity" class="metric">0</div></div><div class="card"><div class="muted">Bots realmente ligados</div><div id="active" class="metric">0</div></div><div class="card"><div class="muted">Na fila</div><div id="queued" class="metric">0</div></div><div class="card"><div class="muted">RAM disponível total</div><div id="ramFreeTotal" class="metric">—</div><div id="ramTotalLabel" class="hint">RAM total: —</div></div><div class="card"><div class="muted">Armazenamento livre total</div><div id="diskFreeTotal" class="metric">—</div><div id="diskTotalLabel" class="hint">Capacidade total: —</div></div><div class="card"><div class="muted">CPU média dos online</div><div id="cpuAvg" class="metric">—</div></div><div class="card"><div class="muted">Tempo online do worker mais antigo</div><div id="longestUptime" class="metric">—</div></div><div class="card"><div class="muted">Bateria média dos dispositivos</div><div id="batteryAvg" class="metric">—</div><div id="batteryCount" class="hint">Aguardando dados</div></div></section>
 <section class="layout"><div class="card"><h2>Dispositivos / workers</h2><div id="workers"><span class="muted">Aguardando workers…</span></div><p class="hint">Os dispositivos executam os bots. O painel distribui automaticamente até 3 bots por worker elegível, priorizando o maior espaço livre. “Vagas estimadas” é uma estimativa pelo limite atual, não uma garantia: o consumo de RAM e disco varia conforme cada bot.</p></div>
@@ -122,6 +123,38 @@ function populateManagementSelects(){
   }
 }
 async function sendWorkerCommand(wid,command,timeoutMs=50000){
+  const id=crypto.randomUUID().replaceAll("-","");
+  const started=Date.now(),label=String(command.operation||"ação")+" "+String(command.botId||"");
+  const logBox=$("actionLog");
+  const addLog=(status,detail="")=>{
+    const row=document.createElement("div");row.className="row";
+    const left=document.createElement("span");left.textContent=label+" — "+status+(detail?" · "+detail:"");
+    const right=document.createElement("span");right.className="muted";right.textContent=new Date().toLocaleTimeString();
+    row.append(left,right);logBox.prepend(row);
+    while(logBox.children.length>30)logBox.lastElementChild.remove();
+  };
+  addLog("Enviando comando","servidor "+wid);
+  await set(testRef("workerCommands/"+wid+"/"+id),{...command,requestId:id,requestedAt:Date.now(),status:"waiting",panelLabel:label});
+  addLog("Aguardando servidor","comando registrado no Firebase");
+  const startedAt=Date.now();
+  while(Date.now()-startedAt<timeoutMs){
+    await new Promise(resolve=>setTimeout(resolve,1200));
+    const snap=await get(testRef("workerResults/"+wid+"/"+id));
+    const result=snap.val();
+    if(result){
+      await remove(testRef("workerResults/"+wid+"/"+id)).catch(()=>{});
+      if(result.status!=="ok"){addLog("Falhou",result.message||"erro informado pelo servidor");throw new Error(result.message||"O worker recusou a operação.");}
+      addLog("Concluída",result.message||"servidor confirmou");
+      return result;
+    }
+    const cmdSnap=await get(testRef("workerCommands/"+wid+"/"+id)).catch(()=>null);
+    const cmdNow=cmdSnap&&cmdSnap.val();
+    if(cmdNow&&cmdNow.status==="received")addLog("Recebida pelo servidor");
+    else if(cmdNow&&cmdNow.status==="running")addLog("Em execução no servidor");
+  }
+  addLog("Servidor aguardando resposta","tempo esgotado; comando pode continuar pendente");
+  throw new Error("O servidor ainda não confirmou a ação. Ela pode continuar pendente; confira o histórico e o estado do worker.");
+}
   const id=crypto.randomUUID().replaceAll("-","");
   await set(testRef("workerCommands/"+wid+"/"+id),{...command,requestedAt:Date.now()});
   const started=Date.now();
