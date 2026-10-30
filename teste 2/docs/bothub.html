@@ -44,7 +44,7 @@ const bytes=n=>{let v=Number(n)||0,u=['B','KB','MB','GB','TB'],i=0;while(v>=1024
 const duration=s=>{s=Math.max(0,Math.floor(Number(s)||0));const d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);return (d?d+'d ':'')+(h+'h '+m+'min')};
 const ageText=ms=>{if(!Number.isFinite(ms)||ms<0)return 'desconhecido';return duration(ms/1000)+' atrás'};
 const STALE_MS=60*60*1000; let cleanupBusy=false,lastCleanup=0;
-function online(w){return !!w&&Date.now()-Number(w.lastSeen||0)<90000}
+function online(w){return !!w&&Date.now()-Number(w.lastSeen||0)<20000}
 function capacity(w){if(!online(w))return 0;const ram=Math.max(0,Math.floor((Number(w.ramFreeBytes||0)-350*1024*1024)/(250*1024*1024)));const disk=Math.max(0,Math.floor((Number(w.diskFreeBytes||0)-1024*1024*1024)/(100*1024*1024)));return Math.min(ram,disk)}function eligible(w){return capacity(w)>0}
 function stopSubs(){stopListeners.forEach(f=>f());stopListeners=[]}
 function watch(path,cb){const r=testRef(path);stopListeners.push(onValue(r,s=>cb(s.val()||{}),e=>{const detail='Erro Firebase em '+path+': '+(e.code||'')+' — '+(e.message||String(e));$('connection').textContent='Erro Firebase';$('connection').className='badge off';$('queueMsg').textContent=detail;$('queueMsg').className='error';console.error('[BotHub Firebase]',path,e)}))}
