@@ -888,8 +888,11 @@ def process_worker_commands(cfg,tok,did,queue):
     if not isinstance(commands,dict): return
     for request_id,cmd in list(commands.items())[:5]:
         if not isinstance(cmd,dict): continue
+        command_path="workerCommands/"+did+"/"+urllib.parse.quote(str(request_id),safe="")
         result={"id":request_id,"updatedAt":int(time.time()*1000)}
         try:
+            fb("PATCH",command_path,tok,{"status":"received","receivedAt":int(time.time()*1000),"workerId":cfg.get("device_id")})
+            fb("PATCH",command_path,tok,{"status":"running","startedAt":int(time.time()*1000)})
             op=cmd.get("operation")
             if op=="profile":
                 bid=str(cmd.get("botId",""))
@@ -916,7 +919,8 @@ def process_worker_commands(cfg,tok,did,queue):
             result.update(status="error",message=str(e)[:350])
         try:
             fb("PUT","workerResults/"+did+"/"+urllib.parse.quote(str(request_id),safe=""),tok,result)
-            fb("DELETE","workerCommands/"+did+"/"+urllib.parse.quote(str(request_id),safe=""),tok)
+            fb("PATCH",command_path,tok,{"status":"completed" if result.get("status")=="ok" else "failed","completedAt":int(time.time()*1000),"message":result.get("message","")})
+            fb("DELETE",command_path,tok)
         except Exception as e:
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
