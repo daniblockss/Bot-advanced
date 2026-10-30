@@ -477,7 +477,7 @@ def kill_existing_bothub_bots():
                 pass
 
 # --- Cooperative leases and Firebase-backed memory state ---
-LEASE_SECONDS = max(45, int(os.getenv('BOTHUB_LEASE_SECONDS', '75')))
+LEASE_SECONDS = max(15, int(os.getenv('BOTHUB_LEASE_SECONDS', '25')))
 STATE_FIXED_FILES = {'bot_personality.json','foto de perfil.txt','image_history.json','memory.sqlite3','reminders.sqlite3','memoria_geral','importantes','geral_avisos','identidade','regras','identidade-padrao.txt','regras-padrao.txt','bot_settings.json'}
 ACTIVE_LEASES = {}
 CURRENT_DEVICE_ID = ''
@@ -952,7 +952,7 @@ def load_worker_queue(tok, device_id):
         workers = {}
 
     now_ms = int(time.time() * 1000)
-    stale_ms = max(90000, int(os.getenv("BOTHUB_WORKER_STALE_MS", "90000")))
+    stale_ms = max(12000, int(os.getenv("BOTHUB_WORKER_STALE_MS", "20000")))
     local_stats = stats(CURRENT_CFG or {})
     ram_free = int(local_stats.get("ramFreeBytes") or 0)
     disk_free = int(local_stats.get("diskFreeBytes") or 0)
@@ -1429,7 +1429,7 @@ def main():
                 ACTIVE_LEASES.clear()
         else:
             LEASE_MISSES = 0
-        time.sleep(max(10,int(os.getenv('BOTHUB_POLL_SECONDS','15'))))
+        time.sleep(max(3,int(os.getenv('BOTHUB_POLL_SECONDS','5'))))
     cleanup_children()
 
 if __name__=="__main__":
