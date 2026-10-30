@@ -910,9 +910,9 @@ def process_worker_commands(cfg,tok,did,queue):
 
 def load_worker_queue(tok, device_id):
     """
-    Recupera a intenção persistente diretamente do cadastro Firebase.
-    workerTasks continua como cache/compatibilidade, mas o painel não é
-    mais necessário para reconstruir a fila depois de um reboot.
+    Lê os bots persistidos e recupera automaticamente os que ficaram presos
+    a um worker offline. A troca de worker usa ETag/If-Match para evitar que
+    dois workers reivindiquem o mesmo bot ao mesmo tempo.
     """
     did_key = urllib.parse.quote(str(device_id), safe="")
     try:
@@ -925,26 +925,94 @@ def load_worker_queue(tok, device_id):
 
     try:
         registry = fb("GET", "bots", tok)
+        workers = fb("GET", "workers", tok) or {}
     except Exception as exc:
-        print("[BotHub] não foi possível consultar /bots; usando a fila salva:", str(exc)[:180], flush=True)
+        print("[BotHub] não foi possível consultar o cadastro Firebase; usando fila salva:", str(exc)[:180], flush=True)
         return cached
 
     if not isinstance(registry, dict):
         return cached
+    if not isinstance(workers, dict):
+        workers = {}
 
-    queue = {}
+    now_ms = int(time.time() * 1000)
+    stale_ms = max(90000, int(os.getenv("BOTHUB_WORKER_STALE_MS", "90000")))
+    local_stats = stats(CURRENT_CFG or {})
+    ram_free = int(local_stats.get("ramFreeBytes") or 0)
+    disk_free = int(local_stats.get("diskFreeBytes") or 0)
+    # Reserva RAM/disco para o sistema operacional e crescimento dos arquivos.
+    ram_capacity = max(0, (ram_free - 350 * 1024 * 1024) // (250 * 1024 * 1024))
+    disk_capacity = max(0, (disk_free - 1024 * 1024 * 1024) // (100 * 1024 * 1024))
+    capacity = min(int(ram_capacity), int(disk_capacity))
+    assigned_here = sum(
+        1 for record in registry.values()
+        if isinstance(record, dict)
+        and str(record.get("workerId") or "") == str(device_id)
+        and record.get("enabled", True) is not False
+        and str(record.get("desiredState") or "on").lower() != "off"
+    )
+    can_take_over = capacity > assigned_here
+
     for raw_id, record in registry.items():
         if not isinstance(record, dict):
             continue
+        enabled = record.get("enabled", True) is not False
+        if str(record.get("desiredState") or "on").lower() == "off":
+            enabled = False
+        if not enabled or not record.get("token"):
+            continue
         assigned_worker = str(record.get("workerId") or "")
-        if assigned_worker != str(device_id):
+        if assigned_worker == str(device_id):
+            continue
+        owner_info = workers.get(assigned_worker) if assigned_worker else None
+        last_seen = int((owner_info or {}).get("lastSeen") or 0) if isinstance(owner_info, dict) else 0
+        owner_is_live = bool(last_seen and now_ms - last_seen < stale_ms)
+        if owner_is_live or not can_take_over:
             continue
 
+        # Compare-and-swap: só assume se o registro não mudou desde a leitura.
+        bot_url = DB + "/bots/" + urllib.parse.quote(str(raw_id), safe="") + ".json"
+        try:
+            check = S.get(bot_url, params={"auth": tok}, headers={
+                "X-Firebase-ETag": "true", "User-Agent": "BotHub-Cluster/4.0"
+            }, timeout=10)
+            if check.status_code >= 300:
+                continue
+            current = check.json() if check.text else {}
+            if not isinstance(current, dict):
+                continue
+            current_worker = str(current.get("workerId") or "")
+            if current_worker != assigned_worker:
+                continue
+            current_owner = workers.get(current_worker) if current_worker else None
+            current_seen = int((current_owner or {}).get("lastSeen") or 0) if isinstance(current_owner, dict) else 0
+            if current_seen and now_ms - current_seen < stale_ms:
+                continue
+            current["lastWorkerId"] = current_worker or current.get("lastWorkerId")
+            current["workerId"] = str(device_id)
+            current["updatedAt"] = now_ms
+            put = S.put(bot_url, params={"auth": tok}, json=current, headers={
+                "If-Match": check.headers.get("ETag", "null_etag"),
+                "User-Agent": "BotHub-Cluster/4.0"
+            }, timeout=10)
+            if put.status_code in (200, 204):
+                record = current
+                record["workerId"] = str(device_id)
+                assigned_here += 1
+                can_take_over = capacity > assigned_here
+                print("[BotHub] assumindo automaticamente bot órfão:", sid(raw_id),
+                      "worker anterior:", assigned_worker or "nenhum", flush=True)
+        except Exception as exc:
+            print("[BotHub] não foi possível assumir bot órfão", sid(raw_id), str(exc)[:120], flush=True)
+
+    queue = {}
+    for raw_id, record in registry.items():
+        if not isinstance(record, dict) or str(record.get("workerId") or "") != str(device_id):
+            continue
         bot_id = sid(raw_id)
         enabled = record.get("enabled", True) is not False
-        if str(record.get("desiredState") or "").lower() == "off":
+        if str(record.get("desiredState") or "on").lower() == "off":
             enabled = False
-
         item = {
             "name": record.get("name") or bot_id,
             "token": record.get("token") or "",
@@ -957,11 +1025,7 @@ def load_worker_queue(tok, device_id):
             queue[bot_id] = item
         elif enabled:
             print("[BotHub] bot atribuído sem token no cadastro Firebase:", bot_id, flush=True)
-
-    # Se o cadastro foi lido com sucesso, ele é a fonte de verdade.
-    # Isso também faz bots removidos/desatribuídos saírem da fila antiga.
     return queue
-
 
 def download_latest_main(folder):
     url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"
