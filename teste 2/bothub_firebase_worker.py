@@ -260,18 +260,30 @@ def kill_bot_processes_under_root():
         print("[BotHub] Processos main.py encerrados:", ", ".join(map(str, sorted(set(candidates)))), flush=True)
 
 def cleanup_children():
-    # Encerra primeiro os processos para que o snapshot SQLite final seja consistente.
+    # Encerra os bots, sincroniza o estado e só então remove a pasta local.
+    # Se a sincronização falhar, preserva a pasta para não perder dados.
     for key in list(PROCS):
         stop(key)
+        synced = False
         try:
             sync_bot_state(key, 'push', CURRENT_FIREBASE_TOKEN, CURRENT_DEVICE_ID)
-        except Exception:
-            pass
+            synced = True
+        except Exception as exc:
+            print('[BotHub] sincronização final falhou; pasta preservada:', key, str(exc)[:140], flush=True)
         try:
             release_bot_lease(key, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN)
         except Exception:
             pass
-    # Depois encontra e encerra processos órfãos que sobreviveram a uma execução anterior.
+        if synced:
+            try:
+                folder = (ROOT / 'bots' / sid(key)).resolve()
+                bots_root = (ROOT / 'bots').resolve()
+                if folder.parent == bots_root and folder.exists():
+                    shutil.rmtree(folder)
+                    print('[BotHub] pasta local removida após sincronização final:', key, flush=True)
+            except Exception as exc:
+                print('[BotHub] não foi possível remover pasta local:', key, str(exc)[:120], flush=True)
+    # Encerra processos órfãos que sobreviveram a uma execução anterior.
     kill_bot_processes_under_root()
 
 def publish_shutdown_status(reason="Servidor desligado"):
@@ -1372,12 +1384,22 @@ def main():
             for k in list(PROCS):
                 if k not in leased or k in duplicate_ids:
                     stop(k)
-                    try: sync_bot_state(k,'push',t,cfg['device_id'])
-                    except Exception: pass
+                    synced = False
+                    try:
+                        sync_bot_state(k,'push',t,cfg['device_id'])
+                        synced = True
+                    except Exception as exc:
+                        print("[BotHub] sincronização falhou; pasta local preservada:",k,str(exc)[:140],flush=True)
                     release_bot_lease(k,cfg['device_id'],t)
-                    # Não apagar a pasta ao transferir/desatribuir o bot: ela contém
-                    # arquivos locais e cópias de recuperação. O estado é sincronizado acima.
-                    print("[BotHub] bot parado/transferido; arquivos locais preservados:",k,flush=True)
+                    if synced:
+                        try:
+                            folder = (ROOT / "bots" / sid(k)).resolve()
+                            bots_root = (ROOT / "bots").resolve()
+                            if folder.parent == bots_root and folder.exists():
+                                shutil.rmtree(folder)
+                                print("[BotHub] bot parado/transferido; estado sincronizado e pasta removida:",k,flush=True)
+                        except Exception as exc:
+                            print("[BotHub] não foi possível remover pasta do bot:",k,str(exc)[:120],flush=True)
             for k,bot_cfg in leased.items():
                 try:
                     if k not in PROCS or PROCS[k].poll() is not None:
