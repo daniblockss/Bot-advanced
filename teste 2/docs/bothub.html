@@ -155,21 +155,6 @@ async function sendWorkerCommand(wid,command,timeoutMs=50000){
   addLog("Servidor aguardando resposta","tempo esgotado; comando pode continuar pendente");
   throw new Error("O servidor ainda não confirmou a ação. Ela pode continuar pendente; confira o histórico e o estado do worker.");
 }
-  const id=crypto.randomUUID().replaceAll("-","");
-  await set(testRef("workerCommands/"+wid+"/"+id),{...command,requestedAt:Date.now()});
-  const started=Date.now();
-  while(Date.now()-started<timeoutMs){
-    await new Promise(resolve=>setTimeout(resolve,1200));
-    const snap=await get(testRef("workerResults/"+wid+"/"+id));
-    const result=snap.val();
-    if(result){
-      await remove(testRef("workerResults/"+wid+"/"+id)).catch(()=>{});
-      if(result.status!=="ok")throw new Error(result.message||"O worker recusou a operação.");
-      return result;
-    }
-  }
-  throw new Error("O worker não respondeu a tempo. Confirme se está online e atualizado.");
-}
 function selectedBotAndWorker(selectId){
   const id=$(selectId).value,b=botData[id],wid=b&&b.workerId;
   if(!id||!b)throw new Error("Selecione um bot.");
