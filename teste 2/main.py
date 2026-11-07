@@ -2372,6 +2372,7 @@ PRIVATE_ROOMS = AI_CONFIG["private_rooms"]
 historico_conversa = {}
 TEMPO_INATIVIDADE = 300
 AI_PROVIDER_COOLDOWNS = {}
+AI_COOLDOWN_NOTICE_AT = {}
 
 
 def inicializar_memoria_sqlite():
@@ -4313,10 +4314,39 @@ def _todas_as_apis_disponiveis_em_cooldown():
 
 
 def _mensagem_cooldown_ia(segundos, ja_em_cooldown=False):
-    tempo = f"{int(segundos)} segundos ({_formatar_tempo_espera(segundos)})"
+    tempo = _formatar_tempo_espera(segundos)
     if ja_em_cooldown:
-        return f"⛔ Acabou o limite das IAs por enquanto! Aguarde **{tempo}** antes de tentar de novo."
-    return f"😅 Ops! Parece que todas as IAs atingiram o limite. Aguarde **{tempo}** antes de tentar novamente."
+        return f"⏳ Todas as opções de IA continuam temporariamente indisponíveis. Tente novamente em **{tempo}**."
+    return f"😅 Não consegui acessar nenhum provedor de IA agora. Tente novamente em **{tempo}**."
+
+
+def _pode_notificar_cooldown(user_id, intervalo=30):
+    """Limita avisos de cooldown a uma mensagem por usuário a cada intervalo."""
+    agora = time.monotonic()
+    user_id = int(user_id)
+    ultimo = AI_COOLDOWN_NOTICE_AT.get(user_id)
+    if ultimo is not None and agora - ultimo < intervalo:
+        return False
+    AI_COOLDOWN_NOTICE_AT[user_id] = agora
+    if len(AI_COOLDOWN_NOTICE_AT) > 5000:
+        limite = agora - max(60, intervalo * 2)
+        for uid, instante in list(AI_COOLDOWN_NOTICE_AT.items()):
+            if instante < limite:
+                AI_COOLDOWN_NOTICE_AT.pop(uid, None)
+    return True
+
+
+def detalhe_autenticacao_provedor(provedor, chave):
+    """Rótulo claro para modos públicos, automáticos e tokens pessoais."""
+    if provedor == "blockrun":
+        return "API pública · sem chave"
+    if provedor == "llm7" and chave is None:
+        return "modo sem chave"
+    if provedor == "llm7" and chave == "auto-generated":
+        return "token automático"
+    if not chave:
+        return "sem chave"
+    return f"token ...{chave[-4:]}"
 
 
 def selecionar_modelo_blockrun(pergunta, tem_imagem=False):
@@ -9737,11 +9767,7 @@ async def cmd_apis(ctx, provedor: str = None):
             continue
         for i, key in enumerate(chaves, 1):
             rotulo = rotulo_chave_provedor(nome, key, i)
-            mascara = (
-                "(sem token cadastrado)"
-                if not key or (nome == "llm7" and key == "auto-generated")
-                else f"`...{key[-4:]}`"
-            )
+            autenticacao = detalhe_autenticacao_provedor(nome, key)
             inicio = time.time()
             try:
                 await asyncio.to_thread(
@@ -9752,9 +9778,9 @@ async def cmd_apis(ctx, provedor: str = None):
                     None,
                     False,
                 )
-                resultado += f"**{nome} ({rotulo})** {mascara} 🟢 ON ({round((time.time() - inicio) * 1000)} ms)\n"
+                resultado += f"**{nome} ({rotulo})** · {autenticacao} 🟢 disponível ({round((time.time() - inicio) * 1000)} ms)\n"
             except FalhaProvedor as error:
-                resultado += f"**{nome} ({rotulo})** {mascara} 🔴 falhou ({error})\n"
+                resultado += f"**{nome} ({rotulo})** · {autenticacao} 🔴 indisponível ({error})\n"
 
     await msg_temp.edit(content=resultado[:1900])
 
@@ -10153,11 +10179,12 @@ async def on_message(message):
         and not _solicita_historico_canal(message.content)
         and not anexos_audio
     ):
-        await message.reply(
-            _mensagem_cooldown_ia(tempo_restante, ja_em_cooldown=True),
-            mention_author=False,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
+        if _pode_notificar_cooldown(message.author.id):
+            await message.reply(
+                _mensagem_cooldown_ia(tempo_restante, ja_em_cooldown=True),
+                mention_author=False,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
         return
 
     # 3. Processar mídia para resposta ou registro silencioso do canal.
@@ -11242,7 +11269,8 @@ FUNCTIONS = {
     "_usuario_pediu_resposta_detalhada", "_limitar_resposta_curta",
     "_segundos_ate_retry", "_detalhe_http_error", "_registrar_cooldown_provedor",
     "_tempo_restante_provedor", "_tempo_restante_cooldown_ia",
-    "_formatar_tempo_espera", "consultar_ia_simples", "perguntar_ia",
+    "_formatar_tempo_espera", "_pode_notificar_cooldown",
+    "detalhe_autenticacao_provedor", "consultar_ia_simples", "perguntar_ia",
 }
 
 
@@ -11280,7 +11308,7 @@ class LLM7Tests(unittest.TestCase):
         self.code = load_provider_code()
         self.code.update({
             "AI_CONFIG": json.loads(json.dumps(self.code["AI_SETTINGS_DEFAULT"])),
-            "SYS_CONFIGS": {}, "AI_PROVIDER_COOLDOWNS": {}, "CRIADORES_IDS": [], "FORMAT_GENERATION": 0,
+            "SYS_CONFIGS": {}, "AI_PROVIDER_COOLDOWNS": {}, "AI_COOLDOWN_NOTICE_AT": {}, "CRIADORES_IDS": [], "FORMAT_GENERATION": 0,
             "historico_conversa": {}, "carregar_conversa_sqlite": lambda _: [],
             "salvar_conversa_sqlite": Mock(), "montar_system_prompt": lambda *args: "Teste.",
             "_detectar_pedidos_multimidia": lambda _: [],
@@ -11303,6 +11331,23 @@ class LLM7Tests(unittest.TestCase):
         if full:
             return asyncio.run(self.code["perguntar_ia"]("test", 123, "Tester", "Oi", None))
         return asyncio.run(self.code["consultar_ia_simples"]("Oi"))
+
+    def test_cooldown_notice_is_throttled_per_user(self):
+        self.code["time"] = SimpleNamespace(monotonic=lambda: 100)
+        self.assertTrue(self.code["_pode_notificar_cooldown"](123))
+        self.assertTrue(self.code["_pode_notificar_cooldown"](456))
+        self.assertFalse(self.code["_pode_notificar_cooldown"](123))
+        self.code["time"] = SimpleNamespace(monotonic=lambda: 129)
+        self.assertFalse(self.code["_pode_notificar_cooldown"](123))
+        self.code["time"] = SimpleNamespace(monotonic=lambda: 130)
+        self.assertTrue(self.code["_pode_notificar_cooldown"](123))
+
+    def test_provider_authentication_labels_are_not_misleading(self):
+        label = self.code["detalhe_autenticacao_provedor"]
+        self.assertEqual(label("blockrun", None), "API pública · sem chave")
+        self.assertEqual(label("llm7", None), "modo sem chave")
+        self.assertEqual(label("llm7", "auto-generated"), "token automático")
+        self.assertEqual(label("llm7", "secret-token-1234"), "token ...1234")
 
     def test_credentials_are_deduplicated_in_order_and_legacy_providers_are_unchanged(self):
         self.config["api_keys"]["llm7"] = [" saved ", "auto-generated", "saved", "", None]
