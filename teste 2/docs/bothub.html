@@ -31,6 +31,24 @@ python3 start.py</pre>
 <div class="row"><div><strong>4. Confirmar no painel</strong><div class="hint">Deixe o worker rodando e aguarde cerca de 15–30 segundos. A máquina deverá aparecer em Dispositivos / workers. No Linux com systemd, o instalador tenta configurar o worker como serviço automático. Em hospedagem/container sem systemd, configure o comando de inicialização no painel do host; o Firebase mantém a intenção de deixar cada bot ativado.</div></div></div>
 <p class="hint">Se o dispositivo não aparecer, confira o terminal, internet, credenciais Firebase e o caminho <code>workerUids</code>. Não use o mesmo ID em duas máquinas.</p>
 </div></main>
+<script>
+(function(){
+  const show=function(message){
+    const box=document.getElementById('loginMsg');
+    if(box){box.textContent='Erro ao iniciar o painel: '+message;box.className='error';}
+  };
+  window.addEventListener('error',function(e){show(e.message||'Falha ao carregar JavaScript.');});
+  window.addEventListener('unhandledrejection',function(e){const r=e.reason;show(r&&r.message?r.message:String(r||'Falha inesperada.'));});
+  window.addEventListener('load',function(){
+    setTimeout(function(){
+      const button=document.getElementById('loginBtn');
+      if(button&&!button.dataset.handlerReady){
+        show('O JavaScript do Firebase não iniciou. Verifique a conexão e abra novamente. Se persistir, envie um print desta mensagem.');
+      }
+    },2500);
+  });
+})();
+</script>
 <script type="module">
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
@@ -260,7 +278,7 @@ $('publishMainUpdate').onclick=async()=>{
     msg.className='ok';msg.textContent='Solicitação publicada. Os workers online vão baixar e aplicar a atualização automaticamente.';
   }catch(e){msg.className='error';msg.textContent='Não foi possível publicar a atualização: '+e.message}
 };
-$('loginBtn').onclick=async()=>{ $('loginMsg').textContent='';try{await signInWithEmailAndPassword(auth,$('email').value.trim(),$('password').value)}catch(e){$('loginMsg').textContent='Login Firebase falhou: '+e.message}};
+$('loginBtn').onclick=async()=>{ const btn=$('loginBtn');btn.disabled=true;$('loginMsg').textContent='Conectando ao Firebase…';try{await signInWithEmailAndPassword(auth,$('email').value.trim(),$('password').value);$('loginMsg').textContent='Login aceito. Verificando autorização…'}catch(e){$('loginMsg').textContent='Login Firebase falhou ('+(e.code||'erro')+'): '+e.message}finally{btn.disabled=false}}; $('loginBtn').dataset.handlerReady='1';
 $('logout').onclick=()=>signOut(auth);
 $('createBot').onclick=async()=>{const name=$('botName').value.trim(),token=$('botToken').value.trim();if(!name||token.length<30){$('createMsg').textContent='Informe um nome e um token válido.';return}try{if(Object.values(botData).some(b=>String(b.token||'').trim()===token)){throw new Error('Esse token já está cadastrado. Uma conta Discord não pode ser executada duas vezes no cluster.')}const id=crypto.randomUUID().replaceAll('-','');await set(testRef('bots/'+id),{name,token,config:{},enabled:true,desiredState:'on',workerId:null,createdAt:Date.now(),updatedAt:Date.now()});$('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado; distribuição automática iniciada.';lastAssignment='';await refreshData()}catch(e){$('createMsg').textContent='Erro: '+e.message}};
 setInterval(()=>{if(auth.currentUser){cleanupStaleWorkers().then(()=>drawWorkers())}},60000);
