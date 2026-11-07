@@ -1833,6 +1833,7 @@ BLOCKRUN_ROUTING_MODELS = {
 AHM7_API_BASE = "https://freeapi.pro/api"  # AHM7 migrou para FreeAPI; evita redirecionamento de POST.
 AHM7_TOOLS = {
     "pixelster": ("🎨", "PixelSter"),
+    "speechster": ("🔊", "SpeechSter"),
     "visionchat": ("👁️", "VisionChat"),
     "transcribe": ("🎧", "TranScribe"),
     "websnap": ("📸", "WebSnap"),
@@ -1857,6 +1858,7 @@ AHM7_TOOL_PARAMETERS = {
     "ler_canal": ("canal_id",),
     "pesquisar_canais": ("canal_id", "palavras", "data", "hora", "hora_inicio", "hora_fim", "limite", "offset"),
     "pixelster": ("consulta", "anexo", "proporcao", "imagem_url", "modo"),
+    "speechster": ("consulta", "voz"),
     "visionchat": ("consulta", "anexo", "imagem_url"),
     "transcribe": ("consulta", "anexo", "traduzir"),
     "websnap": ("consulta", "formato"),
@@ -1881,6 +1883,7 @@ AHM7_TOOL_PARAMETERS = {
 }
 AHM7_TOOL_PURPOSES = {
     "pixelster": "gerar imagem a partir de prompt e referência anexada ou por link",
+    "speechster": "gerar áudio falado a partir de texto, com escolha de voz pelo índice",
     "visionchat": "descrever imagem anexada ou por link e ler OCR",
     "transcribe": "transcrever áudio anexado ou vídeo do YouTube",
     "websnap": "capturar uma página pública como imagem ou PDF",
