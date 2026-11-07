@@ -4338,10 +4338,8 @@ def _pode_notificar_cooldown(user_id, intervalo=30):
 
 def detalhe_autenticacao_provedor(provedor, chave):
     """Rótulo claro para modos públicos, automáticos e tokens pessoais."""
-    if provedor == "blockrun":
-        return "API pública · sem chave"
-    if provedor == "llm7" and chave is None:
-        return "modo sem chave"
+    if provedor in {"blockrun", "llm7"} and chave is None:
+        return "modo público"
     if provedor == "llm7" and chave == "auto-generated":
         return "token automático"
     if not chave:
@@ -11344,8 +11342,8 @@ class LLM7Tests(unittest.TestCase):
 
     def test_provider_authentication_labels_are_not_misleading(self):
         label = self.code["detalhe_autenticacao_provedor"]
-        self.assertEqual(label("blockrun", None), "API pública · sem chave")
-        self.assertEqual(label("llm7", None), "modo sem chave")
+        self.assertEqual(label("blockrun", None), "modo público")
+        self.assertEqual(label("llm7", None), "modo público")
         self.assertEqual(label("llm7", "auto-generated"), "token automático")
         self.assertEqual(label("llm7", "secret-token-1234"), "token ...1234")
 
