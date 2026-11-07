@@ -1830,7 +1830,7 @@ BLOCKRUN_ROUTING_MODELS = {
     "coding": "cohere/north-mini-code",
     "vision": "nvidia/llama-3.2-11b-vision",
 }
-AHM7_API_BASE = "https://ahm7xmakki.com/api"
+AHM7_API_BASE = "https://freeapi.pro/api"  # AHM7 migrou para FreeAPI; evita redirecionamento de POST.
 AHM7_TOOLS = {
     "pixelster": ("🎨", "PixelSter"),
     "visionchat": ("👁️", "VisionChat"),
