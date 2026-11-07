@@ -1926,7 +1926,7 @@ AI_SETTINGS_DEFAULT = {
         "llm7": {"temperature": 0.6, "max_tokens": 8000},
     },
 }
-VISION_ENDPOINT = "https://ahm7xmakki.com/api/imgchat"
+VISION_ENDPOINT = "https://www.ahm7xmakki.com/api/imgchat"
 
 MEMORIA_GERAL_FILE = "memoria_geral"
 IMPORTANTE_FILE = "importantes"
@@ -6309,7 +6309,9 @@ def analisar_imagem_sync(image_bytes, content_type, pergunta, channel_id=None):
         raise FalhaProvedor("VisionChat está desativado nas configurações")
     if not image_bytes or len(image_bytes) > 10_000_000:
         raise FalhaProvedor("imagem vazia ou maior que 10 MB")
-    mime = content_type if content_type.startswith("image/") else "image/jpeg"
+    mime = (content_type or "image/jpeg").split(";", 1)[0].strip().lower()
+    if mime not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
+        mime = "image/jpeg"
     image_data_url = f"data:{mime};base64,{base64.b64encode(image_bytes).decode('ascii')}"
     payload = {
         "image": image_data_url,
@@ -7198,12 +7200,15 @@ _inicializar_banco_lembretes()
 
 
 async def atualizar_memoria_foto_perfil(forcar=False):
-    """Mantém foto de perfil.txt sincronizado com o avatar atual e atualiza a descrição visual para a IA."""
+    """Sincroniza o avatar e tenta novamente análises que falharam anteriormente."""
     if not bot.user:
         return False
+
     caminho_txt = os.path.join(BASE_DIR, "foto de perfil.txt")
     caminho_json = os.path.join(BASE_DIR, "bot_personality.json")
     avatar_url = str(bot.user.display_avatar.with_size(1024).url)
+    marcador = "AVATAR_URL: " + avatar_url
+
     conteudo_anterior = ""
     try:
         if os.path.isfile(caminho_txt):
@@ -7211,16 +7216,49 @@ async def atualizar_memoria_foto_perfil(forcar=False):
                 conteudo_anterior = handle.read()
     except OSError:
         pass
-    marcador = "AVATAR_URL: " + avatar_url
-    if not forcar and conteudo_anterior.startswith(marcador + "\n"):
+
+    mesma_foto = conteudo_anterior.startswith(marcador + "\n")
+    descricao_anterior = ""
+    if mesma_foto and "DESCRICAO_VISUAL_PARA_IA:" in conteudo_anterior:
+        descricao_anterior = conteudo_anterior.split("DESCRICAO_VISUAL_PARA_IA:", 1)[1].strip()
+        if descricao_anterior.startswith("A imagem não pôde ser analisada."):
+            descricao_anterior = ""
+
+    perfil = {}
+    try:
+        if os.path.isfile(caminho_json):
+            with open(caminho_json, "r", encoding="utf-8") as handle:
+                perfil = json.load(handle)
+        if not isinstance(perfil, dict):
+            perfil = {}
+    except (OSError, ValueError, TypeError):
+        perfil = {}
+
+    if mesma_foto and not descricao_anterior:
+        descricao_json = str(perfil.get("visual_description", "") or "").strip()
+        if descricao_json and not descricao_json.startswith("A imagem não pôde ser analisada."):
+            descricao_anterior = descricao_json
+
+    # Só ignora quando a mesma imagem já possui uma descrição válida.
+    # Se a tentativa anterior falhou, on_ready tentará novamente no próximo início.
+    if not forcar and mesma_foto and descricao_anterior:
         return False
 
     descricao = ""
+    analise_ok = False
     try:
         def baixar_avatar_memoria():
             req = Request(avatar_url, headers={"User-Agent": "BotHub-Profile/1.0"})
-            with urlopen(req, timeout=20) as response:
-                return response.read(8_000_000), response.headers.get("Content-Type", "image/png")
+            with urlopen(req, timeout=25) as response:
+                image_bytes = response.read(10_000_001)
+                mime = response.headers.get("Content-Type", "image/png")
+            if not image_bytes or len(image_bytes) > 10_000_000:
+                raise ValueError("avatar vazio ou maior que 10 MB")
+            mime = (mime or "image/png").split(";", 1)[0].strip().lower()
+            if mime not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
+                raise ValueError("o CDN não retornou um formato de imagem compatível")
+            return image_bytes, mime
+
         image_bytes, mime = await asyncio.to_thread(baixar_avatar_memoria)
         descricao = await asyncio.to_thread(
             analisar_imagem_sync,
@@ -7230,9 +7268,18 @@ async def atualizar_memoria_foto_perfil(forcar=False):
             None,
         )
         descricao = str(descricao or "").strip()[:2500]
+        if not descricao:
+            raise ValueError("a API de visão retornou uma descrição vazia")
+        analise_ok = True
     except Exception as error:
-        log_console(f"Não foi possível analisar a nova foto de perfil ({type(error).__name__}).")
-        descricao = "A imagem não pôde ser analisada. Use apenas o nome e os metadados do bot até uma nova tentativa."
+        log_console(
+            f"AVISO: não foi possível analisar o avatar ({type(error).__name__}: "
+            f"{str(error)[:220]}). A tentativa será repetida."
+        )
+        # Não substitui uma descrição válida da mesma imagem por uma mensagem de erro.
+        descricao = descricao_anterior or (
+            "A imagem não pôde ser analisada. A análise será tentada novamente na próxima inicialização."
+        )
 
     texto = (
         marcador + "\n"
@@ -7245,27 +7292,23 @@ async def atualizar_memoria_foto_perfil(forcar=False):
         handle.write(texto)
     os.replace(tmp_txt, caminho_txt)
 
-    perfil = {}
-    try:
-        if os.path.isfile(caminho_json):
-            with open(caminho_json, "r", encoding="utf-8") as handle:
-                perfil = json.load(handle)
-        if not isinstance(perfil, dict):
-            perfil = {}
-    except Exception:
-        perfil = {}
     perfil.update({
         "name": str(bot.user.name),
         "avatar_url": avatar_url,
-        "visual_description": descricao[:1600],
+        # Não injeta uma mensagem de erro no prompt da IA como se fosse descrição visual.
+        "visual_description": descricao[:1600] if analise_ok or descricao_anterior else "",
         "avatar_memory_file": "foto de perfil.txt",
     })
     tmp_json = caminho_json + ".tmp"
     with open(tmp_json, "w", encoding="utf-8") as handle:
         json.dump(perfil, handle, ensure_ascii=False, indent=2)
     os.replace(tmp_json, caminho_json)
-    log_console("Memória foto de perfil.txt atualizada; descrição visual disponível para a IA.")
-    return True
+
+    if analise_ok:
+        log_console("Memória do avatar atualizada; descrição visual disponível para a IA.")
+    else:
+        log_console("Memória do avatar sincronizada; análise visual pendente e será repetida.")
+    return analise_ok
 
 
 async def garantir_personalidade_inicial():
