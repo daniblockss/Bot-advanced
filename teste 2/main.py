@@ -6332,8 +6332,10 @@ def _preparar_imagem_para_fallback(image_bytes, content_type):
     return f"data:{mime};base64,{base64.b64encode(dados).decode('ascii')}"
 
 
-def analisar_imagem_sync(image_bytes, content_type, pergunta, channel_id=None):
-    if not ahm7_habilitada("visionchat", channel_id):
+def analisar_imagem_sync(image_bytes, content_type, pergunta, channel_id=None, ignorar_config=False):
+    # Chamadas internas de manutenção (ex.: memória do avatar) não dependem
+    # de a ferramenta interativa VisionChat estar habilitada no servidor.
+    if not ignorar_config and not ahm7_habilitada("visionchat", channel_id):
         raise FalhaProvedor("VisionChat está desativado nas configurações")
     if not image_bytes or len(image_bytes) > 10_000_000:
         raise FalhaProvedor("imagem vazia ou maior que 10 MB")
@@ -6389,6 +6391,69 @@ def analisar_imagem_sync(image_bytes, content_type, pergunta, channel_id=None):
     texto = localizar_texto(result)
     if not texto:
         raise FalhaProvedor("resposta de visão sem descrição de imagem")
+    return texto
+
+
+def analisar_imagem_url_sync(image_url, pergunta, channel_id=None, ignorar_config=False):
+    """Analisa uma URL pública de imagem diretamente, sem depender do download local."""
+    if not ignorar_config and not ahm7_habilitada("visionchat", channel_id):
+        raise FalhaProvedor("VisionChat está desativado nas configurações")
+
+    parsed = urlparse(str(image_url or ""))
+    if parsed.scheme != "https" or parsed.hostname not in {"cdn.discordapp.com", "media.discordapp.net"}:
+        raise FalhaProvedor("URL do avatar não pertence ao CDN HTTPS do Discord")
+
+    payload = {
+        "url": str(image_url),
+        "userPrompt": (pergunta or "Descreva esta imagem.")[:1000],
+    }
+    request = Request(
+        VISION_ENDPOINT,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=60) as response:
+            response_body = response.read(2_000_000)
+    except HTTPError as error:
+        detail = _detalhe_http_error(error)
+        suffix = f": {detail}" if detail else ""
+        raise FalhaProvedor(
+            f"VisionChat URL HTTP {error.code}{suffix}",
+            status_code=error.code,
+        ) from error
+    except (URLError, TimeoutError, OSError) as error:
+        raise FalhaProvedor(f"falha de conexão com VisionChat URL ({type(error).__name__})") from error
+
+    try:
+        result = json.loads(response_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise FalhaProvedor("resposta de visão por URL não contém JSON válido") from error
+
+    def localizar_texto(value):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            if value.get("success") is False:
+                return None
+            for key in ("analysis", "description", "text", "response", "content", "answer", "result", "output", "data"):
+                if key in value:
+                    found = localizar_texto(value[key])
+                    if found:
+                        return found
+        if isinstance(value, list):
+            for item in value:
+                found = localizar_texto(item)
+                if found:
+                    return found
+        return None
+
+    if isinstance(result, dict) and result.get("success") is False:
+        raise FalhaProvedor("VisionChat recusou a URL do avatar")
+    texto = localizar_texto(result)
+    if not texto:
+        raise FalhaProvedor("VisionChat retornou uma resposta vazia para a URL do avatar")
     return texto
 
 
@@ -7274,35 +7339,62 @@ async def atualizar_memoria_foto_perfil(forcar=False):
 
     descricao = ""
     analise_ok = False
+    pergunta_avatar = (
+        "Descreva para uma IA a aparência visual do avatar deste bot: formas, personagens ilustrados, "
+        "cores, expressão, roupa e atmosfera. Diga o que é visível e diferencie claramente impressões "
+        "de fatos. Não tente identificar pessoas reais."
+    )
+    erro_url = None
     try:
-        def baixar_avatar_memoria():
-            req = Request(avatar_url, headers={"User-Agent": "BotHub-Profile/1.0"})
-            with urlopen(req, timeout=25) as response:
-                image_bytes = response.read(10_000_001)
-                mime = response.headers.get("Content-Type", "image/png")
-            if not image_bytes or len(image_bytes) > 10_000_000:
-                raise ValueError("avatar vazio ou maior que 10 MB")
-            mime = (mime or "image/png").split(";", 1)[0].strip().lower()
-            if mime not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
-                raise ValueError("o CDN não retornou um formato de imagem compatível")
-            return image_bytes, mime
+        # Primeiro envia a URL pública do CDN do Discord. Isso evita falhas no
+        # download local e aproveita o modo URL documentado pelo VisionChat.
+        try:
+            descricao = await asyncio.to_thread(
+                analisar_imagem_url_sync,
+                avatar_url,
+                pergunta_avatar,
+                None,
+                True,
+            )
+        except Exception as error_url:
+            erro_url = error_url
+            log_console(
+                f"AVISO: VisionChat não conseguiu buscar a URL do avatar "
+                f"({type(error_url).__name__}: {str(error_url)[:180]}). Tentando enviar os bytes."
+            )
 
-        image_bytes, mime = await asyncio.to_thread(baixar_avatar_memoria)
-        descricao = await asyncio.to_thread(
-            analisar_imagem_sync,
-            image_bytes,
-            mime,
-            "Descreva para uma IA a aparência visual do avatar deste bot: formas, personagens ilustrados, cores, expressão, roupa e atmosfera. Diga o que é visível e diferencie claramente impressões de fatos. Não tente identificar pessoas reais.",
-            None,
-        )
+            def baixar_avatar_memoria():
+                req = Request(avatar_url, headers={"User-Agent": "BotHub-Profile/1.0"})
+                with urlopen(req, timeout=25) as response:
+                    image_bytes = response.read(10_000_001)
+                    mime = response.headers.get("Content-Type", "image/png")
+                if not image_bytes or len(image_bytes) > 10_000_000:
+                    raise ValueError("avatar vazio ou maior que 10 MB")
+                mime = (mime or "image/png").split(";", 1)[0].strip().lower()
+                if mime not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
+                    raise ValueError("o CDN não retornou um formato de imagem compatível")
+                return image_bytes, mime
+
+            image_bytes, mime = await asyncio.to_thread(baixar_avatar_memoria)
+            descricao = await asyncio.to_thread(
+                analisar_imagem_sync,
+                image_bytes,
+                mime,
+                pergunta_avatar,
+                None,
+                True,
+            )
+
         descricao = str(descricao or "").strip()[:2500]
         if not descricao:
             raise ValueError("a API de visão retornou uma descrição vazia")
         analise_ok = True
     except Exception as error:
+        detalhe = f"{type(error).__name__}: {str(error)[:180]}"
+        if erro_url is not None:
+            detalhe = f"URL: {type(erro_url).__name__}: {str(erro_url)[:100]} | bytes: {detalhe}"
         log_console(
-            f"AVISO: não foi possível analisar o avatar ({type(error).__name__}: "
-            f"{str(error)[:220]}). A tentativa será repetida."
+            f"AVISO: não foi possível analisar o avatar ({detalhe}). A tentativa será repetida."
         )
         # Não substitui uma descrição válida da mesma imagem por uma mensagem de erro.
         descricao = descricao_anterior or (
