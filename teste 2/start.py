@@ -142,13 +142,18 @@ def start_worker() -> subprocess.Popen:
         raise RuntimeError(f"Python do ambiente virtual não encontrado: {WORKER_PYTHON}")
     validate(WORKER.read_bytes(), COMPONENTS[1])
     log.info("Iniciando worker com %s.", WORKER_PYTHON)
+    worker_env = os.environ.copy()
+    # O worker e qualquer atualizador filho precisam saber que já existe
+    # um start.py supervisor. Sem isso, a atualização do cluster pode abrir
+    # outro supervisor, que disputa o lock e derruba o controlador anterior.
+    worker_env["BOTHUB_SUPERVISED"] = "1"
     return subprocess.Popen(
         [str(WORKER_PYTHON), "-u", str(WORKER)],
         cwd=str(ROOT),
         stdin=subprocess.DEVNULL,
         stdout=sys.stdout,
         stderr=sys.stderr,
-        env=os.environ.copy(),
+        env=worker_env,
     )
 
 def setup_environment() -> None:
