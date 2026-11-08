@@ -1195,6 +1195,9 @@ if not launcher.exists():
     launcher=root/"add_cluster_server.py"
 if not launcher.exists():
     raise RuntimeError("Nem start.py nem add_cluster_server.py foram encontrados; não é possível reiniciar.")
+if os.environ.get("BOTHUB_SUPERVISED") == "1":
+    print("[BotHub] Atualização aplicada; o start.py supervisor reiniciará este worker.", flush=True)
+    raise SystemExit(0)
 os.execv(str(venvpy),[str(venvpy),str(launcher)])
 """
     helper_path=ROOT/".bothub_cluster_updater.py"
