@@ -1195,9 +1195,6 @@ if not launcher.exists():
     launcher=root/"add_cluster_server.py"
 if not launcher.exists():
     raise RuntimeError("Nem start.py nem add_cluster_server.py foram encontrados; não é possível reiniciar.")
-if os.environ.get("BOTHUB_SUPERVISED") == "1":
-    print("[BotHub] Atualização aplicada; o start.py supervisor reiniciará este worker.", flush=True)
-    raise SystemExit(0)
 os.execv(str(venvpy),[str(venvpy),str(launcher)])
 """
     helper_path=ROOT/".bothub_cluster_updater.py"
@@ -1341,8 +1338,8 @@ def main():
         os.execv(str(vp),[str(vp),str(Path(__file__).resolve())])
     lock_handle = acquire_worker_lock()
     if lock_handle is None:
-        print("[BotHub] Já existe outro controlador ativo e o bloqueio não pôde ser assumido. Encerrando com código 75 para o supervisor não entrar em loop.", flush=True)
-        return 75
+        print("[BotHub] Já existe um controlador rodando nesta pasta. Este processo será encerrado para evitar bots duplicados.", flush=True)
+        return
     signal.signal(signal.SIGTERM, handle_shutdown_signal)
     signal.signal(signal.SIGINT, handle_shutdown_signal)
     atexit.register(cleanup_children)
@@ -1436,8 +1433,5 @@ def main():
     cleanup_children()
 
 if __name__=="__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as e:
-        print("Erro fatal:",e,file=sys.stderr)
-        raise
+    try:main()
+    except Exception as e:print("Erro fatal:",e,file=sys.stderr);raise
