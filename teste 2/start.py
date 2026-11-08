@@ -219,10 +219,17 @@ def main() -> int:
             time.sleep(CHECK_INTERVAL)
             if worker_process.poll() is not None:
                 exit_code = worker_process.returncode
+                if exit_code == 75:
+                    log.error(
+                        "Outro controlador mantém o bloqueio do BotHub. "
+                        "O supervisor vai parar aqui para evitar um ciclo infinito de reinicializações. "
+                        "Verifique se existe um serviço antigo bothub-worker.service ou outro start.py ativo."
+                    )
+                    return 75
                 if exit_code == 0:
                     log.warning(
-                        "Worker encerrou normalmente (código 0). Isso pode ocorrer após uma atualização; "
-                        "o supervisor iniciará uma nova instância em %ss.",
+                        "Worker encerrou normalmente (código 0), geralmente após atualização. "
+                        "O supervisor iniciará uma nova instância em %ss.",
                         RESTART_DELAY,
                     )
                 else:
