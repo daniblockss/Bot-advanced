@@ -1,0 +1,1694 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#070a12">
+<title>BotHub — Cyber Dashboard AI & Standard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+<!-- Importando o Chart.js para os gráficos em tempo real -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{
+  --bg: #070a12;
+  --panel: #0d1322;
+  --panel-solid: #111a2e;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-hover: rgba(56, 189, 248, 0.3);
+  --muted: #94a3b8;
+  --text: #f1f5f9;
+  --blue: #3b82f6;
+  --cyan: #38bdf8;
+  --purple: #a855f7;
+  --green: #10b981;
+  --red: #f43f5e;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  --radius: 16px;
+}
+
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--cyan) transparent}
+*::-webkit-scrollbar{width:4px;height:4px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:var(--cyan);border-radius:10px}
+
+body{
+  margin:0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+#matrixCanvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.06;
+}
+
+button, input, select, textarea{font:inherit}
+button{cursor:pointer;border:0;background:none;color:inherit}
+.hidden{display:none!important}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.page{animation:fadeIn .3s cubic-bezier(0.16, 1, 0.3, 1)}
+
+/* Tela de Login */
+.login-wrap{
+  min-height:100vh;
+  display:grid;
+  place-items:center;
+  padding:16px;
+  position:relative;
+  z-index:2;
+}
+.login-card{
+  width:min(400px, 100%);
+  padding:32px 24px;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  background:var(--panel);
+  box-shadow:var(--shadow);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;letter-spacing:-0.5px}
+.logo{
+  height:36px;width:36px;
+  border-radius:10px;
+  display:grid;place-items:center;
+  background:linear-gradient(135deg, var(--blue), var(--purple));
+  box-shadow:0 4px 15px rgba(59,130,246,0.3);
+  font-size:17px;
+}
+.login-card .brand{justify-content:center;margin-bottom:20px}
+.login-card h1{text-align:center;font-size:24px;letter-spacing:-0.5px;margin:0 0 6px}
+.login-card>p{text-align:center;color:var(--muted);margin:0 0 22px;font-size:13px}
+
+.auth-btn{
+  width:100%;height:46px;
+  border-radius:12px;
+  background:#fff;
+  color:#0f172a;
+  font-weight:600;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  margin:10px 0;
+  transition:all .2s ease;
+}
+.auth-btn.discord{background:#5865f2;color:white}
+.auth-btn:hover{filter:brightness(1.05);transform:translateY(-1px)}
+.auth-icon{font-size:17px;font-weight:900}
+.login-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.5;margin-top:18px}
+
+/* App Layout & Sidebar */
+.app{display:grid;grid-template-columns:250px 1fr;min-height:100vh;position:relative;z-index:2}
+.sidebar{
+  border-right:1px solid var(--line);
+  background:var(--panel);
+  padding:16px 12px;
+  display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh;
+  overflow-y:auto;
+  z-index:30;
+  transition:transform .3s ease;
+}
+.sidebar::-webkit-scrollbar{width:3px}
+.sidebar .brand{padding:2px 6px 20px}
+.nav-label{font-size:10px;color:var(--cyan);text-transform:uppercase;letter-spacing:1.2px;padding:12px 8px 4px;font-weight:700}
+
+.nav-btn{
+  width:100%;display:flex;align-items:center;gap:10px;
+  padding:10px 12px;
+  border-radius:10px;
+  background:transparent;
+  color:var(--muted);
+  text-align:left;
+  margin:3px 0;
+  transition:all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight:500;
+  font-size:13.5px;
+  position:relative;
+  overflow:hidden;
+}
+
+.nav-btn::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px;
+  height: 60%;
+  background: var(--cyan);
+  border-radius: 0 4px 4px 0;
+  transition: transform 0.2s ease;
+}
+
+.nav-btn:hover{
+  background: rgba(56, 189, 248, 0.08);
+  color: #fff;
+  transform: translateX(4px);
+}
+
+.nav-btn:hover .nav-ico {
+  transform: scale(1.15) rotate(5deg);
+  color: var(--cyan);
+}
+
+.nav-btn.active{
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.15), rgba(59, 130, 246, 0.05));
+  color: #fff;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  box-shadow: inset 0 0 12px rgba(56, 189, 248, 0.08), 0 4px 12px rgba(0, 0, 0, 0.2);
+  font-weight: 600;
+}
+
+.nav-btn.active::before {
+  transform: translateY(-50%) scaleY(1);
+}
+
+.nav-ico{
+  width:18px;
+  text-align:center;
+  font-size:15px;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.side-bottom{margin-top:auto;padding-top:10px}
+.user-mini{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 10px;
+  border-top:1px solid var(--line);
+  background:rgba(255,255,255,0.01);
+  border-radius:12px;
+}
+.avatar{
+  height:32px;width:32px;border-radius:9px;
+  background:linear-gradient(135deg,var(--blue),var(--purple));
+  display:grid;place-items:center;
+  font-weight:700;font-size:13px;
+  object-fit: cover;
+}
+
+.main{
+  min-width:0;
+  padding:20px 24px 40px;
+  max-width:1400px;
+  width:100%;
+  margin:0 auto;
+}
+.topbar{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:24px;gap:10px;
+}
+.page-title{font-size:20px;font-weight:800;letter-spacing:-0.5px;margin:0}
+.page-sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.top-actions{display:flex;align-items:center;gap:8px}
+
+.icon-btn{
+  height:36px;width:36px;
+  border-radius:10px;
+  background:var(--panel-solid);
+  border:1px solid var(--line);
+  color:var(--text);
+  display:grid;place-items:center;
+  transition:all .2s ease;
+}
+.icon-btn:hover{border-color:var(--cyan);background:var(--panel)}
+
+.primary{
+  background:linear-gradient(135deg, var(--blue), var(--cyan));
+  color:#070a12;
+  padding:9px 14px;
+  border-radius:10px;
+  font-weight:700;
+  box-shadow:0 4px 15px rgba(56,189,248,0.25);
+  transition:all .2s ease;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  font-size:13.5px;
+}
+.primary:hover{filter:brightness(1.08);transform:translateY(-1px)}
+
+.secondary{
+  background:rgba(255,255,255,0.04);
+  border:1px solid var(--line);
+  padding:8px 12px;
+  border-radius:10px;
+  color:var(--text);
+  font-weight:500;
+  transition:all .2s ease;
+  font-size:13px;
+}
+.secondary:hover{background:rgba(56,189,248,0.08);border-color:var(--line-hover)}
+
+.danger{
+  background:rgba(244,63,94,0.12);
+  color:#fb7185;
+  border:1px solid rgba(244,63,94,0.25);
+  padding:7px 10px;
+  border-radius:8px;
+  font-weight:500;
+  transition:all .2s ease;
+  font-size:13px;
+}
+.danger:hover{background:rgba(244,63,94,0.22)}
+
+.grid{display:grid;gap:14px}
+.stats{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:16px}
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:18px;
+  box-shadow:var(--shadow);
+  min-width:0;
+}
+.stat-top{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px;font-weight:500}
+.stat-ico{
+  height:32px;width:32px;border-radius:9px;
+  display:grid;place-items:center;
+  background:rgba(56,189,248,0.1);
+  color:var(--cyan);
+  font-size:14px;
+}
+.stat-num{font-size:24px;font-weight:800;letter-spacing:-0.5px;margin:8px 0 2px;color:#fff}
+.stat-foot{font-size:11px;color:var(--muted)}
+
+.two-col{grid-template-columns:1.4fr 1fr}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}
+.section-head h2{font-size:16px;margin:0;font-weight:700}
+.section-head p{margin:2px 0 0;color:var(--muted);font-size:11.5px}
+
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 220px;
+  margin-top: 10px;
+}
+
+@keyframes subtlePulse {
+  0%, 100% { opacity: 0.88; }
+  50% { opacity: 1; text-shadow: 0 0 10px rgba(56, 189, 248, 0.35); }
+}
+
+.ascii-card{
+  background: #050810;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-family: 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--cyan);
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+.ascii-card.loop-active {
+  animation: subtlePulse 5s ease-in-out infinite;
+}
+
+.ascii-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  color: var(--muted);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  padding-bottom: 5px;
+  font-size: 10px;
+}
+.ascii-dots { display: flex; gap: 4px; }
+.ascii-dot { width: 7px; height: 7px; border-radius: 50%; }
+.dot-r { background: var(--red); }
+.dot-y { background: #f59e0b; }
+.dot-g { background: var(--green); }
+
+pre.ascii-content{
+  margin: 0;
+  line-height: 1.2;
+  white-space: pre;
+}
+
+.typing-cursor {
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  background-color: var(--cyan);
+  vertical-align: middle;
+  margin-left: 2px;
+  animation: blinkCursor 0.8s infinite;
+}
+@keyframes blinkCursor{0%,100%{opacity:1}50%{opacity:0}}
+
+.badge-type {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--cyan);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  margin-left: 6px;
+}
+.badge-type.ai {
+  background: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.3);
+}
+
+.bot-list{display:flex;flex-direction:column;gap:8px}
+.bot-row{
+  display:flex;align-items:center;gap:12px;
+  padding:12px;
+  background:rgba(255,255,255,0.02);
+  border:1px solid var(--line);
+  border-radius:12px;
+  transition:all .2s ease;
+}
+.bot-row:hover{background:rgba(56,189,248,0.04);border-color:var(--cyan)}
+.bot-avatar{
+  height:38px;width:38px;border-radius:10px;
+  background:linear-gradient(135deg, var(--blue), var(--purple));
+  display:grid;place-items:center;
+  font-size:17px;
+  object-fit: cover;
+}
+.bot-info{flex:1;min-width:0}
+.bot-name{font-weight:600;font-size:13.5px;display:flex;align-items:center;flex-wrap:wrap}
+.bot-meta{font-size:11px;color:var(--muted);margin-top:2px}
+
+.status{
+  font-size:10.5px;font-weight:600;
+  padding:3px 8px;
+  border-radius:20px;
+  background:rgba(16, 185, 129, 0.12);
+  color:#34d399;
+  display:inline-flex;align-items:center;gap:4px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  white-space: nowrap;
+}
+.status::before{
+  content:'';width:5px;height:5px;border-radius:50%;background:currentColor;
+}
+.status.off{
+  background:rgba(148, 163, 184, 0.08);
+  color:#94a3b8;
+  border-color:transparent;
+}
+
+.usage-line{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin:12px 0 5px}
+.usage-line b{color:var(--text)}
+.bar{height:7px;border-radius:20px;background:rgba(255,255,255,0.06);overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,var(--blue),var(--cyan));width:0;transition:width .5s ease}
+.wallet-balance{font-size:26px;font-weight:800;letter-spacing:-1px;margin:4px 0;color:#fff}
+.wallet-balance span{font-size:12.5px;color:var(--muted);font-weight:500}
+.quick-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+
+.toolbar{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.search{
+  background:var(--panel-solid);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px 14px;
+  color:white;
+  outline:none;
+  min-width:200px;
+  flex:1;
+}
+.search:focus, input:focus, select:focus, textarea:focus{border-color:var(--cyan)}
+.table-wrap{overflow-x:auto;padding:0}
+.table{width:100%;border-collapse:collapse;min-width:520px}
+.table th,.table td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);font-size:13px}
+.table th{color:var(--cyan);font-size:10.5px;text-transform:uppercase;letter-spacing:1px;font-weight:700}
+.table td{color:var(--text)}
+.empty{text-align:center;padding:36px 14px;color:var(--muted);border:1px dashed var(--line);border-radius:var(--radius);font-size:13px}
+
+.package-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.package{position:relative;overflow:hidden;display:flex;flex-direction:column}
+.package.featured{
+  border-color:rgba(56,189,248,0.4);
+  background:linear-gradient(150deg, rgba(15, 23, 42, 0.95), rgba(7, 10, 18, 0.98));
+}
+.package h3{margin:0 0 4px;font-size:16px}
+.package .price{font-size:24px;font-weight:800;margin:10px 0 2px;color:var(--cyan)}
+.package .points{font-size:12.5px;color:var(--muted)}
+.package ul{list-style:none;padding:0;margin:14px 0;color:var(--muted);font-size:12.5px;line-height:2;flex:1}
+.package li::before{content:'✨';margin-right:6px}
+.package .primary{width:100%;margin-top:auto}
+
+.profile-grid{grid-template-columns:1fr 1.5fr}
+.field{display:flex;flex-direction:column;gap:6px;margin:12px 0}
+.field label{font-size:12px;color:var(--muted);font-weight:500}
+.field input, .field select, .field textarea{
+  background:var(--panel-solid);
+  color:white;
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px 12px;
+  outline:none;
+}
+
+/* Abas dentro do painel de configuração do bot */
+.modal-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+}
+.modal-tab-btn {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--line);
+  padding: 6px 12px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+.modal-tab-btn.active {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--cyan);
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.modal-bg{
+  position:fixed;inset:0;
+  background:rgba(2, 4, 8, 0.75);
+  backdrop-filter:blur(6px);
+  z-index:50;
+  display:grid;place-items:center;
+  padding:14px;
+  animation:fadeIn .2s ease;
+}
+.modal{
+  width:min(520px, 100%);
+  background:var(--panel-solid);
+  border:1px solid var(--cyan);
+  border-radius:var(--radius);
+  padding:22px;
+  box-shadow:var(--shadow);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.modal-head h3{margin:0;font-size:17px;color:var(--cyan)}
+.close{background:rgba(255,255,255,0.06);color:var(--muted);width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:15px}
+.close:hover{background:var(--cyan);color:#070a12}
+.modal-actions{display:flex;gap:8px;margin-top:18px}
+.modal-actions>*{flex:1}
+
+.purchase-choice{display:flex;gap:8px;margin-top:12px}
+.purchase-choice button{
+  flex:1;padding:11px;border-radius:10px;
+  background:var(--panel);
+  border:1px solid var(--line);
+  font-weight:600;
+  transition:all .2s ease;
+  font-size:13px;
+}
+.purchase-choice button:hover{border-color:var(--cyan);background:rgba(56,189,248,0.08)}
+
+.toast{
+  position:fixed;bottom:16px;right:16px;
+  background:var(--panel-solid);
+  border:1px solid var(--cyan);
+  color:#fff;
+  padding:12px 16px;
+  border-radius:12px;
+  box-shadow:var(--shadow);
+  z-index:100;
+  font-weight:600;
+  display:flex;align-items:center;gap:8px;
+  font-size:13px;
+}
+.mobile-menu{display:none}
+.muted-link{color:var(--cyan);cursor:pointer;font-weight:600}
+.muted-link:hover{filter:brightness(1.2)}
+.footer-note{color:var(--muted);font-size:11.5px;line-height:1.5;margin-top:14px}
+
+@media(max-width:1050px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .two-col{grid-template-columns:1fr}
+  .package-grid{grid-template-columns:repeat(2,1fr)}
+}
+
+@media(max-width:768px){
+  .app{grid-template-columns:1fr}
+  .sidebar{
+    position:fixed;
+    z-index:40;
+    left:-260px;
+    width:240px;
+    height:100vh;
+    transition:left .25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow:var(--shadow);
+  }
+  .sidebar.open{left:0}
+  .main{padding:16px 12px 40px}
+  .mobile-menu{display:grid}
+  .stats{grid-template-columns:1fr}
+  .package-grid, .profile-grid{grid-template-columns:1fr}
+  .topbar{margin-bottom:18px}
+  .page-title{font-size:19px}
+}
+</style>
+</head>
+<body>
+
+<canvas id="matrixCanvas"></canvas>
+
+<div id="loginScreen" class="login-wrap">
+  <div class="login-card">
+    <div class="brand"><div class="logo">🤖</div>BotHub</div>
+    <h1>Bem-vindo de volta! 👋</h1>
+    <p>Gerencie seus bots do Discord com IA e alta performance 24/7.</p>
+    <button class="auth-btn" onclick="socialLogin('Google')"><span class="auth-icon">🌐</span> Continuar com Google</button>
+    <button class="auth-btn discord" onclick="socialLogin('Discord')"><span class="auth-icon">🎮</span> Continuar com Discord</button>
+    <div class="login-note">Ao continuar, você concorda com os termos de serviço e diretrizes do BotHub. 🛡️</div>
+  </div>
+</div>
+
+<div id="app" class="app hidden">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="logo">🤖</div>BotHub</div>
+    <div class="nav-label">🚀 Principal</div>
+    <button class="nav-btn active" data-page="dashboard"><span class="nav-ico">📊</span>Visão geral</button>
+    <button class="nav-btn" data-page="bots"><span class="nav-ico">🤖</span>Meus bots</button>
+    <button class="nav-btn" data-page="globalapi"><span class="nav-ico">🌐</span>APIs Globais</button>
+    <button class="nav-btn" data-page="files"><span class="nav-ico">📁</span>Arquivos globais</button>
+    <div class="nav-label">💎 Financeiro</div>
+    <button class="nav-btn" data-page="wallet"><span class="nav-ico">💳</span>Carteira</button>
+    <button class="nav-btn" data-page="points"><span class="nav-ico">⚡</span>Comprar pontos</button>
+    <div class="nav-label">⚙️ Conta</div>
+    <button class="nav-btn" data-page="profile"><span class="nav-ico">👤</span>Meu perfil</button>
+    <button class="nav-btn" data-page="settings"><span class="nav-ico">⚙️</span>Configurações</button>
+    <div class="side-bottom">
+      <div class="user-mini">
+        <img class="avatar" id="sideAvatarImg" src="" alt="" style="display:none">
+        <div class="avatar" id="sideAvatar">U</div>
+        <div style="min-width:0">
+          <div id="sideName" style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis">Usuário</div>
+          <div class="small muted">Conta BotHub 🚀</div>
+        </div>
+        <button class="icon-btn" style="margin-left:auto;height:28px;width:28px" onclick="logout()" title="Sair">🚪</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="icon-btn mobile-menu" onclick="toggleSidebar()">☰</button>
+        <div>
+          <h1 class="page-title" id="pageTitle">Visão geral</h1>
+          <div class="page-sub" id="pageSub">Acompanhe o desempenho e estatísticas da sua conta em tempo real.</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" onclick="toast('🔔 Tudo em ordem por aqui!')" title="Notificações">🔔</button>
+        <button class="primary" onclick="openCreateBot()">✨ Novo bot</button>
+      </div>
+    </header>
+
+    <!-- Seção Visão Geral -->
+    <section id="page-dashboard" class="page">
+      
+      <!-- Banner ASCII -->
+      <div class="ascii-card" id="asciiCard">
+        <div class="ascii-header">
+          <div class="ascii-dots">
+            <div class="ascii-dot dot-r"></div>
+            <div class="ascii-dot dot-y"></div>
+            <div class="ascii-dot dot-g"></div>
+          </div>
+          <span>bothub-core://v3.8.0-stable</span>
+          <span>🟢 ONLINE</span>
+        </div>
+        <pre class="ascii-content"><span id="asciiTyped"></span><span class="typing-cursor" id="asciiCursor"></span></pre>
+      </div>
+
+      <div class="grid stats">
+        <div class="card">
+          <div class="stat-top">Bots cadastrados <span class="stat-ico">🤖</span></div>
+          <div class="stat-num" id="statBots">0</div>
+          <div class="stat-foot">Registrados na conta</div>
+        </div>
+        <div class="card">
+          <div class="stat-top">Bots online <span class="stat-ico">⚡</span></div>
+          <div class="stat-num" id="statOnline">0</div>
+          <div class="stat-foot">Ativos 24/7 agora</div>
+        </div>
+        <div class="card">
+          <div class="stat-top">Memória RAM <span class="stat-ico">📈</span></div>
+          <div class="stat-num" id="statRam">0 MB</div>
+          <div class="stat-foot">Worker ativo</div>
+        </div>
+        <div class="card">
+          <div class="stat-top">APIs Globais <span class="stat-ico">🌐</span></div>
+          <div class="stat-num" id="statGlobalApis">0</div>
+          <div class="stat-foot">Disponíveis no servidor</div>
+        </div>
+      </div>
+
+      <!-- Seção de Gráficos em Tempo Real -->
+      <div class="grid two-col" style="margin-bottom: 14px;">
+        <div class="card">
+          <div class="section-head">
+            <div><h2>📈 Desempenho em Tempo Real</h2><p>Flutuação de uso de rede e carga da nuvem.</p></div>
+          </div>
+          <div class="chart-container">
+            <canvas id="realtimeChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-head">
+            <div><h2>📊 Distribuição de Bots</h2><p>Tipos de hospedagem ativos na conta.</p></div>
+          </div>
+          <div class="chart-container">
+            <canvas id="donutChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid two-col">
+        <div class="card">
+          <div class="section-head">
+            <div><h2>🤖 Seus bots</h2><p>Gerencie seus projetos rapidamente.</p></div>
+            <button class="secondary" onclick="navigate('bots')">Ver todos</button>
+          </div>
+          <div class="bot-list" id="dashboardBots"></div>
+        </div>
+
+        <div class="card">
+          <div class="section-head">
+            <div><h2>⚡ Consumo de pontos</h2><p>Cálculo em tempo real (R$ 0,05/pt).</p></div>
+            <span class="stat-ico">💎</span>
+          </div>
+          <div class="wallet-balance" id="dashPoints">0 <span>pontos</span></div>
+          <div class="muted small" id="dashMoney">Equivalente a R$ 0,00</div>
+          <div class="usage-line"><span>Consumo por hora</span><b id="hourUsage">0 pontos</b></div>
+          <div class="usage-line" style="margin-top:6px"><span>Consumo por dia</span><b id="dayUsage">0 pontos</b></div>
+          <div class="bar" style="margin-top:12px"><i id="pointsBar"></i></div>
+          <div class="quick-actions">
+            <button class="primary" onclick="navigate('points')">⚡ Comprar pontos</button>
+            <button class="secondary" onclick="navigate('wallet')">💳 Ver carteira</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Seção Meus Bots -->
+    <section id="page-bots" class="page hidden">
+      <h2>🤖 Meus bots</h2><p class="page-intro">Crie e organize os bots vinculados à sua conta. Clique em configurar para gerenciar chaves LLM, token do Discord, arquivos e comandos personalizados.</p>
+      <div class="toolbar">
+        <input class="search" id="botSearch" placeholder="🔍 Pesquisar bot..." oninput="renderBots()">
+        <button class="primary" onclick="openCreateBot()">✨ Criar bot</button>
+      </div>
+      <div class="card table-wrap">
+        <table class="table">
+          <thead><tr><th>Bot</th><th>Status</th><th>Consumo / Modo</th><th>Ações</th></tr></thead>
+          <tbody id="botsTable"></tbody>
+        </table>
+        <div id="botsEmpty" class="empty hidden">🤖 Você ainda não tem bots cadastrados. Clique em "Criar bot" para começar!</div>
+      </div>
+    </section>
+
+    <!-- Seção APIs Globais e Contribuição -->
+    <section id="page-globalapi" class="page hidden">
+      <h2>🌐 APIs Globais e Recompensas</h2>
+      <p class="page-intro">Envie sua chave de API (Groq, OpenRouter, ChatGPT ou LLM7) para validarmos e adicionarmos ao servidor global. Você ganha **pontos grátis** e ajuda outros bots a aumentarem o limite de requisições!</p>
+      
+      <div class="grid two-col" style="margin-bottom: 16px;">
+        <div class="card">
+          <div class="section-head"><div><h2>📤 Enviar Nova API</h2><p>Validação automática em tempo real.</p></div></div>
+          <div class="field">
+            <label>Provedor da API</label>
+            <select id="apiProvider">
+              <option value="groq">Groq API</option>
+              <option value="openrouter">OpenRouter API</option>
+              <option value="chatgpt">ChatGPT (OpenAI)</option>
+              <option value="llm7">LLM7 API</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Chave da API (Token / Secret)</label>
+            <input id="apiKeyInput" type="password" placeholder="sk-or-v1-... ou gsk_...">
+          </div>
+          <button class="primary" onclick="submitAndVerifyApi()" style="margin-top:6px">🔍 Verificar e Enviar API</button>
+        </div>
+
+        <div class="card">
+          <div class="section-head"><div><h2>💡 Vantagens Globais</h2><p>Por que compartilhar?</p></div></div>
+          <ul style="color:var(--muted);font-size:13px;line-height:1.8;padding-left:18px;margin:8px 0">
+            <li>Ganhe pontos instantâneos após a validação bem-sucedida.</li>
+            <li>Seu bot pode usar o pool global de APIs para suportar alta carga sem esgotar recursos.</li>
+            <li>Reduz o consumo no modo automático e evita gargalos no servidor.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-head"><div><h2>🌐 APIs Ativas no Servidor Global</h2><p>Lista de chaves validadas e disponíveis para uso.</p></div></div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Provedor</th><th>Status</th><th>Latência</th><th>Ação</th></tr></thead>
+            <tbody id="globalApiTable"></tbody>
+          </table>
+          <div id="globalApiEmpty" class="empty hidden">Nenhuma API global cadastrada no momento. Seja o primeiro a enviar!</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Seção Arquivos Globais -->
+    <section id="page-files" class="page hidden">
+      <h2>📁 Arquivos Globais</h2><p class="page-intro">Gerenciamento geral de scripts e dados do servidor. Cada bot também possui sua própria aba de arquivos nas configurações.</p>
+      <div class="card">
+        <div class="empty">
+          <div style="font-size:30px; margin-bottom:8px">📦</div>
+          Worker conectado e pronto para sincronizar arquivos.<br>
+          <span class="small muted">Dica: abra o painel de configurações de qualquer bot para editar os arquivos específicos dele. ✨</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Seção Carteira -->
+    <section id="page-wallet" class="page hidden">
+      <h2>💳 Carteira</h2><p class="page-intro">Acompanhe seu saldo em pontos e projeções de consumo anti-bular.</p>
+      <div class="grid two-col">
+        <div class="card">
+          <div class="stat-top">Saldo disponível <span class="stat-ico">💎</span></div>
+          <div class="wallet-balance" id="walletPoints">0 <span>pontos</span></div>
+          <div class="muted small" id="walletValue">Valor equivalente: R$ 0,00</div>
+          <div class="quick-actions"><button class="primary" onclick="navigate('points')">⚡ Adicionar pontos</button></div>
+        </div>
+        <div class="card">
+          <h2>📊 Consumo estimado</h2>
+          <div class="usage-line"><span>Por hora</span><b id="walletHour">0 pontos</b></div>
+          <div class="usage-line"><span>Por dia</span><b id="walletDay">0 pontos</b></div>
+          <div class="usage-line"><span>Por mês (30 dias)</span><b id="walletMonth">0 pontos</b></div>
+          <p class="footer-note">🛡️ Sistema protegido contra exploits de ligar/desligar: o consumo é calculado continuamente pelo tempo exato de atividade (Uptime real).</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Seção Comprar Pontos -->
+    <section id="page-points" class="page hidden">
+      <h2>⚡ Comprar pontos</h2>
+      <p class="page-intro">🔥 Cada ponto custa apenas <b>R$ 0,05</b> (R$ 5,00 a cada 100 pts). Escolha um pacote ou personalize!</p>
+      
+      <div class="grid package-grid" id="packages"></div>
+      
+      <div class="card" style="margin-top:18px">
+        <div class="section-head"><div><h2>🎯 Compra personalizada</h2><p>Escolha exatamente quantos pontos deseja adicionar.</p></div></div>
+        <div class="field">
+          <label for="customPoints">Quantidade de pontos (Mínimo 100 pts / R$ 5,00)</label>
+          <input id="customPoints" type="number" min="100" step="10" value="100" oninput="updateCustomPrice()">
+        </div>
+        <div class="wallet-balance" id="customPrice" style="margin:10px 0">R$ 5,00</div>
+        <button class="primary" onclick="buyCustom()">🚀 Continuar compra</button>
+      </div>
+    </section>
+
+    <!-- Seção Meu Perfil -->
+    <section id="page-profile" class="page hidden">
+      <h2>👤 Meu perfil</h2><p class="page-intro">Informações e preferências da sua conta.</p>
+      <div class="grid profile-grid">
+        <div class="card" style="text-align:center">
+          <img class="avatar" id="profileAvatarImg" src="" alt="" style="display:none; height:64px;width:64px;border-radius:16px;margin:4px auto 12px;object-fit:cover">
+          <div class="avatar" id="profileAvatar" style="height:64px;width:64px;border-radius:16px;margin:4px auto 12px;font-size:22px">U</div>
+          <h2 id="profileName" style="font-size:17px">Usuário</h2>
+          <p class="muted small" id="profileProvider" style="margin-top:4px">Conectado</p>
+        </div>
+        <div class="card">
+          <h2>⚙️ Dados da conta</h2>
+          <div class="field"><label>Nome de exibição</label><input id="profileNameInput" maxlength="32" placeholder="Seu nome"></div>
+          <button class="primary" onclick="saveProfile()" style="margin-top:6px">💾 Salvar alterações</button>
+          <p class="footer-note">🛡️ Sua autenticação é protegida com segurança.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Seção Configurações -->
+    <section id="page-settings" class="page hidden">
+      <h2>⚙️ Configurações</h2><p class="page-intro">Ajustes e preferências gerais do painel.</p>
+      <div class="card">
+        <div class="section-head"><div><h2>🚪 Sessão e Conta</h2><p>Gerencie sua conexão atual.</p></div><button class="danger" onclick="logout()">Sair da conta</button></div>
+        <p class="footer-note">💾 Os dados desta versão demonstram segurança local no seu navegador.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="modalBg" class="modal-bg hidden" onclick="if(event.target===this)closeModal()"><div class="modal" id="modal"></div></div>
+<div id="toast" class="toast hidden"></div>
+
+<script>
+/* Fundo Cyber Matrix */
+const canvas = document.getElementById('matrixCanvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+const chars = '01BOT_HUB_AI_SYNAPSE_CORE_SYS_';
+const fontSize = 14;
+const columns = Math.floor(canvas.width / fontSize);
+const drops = [];
+for (let i = 0; i < columns; i++) { drops[i] = 1; }
+
+function drawMatrix() {
+  ctx.fillStyle = 'rgba(7, 10, 18, 0.15)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#38bdf8';
+  ctx.font = fontSize + 'px "Fira Code", monospace';
+
+  for (let i = 0; i < drops.length; i++) {
+    const text = chars.charAt(Math.floor(Math.random() * chars.length));
+    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) { drops[i] = 0; }
+    drops[i]++;
+  }
+}
+setInterval(drawMatrix, 50);
+
+const POINT_PRICE = 0.05, WHATSAPP_NUMBER = '5583999595014', DISCORD_URL = 'https://discord.com/channels/@me/1252679441629315144';
+
+const PACKAGES = [
+  {name:'Starter Semanal', days:7, points:168, price:8.40},
+  {name:'Quinzenal Pro', days:15, points:360, price:18.00},
+  {name:'Mensal Ultimate 🔥', days:31, points:744, price:35.00, featured:true},
+  {name:'Trimestral VIP', days:93, points:2232, price:90.00},
+  {name:'Semestral Master', days:186, points:4464, price:175.00},
+  {name:'Anual Legend 👑', days:365, points:8760, price:320.00}
+];
+
+const $=id=>document.getElementById(id);
+let data = loadData();
+let currentPage = 'dashboard';
+let asciiAnimated = false;
+
+function loadData(){
+  try{
+    let d = JSON.parse(localStorage.getItem('bothub_data'));
+    if(!d) throw new Error();
+    if(!d.globalApis) d.globalApis = [];
+    if(!d.bots) d.bots = [];
+    d.bots.forEach(b => {
+      if(!b.files) b.files = [{name: 'index.js', content: '// Código principal do bot\nconsole.log("Bot iniciado!");'}];
+      if(!b.commands) b.commands = [];
+      if(!b.apiKeys) b.apiKeys = { llm7: '', groq: '', openrouter: '', chatgpt: '' };
+      if(!b.discordToken) b.discordToken = '';
+      if(!b.avatarUrl) b.avatarUrl = '';
+      if(!b.description) b.description = '';
+    });
+    return d;
+  }catch{
+    return {user:null, points:150, bots:[], globalApis:[]};
+  }
+}
+
+function save(){
+  localStorage.setItem('bothub_data',JSON.stringify(data));
+  renderAll();
+}
+
+function money(n){return Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+const asciiArtTarget = ` ____        _   _     _      _     
+| __ )  ___ | |_| |__ | |  _ | |__  
+|  _ \\ / _ \\| __| '_ \\| | | || '_ \\ 
+| |_) | (_) | |_| | | | |_| || |_) |
+|____/ \\___/ \\__|_| |_|\\____/ \\___/ 
+
+         [ CLOUD, BOTS & AI 24/7 ]
+`;
+
+const randomGlitchChars = '01';
+
+function renderAsciiArray(arr) {
+  const el = $('asciiTyped');
+  if(!el) return;
+  el.innerHTML = arr.join('').replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+}
+
+function startRandomCharacterGlitch() {
+  const asciiArray = asciiArtTarget.split('');
+  const glitchSymbols = ['I', '\\', '|', '.', ',', '-', '_', '#', '/', '(', ')'];
+  
+  function triggerGlitch() {
+    let indicesToGlitch = [];
+    while(indicesToGlitch.length < Math.floor(Math.random() * 3) + 1) {
+      let idx = Math.floor(Math.random() * asciiArray.length);
+      if (asciiArray[idx] !== '\n' && asciiArray[idx] !== ' ' && !indicesToGlitch.includes(idx)) {
+        indicesToGlitch.push(idx);
+      }
+    }
+    
+    let originalChars = indicesToGlitch.map(idx => ({ idx, char: asciiArray[idx] }));
+    indicesToGlitch.forEach(idx => {
+      asciiArray[idx] = glitchSymbols[Math.floor(Math.random() * glitchSymbols.length)];
+    });
+    
+    renderAsciiArray(asciiArray);
+    
+    let glitchDuration = Math.random() * 400 + 100;
+    setTimeout(() => {
+      originalChars.forEach(item => {
+        asciiArray[item.idx] = item.char;
+      });
+      renderAsciiArray(asciiArray);
+      
+      let nextTime = Math.random() * 900 + 50;
+      setTimeout(triggerGlitch, nextTime);
+    }, glitchDuration);
+  }
+  
+  let firstDelay = Math.random() * 900 + 50;
+  setTimeout(triggerGlitch, firstDelay);
+}
+
+function startTypewriterOnce() {
+  const el = $('asciiTyped');
+  const cursor = $('asciiCursor');
+  const card = $('asciiCard');
+  if(!el) return;
+
+  if (asciiAnimated) {
+    el.innerHTML = esc(asciiArtTarget).replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+    if(cursor) cursor.style.display = 'none';
+    if(card) card.classList.add('loop-active');
+    return;
+  }
+
+  asciiAnimated = true;
+  let iterations = 0;
+  const totalLength = asciiArtTarget.length;
+
+  function glitchFrame() {
+    let output = '';
+    for(let i = 0; i < totalLength; i++) {
+      let targetChar = asciiArtTarget.charAt(i);
+      if (targetChar === '\n') {
+        output += '<br>';
+      } else if (targetChar === ' ') {
+        output += '&nbsp;';
+      } else if (i < iterations) {
+        output += esc(targetChar);
+      } else {
+        output += randomGlitchChars.charAt(Math.floor(Math.random() * randomGlitchChars.length));
+      }
+    }
+    el.innerHTML = output;
+
+    if(iterations < totalLength) {
+      iterations += 3;
+      setTimeout(glitchFrame, 16);
+    } else {
+      el.innerHTML = esc(asciiArtTarget).replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+      if(cursor) cursor.style.display = 'none';
+      if(card) card.classList.add('loop-active');
+      startRandomCharacterGlitch();
+    }
+  }
+  glitchFrame();
+}
+
+/* Sistema Anti-Exploit de Uptime & Consumo Contínuo */
+function checkAndUpdateConsumption() {
+  const now = Date.now();
+  if(!data.lastCheck) {
+    data.lastCheck = now;
+    return;
+  }
+  let elapsedHours = (now - data.lastCheck) / 3600000;
+  if(elapsedHours <= 0) return;
+  data.lastCheck = now;
+
+  let totalCost = 0;
+  data.bots.forEach(b => {
+    if(b.online) {
+      let baseRate = b.type === 'ai' ? 2 : 1;
+      let hasApi = (b.apiKeys && (b.apiKeys.groq || b.apiKeys.openrouter || b.apiKeys.chatgpt || b.apiKeys.llm7)) || data.globalApis.length > 0;
+      if(b.type === 'ai' && !hasApi) {
+        baseRate = 2.5;
+      }
+      totalCost += baseRate * elapsedHours;
+    }
+  });
+
+  if(totalCost > 0) {
+    data.points = Math.max(0, data.points - totalCost);
+    if(data.points <= 0) {
+      data.bots.forEach(b => b.online = false);
+      toast('⚠️ Seus pontos esgotaram! Os bots foram colocados offline.');
+    }
+    save();
+  }
+}
+setInterval(checkAndUpdateConsumption, 10000);
+
+/* Gráficos com Chart.js */
+let realtimeChart, donutChart;
+
+function initCharts() {
+  const ctxLine = document.getElementById('realtimeChart')?.getContext('2d');
+  if(ctxLine && !realtimeChart) {
+    realtimeChart = new Chart(ctxLine, {
+      type: 'line',
+      data: {
+        labels: ['10s atrás', '8s atrás', '6s atrás', '4s atrás', '2s atrás', 'Agora'],
+        datasets: [{
+          label: 'Uso de Servidor / Carga (%)',
+          data: [15, 22, 18, 35, 28, 30],
+          borderColor: '#38bdf8',
+          backgroundColor: 'rgba(56, 189, 248, 0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+          y: { min: 0, max: 100, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+        }
+      }
+    });
+
+    setInterval(() => {
+      if(!realtimeChart) return;
+      let onlineCount = data.bots.filter(b=>b.online).length;
+      let baseLoad = onlineCount > 0 ? 25 + (onlineCount * 12) : 8;
+      let randomVal = Math.floor(Math.random() * 15) + baseLoad;
+      randomVal = Math.min(95, Math.max(5, randomVal));
+
+      realtimeChart.data.datasets[0].data.shift();
+      realtimeChart.data.datasets[0].data.push(randomVal);
+      realtimeChart.update('none');
+    }, 2000);
+  }
+
+  const ctxDonut = document.getElementById('donutChart')?.getContext('2d');
+  if(ctxDonut && !donutChart) {
+    donutChart = new Chart(ctxDonut, {
+      type: 'doughnut',
+      data: {
+        labels: ['Standard', 'AI Advanced'],
+        datasets: [{
+          data: [0, 0],
+          backgroundColor: ['#3b82f6', '#a855f7'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#f1f5f9', font: { size: 11 } } }
+        }
+      }
+    });
+  }
+}
+
+function updateDonutData() {
+  if(!donutChart) return;
+  let standardCount = data.bots.filter(b => b.type === 'standard').length;
+  let aiCount = data.bots.filter(b => b.type === 'ai').length;
+  donutChart.data.datasets[0].data = [standardCount, aiCount];
+  donutChart.update();
+}
+
+function socialLogin(provider){
+  let name = prompt('🎮 Modo de demonstração: digite seu nick para entrar com ' + provider + ':');
+  if(!name || !name.trim()) return;
+  data.user = {name: name.trim(), provider};
+  data.lastCheck = Date.now();
+  save();
+  showApp();
+  toast('🚀 Sessão iniciada com sucesso!');
+}
+
+function showApp(){
+  $('loginScreen').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  renderAll();
+  startTypewriterOnce();
+  setTimeout(initCharts, 100);
+}
+
+function logout(){
+  data.user = null;
+  save();
+  $('app').classList.add('hidden');
+  $('loginScreen').classList.remove('hidden');
+}
+
+function toggleSidebar(){
+  $('sidebar').classList.toggle('open');
+}
+
+const pageInfo = {
+  dashboard:['Visão geral','Acompanhe o desempenho e estatísticas da sua conta.'],
+  bots:['Meus bots','Gerencie os bots da sua conta e painel de configurações.'],
+  globalapi:['APIs Globais','Envie APIs, valide e ajude a comunidade.'],
+  files:['Arquivos globais','Gerenciamento de arquivos e dados.'],
+  wallet:['Carteira','Saldo e consumo de pontos.'],
+  points:['Comprar pontos','Adicione pontos à sua conta com facilidade.'],
+  profile:['Meu perfil','Informações e dados da sua conta.'],
+  settings:['Configurações','Preferências do painel.']
+};
+
+function navigate(p){
+  currentPage = p;
+  document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));
+  $('page-'+p).classList.remove('hidden');
+  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.toggle('active', x.dataset.page===p));
+  $('pageTitle').textContent = pageInfo[p][0];
+  $('pageSub').textContent = pageInfo[p][1];
+  $('sidebar').classList.remove('open');
+  window.scrollTo({top:0, behavior:'smooth'});
+  renderAll();
+  if(p === 'dashboard') {
+    const el = $('asciiTyped');
+    if(el) el.innerHTML = esc(asciiArtTarget).replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+    const cursor = $('asciiCursor');
+    if(cursor) cursor.style.display = 'none';
+    const card = $('asciiCard');
+    if(card) card.classList.add('loop-active');
+    setTimeout(initCharts, 50);
+  }
+}
+
+document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
+
+function getActiveStats(){
+  let onlineBots = data.bots.filter(b=>b.online);
+  let perHour = onlineBots.reduce((acc, b) => {
+    let rate = b.type === 'ai' ? 2 : 1;
+    let hasApi = (b.apiKeys && (b.apiKeys.groq || b.apiKeys.openrouter || b.apiKeys.chatgpt || b.apiKeys.llm7)) || data.globalApis.length > 0;
+    if(b.type === 'ai' && !hasApi) rate = 2.5;
+    return acc + rate;
+  }, 0);
+  let perDay = Math.round(perHour * 24 * 10) / 10;
+  let perMonth = Math.round(perHour * 720 * 10) / 10;
+  return { onlineCount: onlineBots.length, perHour, perDay, perMonth };
+}
+
+function renderAll(){
+  if(!data.user) return;
+  const stats = getActiveStats();
+  $('sideName').textContent = data.user.name;
+  $('sideAvatar').textContent = data.user.name[0].toUpperCase();
+  if(data.user.avatarUrl) {
+    $('sideAvatarImg').src = data.user.avatarUrl;
+    $('sideAvatarImg').style.display = 'block';
+    $('sideAvatar').style.display = 'none';
+  }
+  
+  $('statBots').textContent = data.bots.length;
+  $('statOnline').textContent = stats.onlineCount;
+  $('statRam').textContent = (stats.onlineCount * 128 + 64) + ' MB';
+  $('statGlobalApis').textContent = data.globalApis.length;
+
+  $('dashPoints').innerHTML = `${Math.floor(data.points).toLocaleString('pt-BR')} <span>pontos</span>`;
+  $('dashMoney').textContent = 'Equivalente a ' + money(data.points * POINT_PRICE);
+  $('hourUsage').textContent = stats.perHour + ' pontos';
+  $('dayUsage').textContent = stats.perDay + ' pontos';
+  $('pointsBar').style.width = Math.min(100, data.points ? data.points / Math.max(1, stats.perDay * 30) * 100 : 0) + '%';
+  
+  $('walletPoints').innerHTML = `${Math.floor(data.points).toLocaleString('pt-BR')} <span>pontos</span>`;
+  $('walletValue').textContent = 'Valor equivalente: ' + money(data.points * POINT_PRICE);
+  $('walletHour').textContent = stats.perHour + ' pontos';
+  $('walletDay').textContent = stats.perDay + ' pontos';
+  $('walletMonth').textContent = stats.perMonth + ' pontos';
+
+  $('profileName').textContent = data.user.name;
+  $('profileAvatar').textContent = data.user.name[0].toUpperCase();
+  if(data.user.avatarUrl) {
+    $('profileAvatarImg').src = data.user.avatarUrl;
+    $('profileAvatarImg').style.display = 'block';
+    $('profileAvatar').style.display = 'none';
+  }
+  $('profileNameInput').value = data.user.name;
+  $('profileProvider').textContent = 'Conectado via ' + data.user.provider + ' 🛡️';
+
+  renderDashboardBots();
+  renderBots();
+  renderGlobalApis();
+  renderPackages();
+  updateDonutData();
+}
+
+function renderDashboardBots(){
+  const el = $('dashboardBots');
+  if(!data.bots.length){
+    el.innerHTML = '<div class="empty">🤖 Nenhum bot cadastrado ainda.<br><br><button class="muted-link" style="background:none;font-weight:600" onclick="openCreateBot()">✨ Criar meu primeiro bot ➔</button></div>';
+    return;
+  }
+  el.innerHTML = data.bots.slice(0,4).map(b=>{
+    let isAi = b.type === 'ai';
+    let displayAvatar = b.avatarUrl ? `<img class="bot-avatar" src="${b.avatarUrl}" alt="">` : `<div class="bot-avatar">${isAi ? '🧠' : '🤖'}</div>`;
+    return `
+      <div class="bot-row" style="cursor:pointer" onclick="openBotSettings('${b.id}')">
+        ${displayAvatar}
+        <div class="bot-info">
+          <div class="bot-name">${esc(b.name)} <span class="badge-type ${isAi?'ai':''}">${isAi?'🧠 AI Advanced':'🤖 Standard'}</span></div>
+          <div class="bot-meta">${b.description ? esc(b.description) : 'Criado em ' + new Date(b.created).toLocaleDateString('pt-BR')}</div>
+        </div>
+        <span class="status ${b.online?'':'off'}">${b.online?'Online 🟢':'Offline ⚪'}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderBots(){
+  if(!$('botsTable')) return;
+  let q = ($('botSearch')?.value||'').toLowerCase(), list = data.bots.filter(b=>b.name.toLowerCase().includes(q));
+  $('botsTable').innerHTML = list.map(b=>{
+    let isAi = b.type === 'ai';
+    let rate = isAi ? '2 pts/h' : '1 pt/h';
+    let displayAvatar = b.avatarUrl ? `<img class="bot-avatar" style="width:32px;height:32px;display:inline-block;vertical-align:middle;margin-right:6px" src="${b.avatarUrl}" alt="">` : `<b>${isAi ? '🧠' : '🤖'}</b> `;
+    return `
+      <tr>
+        <td>${displayAvatar}<b>${esc(b.name)}</b> <span class="badge-type ${isAi?'ai':''}">${isAi?'AI Advanced':'Standard'}</span><div class="small muted">ID: ${b.id.slice(0,8)}</div></td>
+        <td><span class="status ${b.online?'':'off'}">${b.online?'Online 🟢':'Offline ⚪'}</span></td>
+        <td>${b.online ? rate : '0 pts/h'} (${isAi ? 'IA' : 'Standard'})</td>
+        <td>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button class="primary" onclick="openBotSettings('${b.id}')" title="Configurações e Painel">⚙️ Config</button>
+            <button class="secondary" onclick="toggleBot('${b.id}')" title="Ligar/Desligar">${b.online?'⏹️':'▶️'}</button>
+            <button class="danger" onclick="deleteBot('${b.id}')" title="Excluir">🗑️</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  $('botsEmpty').classList.toggle('hidden', list.length > 0);
+}
+
+function openCreateBot(){
+  openModal(`
+    <div class="modal-head"><h3>✨ Criar novo bot</h3><button class="close" onclick="closeModal()">×</button></div>
+    <div class="field"><label>Nome do bot</label><input id="newBotName" maxlength="32" placeholder="Ex.: MeuBotFera#0001"></div>
+    <div class="field">
+      <label>Modo de Hospedagem / Recursos</label>
+      <select id="newBotType">
+        <option value="standard">🤖 Bot Standard (Comandos personalizados - 1 pt/h)</option>
+        <option value="ai">🧠 Bot AI Advanced (Inteligência Artificial - 2 pts/h)</option>
+      </select>
+    </div>
+    <p class="small muted" style="margin-top:6px">💡 Após criar, você poderá abrir o painel de configurações para adicionar o Token do Discord, Chaves LLM, arquivos e comandos personalizados!</p>
+    <div class="modal-actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="createBot()">✨ Criar bot</button></div>
+  `);
+  setTimeout(()=>$('newBotName')?.focus(), 50);
+}
+
+function createBot(){
+  let name = $('newBotName').value.trim();
+  let type = $('newBotType').value;
+  if(!name) return toast('⚠️ Digite um nome válido para o bot.');
+  
+  let newBot = {
+    id: crypto.randomUUID(),
+    name,
+    type,
+    online: false,
+    created: Date.now(),
+    discordToken: '',
+    avatarUrl: '',
+    description: 'Bot hospedado no BotHub 24/7',
+    apiKeys: { llm7: '', groq: '', openrouter: '', chatgpt: '' },
+    files: [{ name: 'index.js', content: `// Código do bot ${name}\nconst { Client } = require('discord.js');\nconst client = new Client({ intents: [3276799] });\n\nclient.on('ready', () => {\n  console.log(\`Logado como \${client.user.tag}!\`);\n});\n\nclient.login(process.env.DISCORD_TOKEN);` }],
+    commands: type === 'standard' ? [{ name: 'ping', action: 'Responde com Pong! e a latência.' }] : []
+  };
+
+  data.bots.push(newBot);
+  save();
+  closeModal();
+  toast('🎉 Bot criado com sucesso! Abra as configurações para personalizá-lo.');
+}
+
+/* Painel de Configurações do Bot (Config, LLM Keys, Discord Token, Files, Commands) */
+function openBotSettings(id, tab = 'general') {
+  let b = data.bots.find(x => x.id === id);
+  if(!b) return;
+
+  let contentHtml = '';
+
+  if(tab === 'general') {
+    contentHtml = `
+      <div class="field"><label>Nome do Bot</label><input id="setBotName" value="${esc(b.name)}" maxlength="32"></div>
+      <div class="field"><label>Modo</label><select id="setBotType"><option value="standard" ${b.type==='standard'?'selected':''}>🤖 Standard</option><option value="ai" ${b.type==='ai'?'selected':''}>🧠 AI Advanced</option></select></div>
+      <div class="field"><label>Descrição / Bio</label><input id="setBotDesc" value="${esc(b.description || '')}" maxlength="100"></div>
+      
+      <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+      
+      <div class="field">
+        <label>🎮 Token do Bot do Discord (Busca foto e nome automaticamente)</label>
+        <div style="display:flex;gap:8px">
+          <input id="setDiscordToken" type="password" value="${esc(b.discordToken)}" placeholder="MTEx... (Token do Discord Bot)">
+          <button class="primary" onclick="fetchDiscordTokenInfo('${b.id}')" style="white-space:nowrap">🔍 Buscar Info</button>
+        </div>
+      </div>
+      ${b.avatarUrl ? `<div style="display:flex;align-items:center;gap:10px;margin-top:8px"><img src="${b.avatarUrl}" style="width:40px;height:40px;border-radius:50%;object-fit:cover"><span class="small muted">Foto de perfil sincronizada do Discord!</span></div>` : ''}
+
+      <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+      
+      <h3 style="font-size:14px;color:var(--cyan);margin-bottom:8px">🔑 Chaves de API de IA (LLM7, Groq, OpenRouter, ChatGPT)</h3>
+      <div class="field"><label>LLM7 API Key</label><input id="apiKeyLlm7" type="password" value="${esc(b.apiKeys?.llm7||'')}" placeholder="llm7_..."></div>
+      <div class="field"><label>Groq API Key</label><input id="apiKeyGroq" type="password" value="${esc(b.apiKeys?.groq||'')}" placeholder="gsk_..."></div>
+      <div class="field"><label>OpenRouter API Key</label><input id="apiKeyOpenrouter" type="password" value="${esc(b.apiKeys?.openrouter||'')}" placeholder="sk-or-v1-..."></div>
+      <div class="field"><label>ChatGPT (OpenAI) API Key</label><input id="apiKeyChatgpt" type="password" value="${esc(b.apiKeys?.chatgpt||'')}" placeholder="sk-proj-..."></div>
+    `;
+  } else if(tab === 'files') {
+    contentHtml = `
+      <div class="section-head" style="margin-bottom:8px">
+        <h3 style="font-size:14px;color:var(--cyan)">📁 Arquivos do Bot</h3>
+        <button class="primary" onclick="addNewFile('${b.id}')" style="font-size:11px;padding:5px 10px">+ Novo arquivo</button>
+      </div>
+      <div id="botFilesList" style="display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto">
+        ${(b.files || []).map((f, idx) => `
+          <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <input value="${esc(f.name)}" onchange="updateFileName('${b.id}', ${idx}, this.value)" style="background:var(--panel-solid);border:1px solid var(--line);border-radius:6px;padding:4px 8px;color:white;font-size:12px">
+              <button class="danger" onclick="deleteBotFile('${b.id}', ${idx})" style="padding:3px 6px;font-size:11px">🗑️ Excluir</button>
+            </div>
+            <textarea rows="4" onchange="updateFileContent('${b.id}', ${idx}, this.value)" style="width:100%;background:#050810;color:var(--cyan);font-family:'Fira Code',monospace;font-size:11px;border:1px solid var(--line);border-radius:6px;padding:8px">${esc(f.content)}</textarea>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } else if(tab === 'commands') {
+    contentHtml = `
+      <div class="section-head" style="margin-bottom:8px">
+        <h3 style="font-size:14px;color:var(--cyan)">🤖 Comandos Personalizados (Bot Standard)</h3>
+        <button class="primary" onclick="addNewCommand('${b.id}')" style="font-size:11px;padding:5px 10px">+ Novo Comando</button>
+      </div>
+      <p class="small muted" style="margin-bottom:10px">Defina os comandos do seu bot Standard (ex: /ajuda, /pontos, /tocar, etc.) e o que cada um deve fazer:</p>
+      <div style="display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto">
+        ${(b.commands || []).map((c, idx) => `
+          <div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px">
+            <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:6px;align-items:center">
+              <input value="${esc(c.name)}" placeholder="Nome (/comando)" onchange="updateCmdName('${b.id}', ${idx}, this.value)" style="background:var(--panel-solid);border:1px solid var(--line);border-radius:6px;padding:6px;color:white;font-size:12px">
+              <input value="${esc(c.action)}" placeholder="O que o comando faz / resposta" onchange="updateCmdAction('${b.id}', ${idx}, this.value)" style="background:var(--panel-solid);border:1px solid var(--line);border-radius:6px;padding:6px;color:white;font-size:12px">
+              <button class="danger" onclick="deleteBotCommand('${b.id}', ${idx})" style="padding:6px;font-size:11px">🗑️</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  openModal(`
+    <div class="modal-head"><h3>⚙️ Configurações do Bot: ${esc(b.name)}</h3><button class="close" onclick="closeModal()">×</button></div>
+    
+    <div class="modal-tabs">
+      <button class="modal-tab-btn ${tab==='general'?'active':''}" onclick="openBotSettings('${b.id}', 'general')">⚙️ Geral & Chaves</button>
+      <button class="modal-tab-btn ${tab==='files'?'active':''}" onclick="openBotSettings('${b.id}', 'files')">📁 Arquivos (${(b.files||[]).length})</button>
+      <button class="modal-tab-btn ${tab==='commands'?'active':''}" onclick="openBotSettings('${b.id}', 'commands')">💬 Comandos (${(b.commands||[]).length})</button>
+    </div>
+
+    <div id="modalTabContent">
+      ${contentHtml}
+    </div>
+
+    <div class="modal-actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="saveBotSettings('${b.id}')">💾 Salvar alterações</button></div>
+  `);
+}
+
+function saveBotSettings(id) {
+  let b = data.bots.find(x => x.id === id);
+  if(!b) return;
+
+  let nameInput = $('setBotName');
+  let typeInput = $('setBotType');
+  let descInput = $('setBotDesc');
+  let tokenInput = $('setDiscordToken');
+
+  if(nameInput) b.name = nameInput.value.trim() || b.name;
+  if(typeInput) b.type = typeInput.value;
+  if(descInput) b.description = descInput.value.trim();
+  if(tokenInput) b.discordToken = tokenInput.value.trim();
+
+  let kLlm7 = $('apiKeyLlm7');
+  let kGroq = $('apiKeyGroq');
+  let kOpenrouter = $('apiKeyOpenrouter');
+  let kChatgpt = $('apiKeyChatgpt');
+
+  if(kLlm7) b.apiKeys.llm7 = kLlm7.value.trim();
+  if(kGroq) b.apiKeys.groq = kGroq.value.trim();
+  if(kOpenrouter) b.apiKeys.openrouter = kOpenrouter.value.trim();
+  if(kChatgpt) b.apiKeys.chatgpt = kChatgpt.value.trim();
+
+  save();
+  closeModal();
+  toast('✨ Configurações do bot salvas com sucesso!');
+}
+
+function fetchDiscordTokenInfo(id) {
+  let b = data.bots.find(x => x.id === id);
+  let token = $('setDiscordToken').value.trim();
+  if(!token) return toast('⚠️ Insira um token válido do Discord.');
+
+  toast('🔍 Conectando à API do Discord...');
+  setTimeout(() => {
+    b.discordToken = token;
+    b.avatarUrl = 'https://api.dicebear.com/7.x/bottts/svg?seed=' + encodeURIComponent(b.name);
+    if(confirm('🎮 Conectado com sucesso ao Discord!\n\nDeseja atualizar o nome do bot para o nome oficial registrado no Discord?')) {
+      b.name = 'Bot_' + Math.floor(Math.random() * 8999 + 1000);
+    }
+    save();
+    openBotSettings(id, 'general');
+    toast('🎉 Informações do bot atualizadas via Discord!');
+  }, 1000);
+}
+
+function addNewFile(botId) {
+  let b = data.bots.find(x => x.id === botId);
+  if(!b) return;
+  if(!b.files) b.files = [];
+  b.files.push({ name: 'command_' + (b.files.length + 1) + '.js', content: '// Novo arquivo\n' });
+  openBotSettings(botId, 'files');
+}
+
+function updateFileName(botId, idx, val) {
+  let b = data.bots.find(x => x.id === botId);
+  if(b && b.files[idx]) b.files[idx].name = val.trim();
+}
+
+function updateFileContent(botId, idx, val) {
+  let b = data.bots.find(x => x.id === botId);
+  if(b && b.files[idx]) b.files[idx].content = val;
+}
+
+function deleteBotFile(botId, idx) {
+  let b = data.bots.find(x => x.id === botId);
+  if(b && b.files) {
+    b.files.splice(idx, 1);
+    openBotSettings(botId, 'files');
+  }
+}
+
+function addNewCommand(botId) {
+  let b = data.bots.find(x => x.id === botId);
+  if(!b) return;
+  if(!b.commands) b.commands = [];
+  b.commands.push({ name: 'novo', action: 'Ação executada pelo comando.' });
+  openBotSettings(botId, 'commands');
+}
+
+function updateCmdName(botId, idx, val) {
+  let b = data.bots.find(x => x.id === botId);
+  if(b && b.commands[idx]) b.commands[idx].name = val.trim();
+}
+
+function updateCmdAction(botId, idx, val) {
+  let b = data.bots.find(x => x.id === botId);
+  if(b && b.commands[idx]) b.commands[idx].action = val.trim();
+}
+
+function deleteBotCommand(botId, idx) {
+  let b = data.bots.find(x => x.id === botId);
+  if(b && b.commands) {
+    b.commands.splice(idx, 1);
+    openBotSettings(botId, 'commands');
+  }
+}
+
+function toggleBot(id){
+  let b = data.bots.find(x=>x.id===id);
+  if(!b) return;
+  b.online = !b.online;
+  data.lastCheck = Date.now();
+  save();
+  toast(b.online ? '🟢 Bot ativado com sucesso!' : '⚪ Bot desativado.');
+}
+
+function deleteBot(id){
+  let b = data.bots.find(x=>x.id===id);
+  if(!b || !confirm('🗑️ Deseja realmente excluir o bot ' + b.name + '?')) return;
+  data.bots = data.bots.filter(x=>x.id!==id);
+  save();
+  toast('🗑️ Bot removido com sucesso.');
+}
+
+function submitAndVerifyApi() {
+  let provider = $('apiProvider').value;
+  let key = $('apiKeyInput').value.trim();
+  if(!key) return toast('⚠️ Digite a chave da API.');
+
+  toast('🔍 Verificando se a API está funcionando...');
+  setTimeout(() => {
+    let isValid = key.length > 8 && !key.includes('fake');
+    if(!isValid) {
+      return toast('❌ API inválida ou recusada no teste de handshake.');
+    }
+
+    data.points += 50;
+    data.globalApis.push({
+      id: crypto.randomUUID(),
+      provider: provider.toUpperCase(),
+      keyMask: key.slice(0, 6) + '...' + key.slice(-4),
+      latency: Math.floor(Math.random() * 120 + 45) + 'ms',
+      addedBy: data.user?.name || 'Anônimo'
+    });
+    $('apiKeyInput').value = '';
+    save();
+    navigate('globalapi');
+    toast('🎉 API válida! Verificada com sucesso e você ganhou +50 pontos de bônus!');
+  }, 1200);
+}
+
+function renderGlobalApis() {
+  const table = $('globalApiTable');
+  const empty = $('globalApiEmpty');
+  if(!table) return;
+
+  if(!data.globalApis || !data.globalApis.length) {
+    table.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  table.innerHTML = data.globalApis.map((api, idx) => `
+    <tr>
+      <td><b>${esc(api.provider)}</b><div class="small muted">Chave: ${esc(api.keyMask)}</div></td>
+      <td><span class="status">Ativa 🟢</span></td>
+      <td>${esc(api.latency)}</td>
+      <td>
+        <button class="danger" onclick="deleteGlobalApi(${idx})" style="padding:4px 8px;font-size:11px">Remover</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function deleteGlobalApi(idx) {
+  if(!confirm('Deseja realmente remover esta API do servidor global?')) return;
+  data.globalApis.splice(idx, 1);
+  save();
+  toast('🗑️ API global removida.');
+}
+
+function renderPackages(){
+  $('packages').innerHTML = PACKAGES.map(p=>`
+    <div class="card package ${p.featured?'featured':''}">
+      ${p.featured?'<span class="status" style="margin-bottom:10px;align-self:flex-start">🔥 Mais Popular</span>':''}
+      <h3>${p.name}</h3>
+      <div class="price">${money(p.price)}</div>
+      <div class="points">${p.points.toLocaleString('pt-BR')} pontos</div>
+      <ul>
+        <li>Duração: ${p.days} dias</li>
+        <li>Apenas R$ 0,05 / ponto</li>
+        <li>Ativação rápida via PIX</li>
+      </ul>
+      <button class="primary" onclick="openPurchase(${p.points},'${p.name}',${p.price})">⚡ Escolher pacote</button>
+    </div>
+  `).join('');
+}
+
+function updateCustomPrice(){
+  let n = Math.max(0, Math.floor(Number($('customPoints').value)||0));
+  $('customPrice').textContent = money(n * POINT_PRICE);
+}
+
+function buyCustom(){
+  let n = Math.floor(Number($('customPoints').value));
+  if(!n || n < 100) return toast('⚠️ O pedido mínimo é de 100 pontos (R$ 5,00).');
+  openPurchase(n, 'Compra personalizada', n * POINT_PRICE);
+}
+
+function openPurchase(points, label, price){
+  openModal(`
+    <div class="modal-head"><h3>💳 Finalizar solicitação</h3><button class="close" onclick="closeModal()">×</button></div>
+    <div class="card" style="padding:12px;background:var(--panel)">
+      <div class="muted small">${esc(label)}</div>
+      <div class="wallet-balance" style="margin:4px 0">${points.toLocaleString('pt-BR')} pontos</div>
+      <b style="font-size:14px; color: var(--green);">${money(price)}</b>
+    </div>
+    <p class="muted small" style="margin-top:12px">💬 Escolha abaixo o canal para combinar o pagamento via PIX:</p>
+    <div class="purchase-choice">
+      <button onclick="sendPurchase('WhatsApp',${points},'${esc(label)}',${price})">💬 WhatsApp</button>
+      <button onclick="sendPurchase('Discord',${points},'${esc(label)}',${price})">🎮 Discord</button>
+    </div>
+  `);
+}
+
+function sendPurchase(method, points, label, price){
+  let msg = `Olá! Quero comprar ${points} pontos do BotHub (R$ 0,05/pt). Pacote: ${label}. Valor: ${money(price)}. Usuário: ${data.user?.name||'Não informado'}.`;
+  if(method==='WhatsApp'){
+    window.open('https://wa.me/'+WHATSAPP_NUMBER+'?text='+encodeURIComponent(msg),'_blank');
+  }else{
+    navigator.clipboard?.writeText(msg);
+    window.open(DISCORD_URL,'_blank');
+    toast('📋 Mensagem copiada! Cole no Discord.');
+  }
+  closeModal();
+}
+
+function saveProfile(){
+  let n = $('profileNameInput').value.trim();
+  if(!n) return toast('⚠️ Digite um nome válido.');
+  data.user.name = n;
+  save();
+  toast('✨ Perfil atualizado com sucesso!');
+}
+
+function openModal(html){
+  $('modal').innerHTML = html;
+  $('modalBg').classList.remove('hidden');
+}
+
+function closeModal(){
+  $('modalBg').classList.add('hidden');
+}
+
+let toastTimer;
+function toast(msg){
+  let t = $('toast');
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.add('hidden'), 2800);
+}
+
+if(data.user) {
+  showApp();
+}
+updateCustomPrice();
+</script>
+</body>
+</html>
