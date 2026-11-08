@@ -218,8 +218,16 @@ def main() -> int:
         while True:
             time.sleep(CHECK_INTERVAL)
             if worker_process.poll() is not None:
-                log.warning("Worker encerrou com código %s. Reiniciando em %ss.",
-                            worker_process.returncode, RESTART_DELAY)
+                exit_code = worker_process.returncode
+                if exit_code == 0:
+                    log.warning(
+                        "Worker encerrou normalmente (código 0). Isso pode ocorrer após uma atualização; "
+                        "o supervisor iniciará uma nova instância em %ss.",
+                        RESTART_DELAY,
+                    )
+                else:
+                    log.warning("Worker encerrou com código %s. Reiniciando em %ss.",
+                                exit_code, RESTART_DELAY)
                 time.sleep(RESTART_DELAY)
                 worker_process = start_worker()
                 continue
