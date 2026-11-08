@@ -140,6 +140,12 @@ def main():
     print("[BotHub Installer] Para iniciar novamente:")
     print(" ", str(PYTHON), str(WORKER))
     print("[BotHub Installer] Observação: ative Anonymous em Firebase Authentication > Sign-in method antes da primeira execução.")
+    # Quando chamado pelo start.py supervisor, este instalador apenas prepara
+    # o ambiente. O supervisor é o único responsável por manter/reiniciar o worker.
+    if os.environ.get("BOTHUB_SUPERVISED") == "1":
+        print("[BotHub Installer] Modo supervisionado: ambiente pronto; start.py iniciará o worker.", flush=True)
+        return 0
+
     service_started = configure_autostart()
     if service_started:
         print("[BotHub Installer] O serviço cuidará de manter o worker ligado após reinicializações.")
