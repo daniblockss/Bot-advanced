@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard & Cluster Control</title>
+<title>BotHub — Cyber Dashboard AI & Standard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+<!-- Importando o Chart.js para os gráficos em tempo real -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 :root{
@@ -58,7 +59,7 @@ button{cursor:pointer;border:0;background:none;color:inherit}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .page{animation:fadeIn .3s cubic-bezier(0.16, 1, 0.3, 1)}
 
-/* Tela de Login Firebase */
+/* Tela de Login */
 .login-wrap{
   min-height:100vh;
   display:grid;
@@ -117,7 +118,7 @@ select{min-height:42px}
 .auth-btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
 .login-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.5;margin-top:18px}
 
-/* App Layout & Sidebar */
+/* App Layout & Sidebar Responsiva Corrigida para Telas Verticais */
 .app{display:grid;grid-template-columns:260px 1fr;min-height:100vh;position:relative;z-index:2}
 .sidebar{
   border-right:1px solid var(--line);
@@ -126,8 +127,8 @@ select{min-height:42px}
   display:flex;flex-direction:column;
   position:sticky;top:0;height:100vh;
   overflow-y:auto;
-  z-index:30;
-  transition:transform .3s ease;
+  z-index:40;
+  transition:transform .3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .sidebar::-webkit-scrollbar{width:3px}
 .sidebar .brand{padding:2px 6px 20px}
@@ -288,6 +289,11 @@ button.danger:hover{background:rgba(244,63,94,0.22)}
 
 .two-col{grid-template-columns:1fr 1fr}
 
+/* Banner ASCII com Animação Cyber Corrigida */
+@keyframes subtlePulse {
+  0%, 100% { opacity: 0.88; }
+  50% { opacity: 1; text-shadow: 0 0 10px rgba(56, 189, 248, 0.35); }
+}
 .ascii-card{
   background: #050810;
   border: 1px solid var(--line);
@@ -299,6 +305,7 @@ button.danger:hover{background:rgba(244,63,94,0.22)}
   margin-bottom: 16px;
   overflow-x: auto;
 }
+.ascii-card.loop-active { animation: subtlePulse 5s ease-in-out infinite; }
 .ascii-header{
   display: flex;
   justify-content: space-between;
@@ -315,12 +322,33 @@ button.danger:hover{background:rgba(244,63,94,0.22)}
 .dot-y { background: #f59e0b; }
 .dot-g { background: var(--green); }
 pre.ascii-content{margin: 0;line-height: 1.2;white-space: pre;}
+.typing-cursor {
+  display: inline-block; width: 6px; height: 12px; background-color: var(--cyan);
+  vertical-align: middle; margin-left: 2px; animation: blinkCursor 0.8s infinite;
+}
+@keyframes blinkCursor{0%,100%{opacity:1}50%{opacity:0}}
 
 .badge{font-size:11px;padding:4px 9px;border-radius:20px;background:rgba(16, 185, 129, 0.12);color:#34d399;font-weight:600;border:1px solid rgba(16,185,129,0.25);white-space:nowrap}
 .badge.off{background:rgba(244,63,94,0.12);color:#fb7185;border-color:rgba(244,63,94,0.25)}
 
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
+
+/* Estilo detalhado para os Bots com foto e info rica */
+.bot-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 10px; }
+.bot-detailed-card {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s;
+}
+.bot-detailed-card:hover { border-color: var(--cyan); background: rgba(56,189,248,0.03); }
+.bot-card-header { display: flex; align-items: center; gap: 10px; }
+.bot-avatar-lg { width: 44px; height: 44px; border-radius: 12px; object-fit: cover; background: linear-gradient(135deg, var(--blue), var(--purple)); display: grid; place-items: center; font-size: 20px; font-weight: 700; color: #fff; }
 
 .chart-container { position: relative; width: 100%; height: 210px; margin-top: 10px; }
 
@@ -333,6 +361,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
 
 .mobile-menu{display:none}
 
+/* Ajustes perfeitos para telas verticais e celulares */
 @media(max-width:1050px){
   .stats{grid-template-columns:repeat(2,1fr)}
   .two-col{grid-template-columns:1fr}
@@ -340,8 +369,8 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
 @media(max-width:768px){
   .app{grid-template-columns:1fr}
   .sidebar{
-    position:fixed;z-index:40;left:-280px;width:260px;height:100vh;
-    transition:left .25s ease;box-shadow:var(--shadow);
+    position:fixed; z-index:100; left:-280px; width:260px; height:100vh;
+    transition:left .25s cubic-bezier(0.16, 1, 0.3, 1); box-shadow:var(--shadow);
   }
   .sidebar.open{left:0}
   .main{padding:16px 12px 40px}
@@ -409,7 +438,8 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
 
     <!-- Seção Visão Geral -->
     <div id="page-overview" class="page">
-      <div class="ascii-card">
+      <!-- Banner ASCII com efeito de digitação e glitch reativado -->
+      <div class="ascii-card" id="asciiCard">
         <div class="ascii-header">
           <div class="ascii-dots">
             <div class="ascii-dot dot-r"></div>
@@ -419,12 +449,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
           <span>bothub-cluster://core-v3.8</span>
           <span>🟢 LIVE SYNC</span>
         </div>
-        <pre class="ascii-content"> ____        _   _     _      _     
-| __ )  ___ | |_| |__ | |  _ | |__  
-|  _ \ / _ \| __| '_ \| | | || '_ \ 
-| |_) | (_) | |_| | | | |_| || |_) |
-|____/ \___/ \__|_| |_|\____/ \___/ 
-       [ CLUSTER CONTROLLER 24/7 ]</pre>
+        <pre class="ascii-content"><span id="asciiTyped"></span><span class="typing-cursor" id="asciiCursor"></span></pre>
       </div>
 
       <div class="grid stats">
@@ -450,7 +475,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
         </div>
       </div>
 
-      <div class="grid stats" style="grid-template-columns:repeat(5,minmax(0,1fr));margin-top:14px">
+      <div class="grid stats" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));margin-top:14px">
         <div class="card" style="margin-bottom:0">
           <div class="muted small">RAM livre total</div>
           <div id="ramFreeTotal" class="stat-num" style="font-size:18px">—</div>
@@ -541,9 +566,9 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
       </div>
 
       <div class="card">
-        <h2>Bots cadastrados no cluster</h2>
+        <h2>Bots cadastrados no cluster (Informações e fotos detalhadas)</h2>
         <div id="bots"><span class="muted">Aguardando dados…</span></div>
-        <div id="queueMsg" class="hint"></div>
+        <div id="queueMsg" class="hint" style="margin-top: 10px;"></div>
       </div>
     </div>
 
@@ -571,7 +596,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
         <p class="hint">Navega somente dentro da pasta do bot escolhido neste worker. Permite ler, criar, editar e excluir arquivos de texto de até 256 KiB.</p>
         <label>Bot / pasta de trabalho</label>
         <select id="fileBot"><option value="">Selecione um bot</option></select>
-        <div style="display:flex;gap:8px;margin-top:10px">
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button id="loadFiles" class="secondary">Abrir pasta / atualizar</button>
           <button id="restartFileBot" class="secondary">Reiniciar bot</button>
         </div>
@@ -581,7 +606,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
         <input id="filePath" placeholder="Ex.: main8.py">
         <label>Conteúdo UTF-8 (máximo 256 KiB)</label>
         <textarea id="fileContent" rows="10" spellcheck="false" placeholder="Selecione um arquivo na lista ou informe um novo caminho permitido."></textarea>
-        <div style="display:flex;gap:8px;margin-top:10px">
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button id="saveFile" class="primary">Salvar / criar arquivo</button>
           <button id="deleteFile" class="danger">Excluir arquivo</button>
         </div>
@@ -641,7 +666,87 @@ function drawMatrix() {
 }
 setInterval(drawMatrix, 50);
 
-/* Navegação por abas */
+/* Animação ASCII com Glitch & Typewriter reativada */
+const asciiArtTarget = ` ____        _   _     _      _     
+| __ )  ___ | |_| |__ | |  _ | |__  
+|  _ \\ / _ \\| __| '_ \\| | | || '_ \\ 
+| |_) | (_) | |_| | | | |_| || |_) |
+|____/ \\___/ \\__|_| |_|\\____/ \\___/ 
+
+           [ CLOUD, BOTS & AI 24/7 ]
+`;
+const randomGlitchChars = '01?!*@&$#%.,•_~|\\';
+let asciiAnimated = false;
+
+function renderAsciiArray(arr) {
+  const el = $('asciiTyped');
+  if(!el) return;
+  el.innerHTML = arr.join('').replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+}
+
+function startRandomCharacterGlitch() {
+  const asciiArray = asciiArtTarget.split('');
+  const glitchSymbols = ['I', '\\', '|', '.', ',', '-', '_', '#', '/', '(', ')'];
+  function triggerGlitch() {
+    let indicesToGlitch = [];
+    while(indicesToGlitch.length < Math.floor(Math.random() * 3) + 1) {
+      let idx = Math.floor(Math.random() * asciiArray.length);
+      if (asciiArray[idx] !== '\n' && asciiArray[idx] !== ' ' && !indicesToGlitch.includes(idx)) {
+        indicesToGlitch.push(idx);
+      }
+    }
+    let originalChars = indicesToGlitch.map(idx => ({ idx, char: asciiArray[idx] }));
+    indicesToGlitch.forEach(idx => {
+      asciiArray[idx] = glitchSymbols[Math.floor(Math.random() * glitchSymbols.length)];
+    });
+    renderAsciiArray(asciiArray);
+    setTimeout(() => {
+      originalChars.forEach(item => { asciiArray[item.idx] = item.char; });
+      renderAsciiArray(asciiArray);
+      setTimeout(triggerGlitch, Math.random() * 90);
+    }, Math.random() * 200);
+  }
+  setTimeout(triggerGlitch, Math.random() * 90);
+}
+
+function startTypewriterOnce() {
+  const el = $('asciiTyped');
+  const cursor = $('asciiCursor');
+  const card = $('asciiCard');
+  if(!el) return;
+  if (asciiAnimated) {
+    el.innerHTML = esc(asciiArtTarget).replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+    if(cursor) cursor.style.display = 'none';
+    if(card) card.classList.add('loop-active');
+    return;
+  }
+  asciiAnimated = true;
+  let iterations = 0;
+  const totalLength = asciiArtTarget.length;
+  function glitchFrame() {
+    let output = '';
+    for(let i = 0; i < totalLength; i++) {
+      let targetChar = asciiArtTarget.charAt(i);
+      if (targetChar === '\n') output += '<br>';
+      else if (targetChar === ' ') output += '&nbsp;';
+      else if (i < iterations) output += esc(targetChar);
+      else output += randomGlitchChars.charAt(Math.floor(Math.random() * randomGlitchChars.length));
+    }
+    el.innerHTML = output;
+    if(iterations < totalLength) {
+      iterations += 4;
+      setTimeout(glitchFrame, 16);
+    } else {
+      el.innerHTML = esc(asciiArtTarget).replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+      if(cursor) cursor.style.display = 'none';
+      if(card) card.classList.add('loop-active');
+      startRandomCharacterGlitch();
+    }
+  }
+  glitchFrame();
+}
+
+/* Navegação por abas corrigida para mobile/vertical */
 function toggleSidebar() { $('sidebar').classList.toggle('open'); }
 const pageInfo = {
   overview: ['Visão geral do Cluster', 'Monitoramento em tempo real dos workers e instâncias.'],
@@ -660,7 +765,10 @@ function navigate(p){
   $('pageSub').textContent = pageInfo[p][1];
   $('sidebar').classList.remove('open');
   window.scrollTo({top:0, behavior:'smooth'});
-  if(p === 'overview' && realtimeChart) realtimeChart.update();
+  if(p === 'overview') {
+    startTypewriterOnce();
+    if(realtimeChart) realtimeChart.update();
+  }
 }
 document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
 
@@ -788,10 +896,34 @@ function drawBots(){
   $('active').textContent=reallyRunning.length;
   $('queued').textContent=queued.length;
 
-  $('bots').innerHTML=bots.length?bots.map(([id,b])=>{
+  /* Renderização aprimorada com Cards ricos, avatares/fotos e info detalhada do bot */
+  $('bots').innerHTML=bots.length ? `<div class="bot-card-grid">` + bots.map(([id,b])=>{
     const isRunning=running.has(id);
-    return '<div class="row"><div><strong>'+esc(b.name||'Bot')+'</strong><div class="hint">ID: <code>'+esc(id)+'</code><br>Dispositivo: '+esc(b.workerId||'Na fila')+' · '+(isRunning?'LIGADO (confirmado)':b.enabled?'Ativo, aguardando':'Desativado')+'</div></div><div style="display:flex;gap:6px"><button class="secondary" data-logs="'+esc(id)+'">Ver logs</button><button class="secondary" data-toggle="'+esc(id)+'" data-enabled="'+(b.enabled?'1':'0')+'">'+(b.enabled?'Pausar':'Ativar')+'</button><button class="danger" data-delete="'+esc(id)+'">Excluir</button></div></div>';
-  }).join(''):'<div class="muted">Nenhum bot cadastrado.</div>';
+    const avatarHtml = b.avatarUrl 
+      ? `<img class="bot-avatar-lg" src="${esc(b.avatarUrl)}" alt="Avatar">` 
+      : `<div class="bot-avatar-lg">🤖</div>`;
+    
+    return `
+      <div class="bot-detailed-card">
+        <div class="bot-card-header">
+          ${avatarHtml}
+          <div style="min-width:0;flex:1">
+            <div style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.name||'Bot')}</div>
+            <div class="small muted">ID: <code>${esc(id.slice(0,8))}</code></div>
+          </div>
+        </div>
+        <div class="small muted" style="line-height:1.4">
+          <div><b>Status:</b> ${isRunning ? '<span style="color:var(--green)">Ligado (Confirmado)</span>' : b.enabled ? '<span style="color:var(--cyan)">Ativo (Aguardando)</span>' : '<span style="color:var(--red)">Desativado</span>'}</div>
+          <div><b>Worker:</b> ${esc(b.workerId || 'Na fila / Nenhum')}</div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:auto;padding-top:6px;flex-wrap:wrap">
+          <button class="secondary" style="flex:1;padding:6px" data-logs="${esc(id)}">Logs</button>
+          <button class="secondary" style="flex:1;padding:6px" data-toggle="${esc(id)}" data-enabled="${b.enabled?'1':'0'}">${b.enabled?'Pausar':'Ativar'}</button>
+          <button class="danger" style="padding:6px 10px" data-delete="${esc(id)}">🗑️</button>
+        </div>
+      </div>
+    `;
+  }).join('') + `</div>` : '<div class="muted">Nenhum bot cadastrado.</div>';
 
   $('queueMsg').textContent=queued.length?'Servidores esgotados. Tente novamente mais tarde. ('+queued.length+' na fila)':'';
   document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>toggleBot(b.dataset.toggle,b.dataset.enabled!=='1'));
@@ -1090,6 +1222,7 @@ function start(){
   watch('bots',v=>{botData=v;drawBots();rebalance()});
   $('connection').textContent='Conectado';$('connection').className='badge';
   initRealtimeChart();
+  startTypewriterOnce();
 }
 
 onAuthStateChanged(auth,async user=>{
