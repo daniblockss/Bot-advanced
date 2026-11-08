@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#070a12">
+<title>BotHub — Cyber Dashboard AI & Standard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+<!-- Importando o Chart.js para os gráficos em tempo real -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{
+  --bg: #070a12;
+  --panel: #0d1322;
+  --panel-solid: #111a2e;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-hover: rgba(56, 189, 248, 0.3);
+  --muted: #94a3b8;
+  --text: #f1f5f9;
+  --blue: #3b82f6;
+  --cyan: #38bdf8;
+  --purple: #a855f7;
+  --green: #10b981;
+  --red: #f43f5e;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  --radius: 16px;
+}
+
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--cyan) transparent}
+*::-webkit-scrollbar{width:4px;height:4px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:var(--cyan);border-radius:10px}
+
+body{
+  margin:0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+#matrixCanvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.06;
+}
+
+button, input, select, textarea{font:inherit}
+button{cursor:pointer;border:0;background:none;color:inherit}
+.hidden{display:none!important}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.page{animation:fadeIn .3s cubic-bezier(0.16, 1, 0.3, 1)}
+
+/* Tela de Login Firebase */
+.login-wrap{
+  min-height:100vh;
+  display:grid;
+  place-items:center;
+  padding:16px;
+  position:relative;
+  z-index:2;
+}
+.login-card{
+  width:min(420px, 100%);
+  padding:32px 24px;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  background:var(--panel);
+  box-shadow:var(--shadow);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;letter-spacing:-0.5px}
+.logo{
+  height:36px;width:36px;
+  border-radius:10px;
+  display:grid;place-items:center;
+  background:linear-gradient(135deg, var(--blue), var(--purple));
+  box-shadow:0 4px 15px rgba(59,130,246,0.3);
+  font-size:17px;
+}
+.login-card .brand{justify-content:center;margin-bottom:20px}
+.login-card h1{text-align:center;font-size:24px;letter-spacing:-0.5px;margin:0 0 6px}
+.login-card>p{text-align:center;color:var(--muted);margin:0 0 22px;font-size:13px}
+
+.field{display:flex;flex-direction:column;gap:6px;margin:12px 0}
+.field label{font-size:12px;color:var(--muted);font-weight:500}
+.field input, .field select, .field textarea{
+  background:var(--panel-solid);
+  color:white;
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:11px 12px;
+  outline:none;
+}
+.field input:focus, .field select:focus, .field textarea:focus{border-color:var(--cyan)}
+
+.auth-btn{
+  width:100%;height:46px;
+  border-radius:12px;
+  background:var(--cyan);
+  color:#070a12;
+  font-weight:700;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  margin:14px 0 6px;
+  transition:all .2s ease;
+}
+.auth-btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.login-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.5;margin-top:18px}
+.error{color:#fb7185;font-size:12px;white-space:pre-wrap;margin-top:6px}
+
+/* App Layout & Sidebar */
+.app{display:grid;grid-template-columns:250px 1fr;min-height:100vh;position:relative;z-index:2}
+.sidebar{
+  border-right:1px solid var(--line);
+  background:var(--panel);
+  padding:16px 12px;
+  display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh;
+  overflow-y:auto;
+  z-index:30;
+  transition:transform .3s ease;
+}
+.sidebar::-webkit-scrollbar{width:3px}
+.sidebar .brand{padding:2px 6px 20px}
+.nav-label{font-size:10px;color:var(--cyan);text-transform:uppercase;letter-spacing:1.2px;padding:12px 8px 4px;font-weight:700}
+
+.nav-btn{
+  width:100%;display:flex;align-items:center;gap:10px;
+  padding:10px 12px;
+  border-radius:10px;
+  background:transparent;
+  color:var(--muted);
+  text-align:left;
+  margin:3px 0;
+  transition:all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight:500;
+  font-size:13.5px;
+  position:relative;
+  overflow:hidden;
+}
+
+.nav-btn::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px;
+  height: 60%;
+  background: var(--cyan);
+  border-radius: 0 4px 4px 0;
+  transition: transform 0.2s ease;
+}
+
+.nav-btn:hover{
+  background: rgba(56, 189, 248, 0.08);
+  color: #fff;
+  transform: translateX(4px);
+}
+.nav-btn.active{
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.15), rgba(59, 130, 246, 0.05));
+  color: #fff;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  box-shadow: inset 0 0 12px rgba(56, 189, 248, 0.08), 0 4px 12px rgba(0, 0, 0, 0.2);
+  font-weight: 600;
+}
+.nav-btn.active::before { transform: translateY(-50%) scaleY(1); }
+.nav-ico{width:18px;text-align:center;font-size:15px}
+
+.side-bottom{margin-top:auto;padding-top:10px}
+.user-mini{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 10px;
+  border-top:1px solid var(--line);
+  background:rgba(255,255,255,0.01);
+  border-radius:12px;
+}
+.avatar{
+  height:32px;width:32px;border-radius:9px;
+  background:linear-gradient(135deg,var(--blue),var(--purple));
+  display:grid;place-items:center;
+  font-weight:700;font-size:13px;
+  object-fit: cover;
+}
+
+.main{
+  min-width:0;
+  padding:20px 24px 40px;
+  max-width:1400px;
+  width:100%;
+  margin:0 auto;
+}
+.topbar{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:24px;gap:10px;
+}
+.page-title{font-size:20px;font-weight:800;letter-spacing:-0.5px;margin:0}
+.page-sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.top-actions{display:flex;align-items:center;gap:8px}
+
+.icon-btn{
+  height:36px;width:36px;
+  border-radius:10px;
+  background:var(--panel-solid);
+  border:1px solid var(--line);
+  color:var(--text);
+  display:grid;place-items:center;
+  transition:all .2s ease;
+}
+.icon-btn:hover{border-color:var(--cyan);background:var(--panel)}
+
+.primary{
+  background:linear-gradient(135deg, var(--blue), var(--cyan));
+  color:#070a12;
+  padding:9px 14px;
+  border-radius:10px;
+  font-weight:700;
+  box-shadow:0 4px 15px rgba(56,189,248,0.25);
+  transition:all .2s ease;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  font-size:13.5px;
+}
+.primary:hover{filter:brightness(1.08);transform:translateY(-1px)}
+
+.secondary{
+  background:rgba(255,255,255,0.04);
+  border:1px solid var(--line);
+  padding:8px 12px;
+  border-radius:10px;
+  color:var(--text);
+  font-weight:500;
+  transition:all .2s ease;
+  font-size:13px;
+}
+.secondary:hover{background:rgba(56,189,248,0.08);border-color:var(--line-hover)}
+
+.danger{
+  background:rgba(244,63,94,0.12);
+  color:#fb7185;
+  border:1px solid rgba(244,63,94,0.25);
+  padding:7px 10px;
+  border-radius:8px;
+  font-weight:500;
+  transition:all .2s ease;
+  font-size:13px;
+}
+.danger:hover{background:rgba(244,63,94,0.22)}
+
+.grid{display:grid;gap:14px}
+.stats{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:16px}
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:18px;
+  box-shadow:var(--shadow);
+  min-width:0;
+  margin-bottom: 14px;
+}
+.stat-top{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px;font-weight:500}
+.stat-ico{
+  height:32px;width:32px;border-radius:9px;
+  display:grid;place-items:center;
+  background:rgba(56,189,248,0.1);
+  color:var(--cyan);
+  font-size:14px;
+}
+.stat-num{font-size:24px;font-weight:800;letter-spacing:-0.5px;margin:8px 0 2px;color:#fff}
+.stat-foot{font-size:11px;color:var(--muted)}
+
+.two-col{grid-template-columns:1.4fr 1fr}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:14px}
+.section-head h2{font-size:16px;margin:0;font-weight:700}
+.section-head p{margin:2px 0 0;color:var(--muted);font-size:11.5px}
+
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 220px;
+  margin-top: 10px;
+}
+
+@keyframes subtlePulse {
+  0%, 100% { opacity: 0.88; }
+  50% { opacity: 1; text-shadow: 0 0 10px rgba(56, 189, 248, 0.35); }
+}
+
+.ascii-card{
+  background: #050810;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-family: 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--cyan);
+  margin-bottom: 16px;
+  overflow-x: auto;
+}
+.ascii-card.loop-active { animation: subtlePulse 5s ease-in-out infinite; }
+
+.ascii-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  color: var(--muted);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  padding-bottom: 5px;
+  font-size: 10px;
+}
+.ascii-dots { display: flex; gap: 4px; }
+.ascii-dot { width: 7px; height: 7px; border-radius: 50%; }
+.dot-r { background: var(--red); }
+.dot-y { background: #f59e0b; }
+.dot-g { background: var(--green); }
+pre.ascii-content{ margin: 0; line-height: 1.2; white-space: pre; }
+
+.typing-cursor {
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  background-color: var(--cyan);
+  vertical-align: middle;
+  margin-left: 2px;
+  animation: blinkCursor 0.8s infinite;
+}
+@keyframes blinkCursor{0%,100%{opacity:1}50%{opacity:0}}
+
+.badge-type {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--cyan);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  margin-left: 6px;
+}
+.badge-type.ai {
+  background: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.3);
+}
+
+.bot-list{display:flex;flex-direction:column;gap:8px}
+.bot-row{
+  display:flex;align-items:center;gap:12px;
+  padding:12px;
+  background:rgba(255,255,255,0.02);
+  border:1px solid var(--line);
+  border-radius:12px;
+  transition:all .2s ease;
+}
+.bot-row:hover{background:rgba(56,189,248,0.04);border-color:var(--cyan)}
+.bot-avatar{
+  height:38px;width:38px;border-radius:10px;
+  background:linear-gradient(135deg, var(--blue), var(--purple));
+  display:grid;place-items:center;
+  font-size:17px; object-fit: cover;
+}
+.bot-info{flex:1;min-width:0}
+.bot-name{font-weight:600;font-size:13.5px;display:flex;align-items:center;flex-wrap:wrap}
+.bot-meta{font-size:11px;color:var(--muted);margin-top:2px}
+
+.status{
+  font-size:10.5px;font-weight:600;
+  padding:3px 8px;
+  border-radius:20px;
+  background:rgba(16, 185, 129, 0.12);
+  color:#34d399;
+  display:inline-flex;align-items:center;gap:4px;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  white-space: nowrap;
+}
+.status::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor}
+.status.off{
+  background:rgba(148, 163, 184, 0.08);
+  color:#94a3b8;
+  border-color:transparent;
+}
+
+.badge{font-size:12px;padding:5px 8px;border-radius:99px;background:#123b35;color:var(--green);white-space:nowrap}
+.badge.off{background:#47202c;color:var(--red)}
+
+.usage-line{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin:12px 0 5px}
+.usage-line b{color:var(--text)}
+.bar{height:7px;border-radius:20px;background:rgba(255,255,255,0.06);overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,var(--blue),var(--cyan));width:0;transition:width .5s ease}
+.wallet-balance{font-size:26px;font-weight:800;letter-spacing:-1px;margin:4px 0;color:#fff}
+.wallet-balance span{font-size:12.5px;color:var(--muted);font-weight:500}
+.quick-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+
+.toolbar{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.search{
+  background:var(--panel-solid);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:10px 14px;
+  color:white;
+  outline:none;
+  min-width:200px;
+  flex:1;
+}
+.table-wrap{overflow-x:auto;padding:0}
+.table{width:100%;border-collapse:collapse;min-width:520px}
+.table th,.table td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);font-size:13px}
+.table th{color:var(--cyan);font-size:10.5px;text-transform:uppercase;letter-spacing:1px;font-weight:700}
+.table td{color:var(--text)}
+.empty{text-align:center;padding:36px 14px;color:var(--muted);border:1px dashed var(--line);border-radius:var(--radius);font-size:13px}
+
+.package-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.package{position:relative;overflow:hidden;display:flex;flex-direction:column}
+.package.featured{
+  border-color:rgba(56,189,248,0.4);
+  background:linear-gradient(150deg, rgba(15, 23, 42, 0.95), rgba(7, 10, 18, 0.98));
+}
+.package h3{margin:0 0 4px;font-size:16px}
+.package .price{font-size:24px;font-weight:800;margin:10px 0 2px;color:var(--cyan)}
+.package .points{font-size:12.5px;color:var(--muted)}
+.package ul{list-style:none;padding:0;margin:14px 0;color:var(--muted);font-size:12.5px;line-height:2;flex:1}
+.package li::before{content:'✨';margin-right:6px}
+.package .primary{width:100%;margin-top:auto}
+
+.profile-grid{grid-template-columns:1fr 1.5fr}
+
+/* Abas dentro do painel de configuração do bot */
+.modal-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+}
+.modal-tab-btn {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--line);
+  padding: 6px 12px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+.modal-tab-btn.active {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--cyan);
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.modal-bg{
+  position:fixed;inset:0;
+  background:rgba(2, 4, 8, 0.75);
+  backdrop-filter:blur(6px);
+  z-index:50;
+  display:grid;place-items:center;
+  padding:14px;
+  animation:fadeIn .2s ease;
+}
+.modal{
+  width:min(560px, 100%);
+  background:var(--panel-solid);
+  border:1px solid var(--cyan);
+  border-radius:var(--radius);
+  padding:22px;
+  box-shadow:var(--shadow);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.modal-head h3{margin:0;font-size:17px;color:var(--cyan)}
+.close{background:rgba(255,255,255,0.06);color:var(--muted);width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:15px}
+.close:hover{background:var(--cyan);color:#070a12}
+.modal-actions{display:flex;gap:8px;margin-top:18px}
+.modal-actions>*{flex:1}
+
+.toast{
+  position:fixed;bottom:16px;right:16px;
+  background:var(--panel-solid);
+  border:1px solid var(--cyan);
+  color:#fff;
+  padding:12px 16px;
+  border-radius:12px;
+  box-shadow:var(--shadow);
+  z-index:100;
+  font-weight:600;
+  display:flex;align-items:center;gap:8px;
+  font-size:13px;
+}
+.mobile-menu{display:none}
+.muted-link{color:var(--cyan);cursor:pointer;font-weight:600}
+.muted-link:hover{filter:brightness(1.2)}
+.footer-note{color:var(--muted);font-size:11.5px;line-height:1.5;margin-top:14px}
+
+@media(max-width:1050px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .two-col{grid-template-columns:1fr}
+  .package-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:768px){
+  .app{grid-template-columns:1fr}
+  .sidebar{
+    position:fixed;z-index:40;left:-260px;width:240px;height:100vh;
+    transition:left .25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow:var(--shadow);
+  }
+  .sidebar.open{left:0}
+  .main{padding:16px 12px 40px}
+  .mobile-menu{display:grid}
+  .stats{grid-template-columns:1fr}
+  .package-grid, .profile-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<canvas id="matrixCanvas"></canvas>
+
+<!-- Tela de Login Firebase -->
+<div id="loginScreen" class="login-wrap">
+  <div class="login-card">
+    <div class="brand"><div class="logo">🤖</div>BotHub</div>
+    <h1>Entrar no BotHub</h1>
+    <p>Entre com sua conta administradora do Firebase Realtime Database.</p>
+    <div class="field"><label>E-mail</label><input id="email" type="email" autocomplete="username" value="daniblocks100@gmail.com"></div>
+    <div class="field"><label>Senha do Firebase</label><input id="password" type="password" autocomplete="current-password" placeholder="Senha da conta Firebase"></div>
+    <button class="auth-btn" id="loginBtn">Entrar no painel</button>
+    <div id="loginMsg" class="error"></div>
+    <div class="login-note">Gerencie clusters, workers, arquivos e bots em tempo real via Firebase 🛡️</div>
+  </div>
+</div>
+
+<!-- App Principal -->
+<div id="app" class="app hidden">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="logo">🤖</div>BotHub</div>
+    <div class="nav-label">🚀 Principal</div>
+    <button class="nav-btn active" data-page="dashboard"><span class="nav-ico">📊</span>Visão geral</button>
+    <button class="nav-btn" data-page="bots"><span class="nav-ico">🤖</span>Meus bots</button>
+    <button class="nav-btn" data-page="workers"><span class="nav-ico">💻</span>Cluster / Workers</button>
+    <button class="nav-btn" data-page="globalapi"><span class="nav-ico">🌐</span>APIs Globais</button>
+    <div class="nav-label">💎 Financeiro</div>
+    <button class="nav-btn" data-page="wallet"><span class="nav-ico">💳</span>Carteira</button>
+    <button class="nav-btn" data-page="points"><span class="nav-ico">⚡</span>Comprar pontos</button>
+    <div class="nav-label">⚙️ Conta</div>
+    <button class="nav-btn" data-page="profile"><span class="nav-ico">👤</span>Meu perfil</button>
+    <div class="side-bottom">
+      <div class="user-mini">
+        <div class="avatar" id="sideAvatar">U</div>
+        <div style="min-width:0">
+          <div id="sideName" style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis">Administrador</div>
+          <div class="small muted" id="connectionBadge">Conectado 🟢</div>
+        </div>
+        <button class="icon-btn" style="margin-left:auto;height:28px;width:28px" id="logoutBtn" title="Sair">🚪</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="icon-btn mobile-menu" onclick="toggleSidebar()">☰</button>
+        <div>
+          <h1 class="page-title" id="pageTitle">Visão geral</h1>
+          <div class="page-sub" id="pageSub">Acompanhe o desempenho do cluster e dos bots em tempo real.</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span id="connectionStatus" class="badge">Conectando...</span>
+        <button class="primary" onclick="openCreateBot()">✨ Novo bot</button>
+      </div>
+    </header>
+
+    <!-- Seção Visão Geral -->
+    <section id="page-dashboard" class="page">
+      <!-- Banner ASCII -->
+      <div class="ascii-card" id="asciiCard">
+        <div class="ascii-header">
+          <div class="ascii-dots">
+            <div class="ascii-dot dot-r"></div>
+            <div class="ascii-dot dot-y"></div>
+            <div class="ascii-dot dot-g"></div>
+          </div>
+          <span>bothub-firebase-core://v3.8.0-stable</span>
+          <span>🟢 ONLINE</span>
+        </div>
+        <pre class="ascii-content"><span id="asciiTyped"></span><span class="typing-cursor" id="asciiCursor"></span></pre>
+      </div>
+
+      <div class="grid stats">
+        <div class="card">
+          <div class="stat-top">Dispositivos online <span class="stat-ico">💻</span></div>
+          <div class="stat-num" id="statOnlineWorkers">0</div>
+          <div class="stat-foot">Workers conectados</div>
+        </div>
+        <div class="card">
+          <div class="stat-top">Bots cadastrados <span class="stat-ico">🤖</span></div>
+          <div class="stat-num" id="statBots">0</div>
+          <div class="stat-foot">No Firebase Database</div>
+        </div>
+        <div class="card">
+          <div class="stat-top">Bots ligados <span class="stat-ico">⚡</span></div>
+          <div class="stat-num" id="statActiveBots">0</div>
+          <div class="stat-foot">Em execução nos workers</div>
+        </div>
+        <div class="card">
+          <div class="stat-top">RAM livre total <span class="stat-ico">📈</span></div>
+          <div class="stat-num" id="statRamFree">—</div>
+          <div class="stat-foot" id="statRamTotal">Total: —</div>
+        </div>
+      </div>
+
+      <!-- Gráficos em Tempo Real -->
+      <div class="grid two-col" style="margin-bottom: 14px;">
+        <div class="card">
+          <div class="section-head">
+            <div><h2>📈 Desempenho do Cluster</h2><p>Flutuação de uso e carga dos workers em tempo real.</p></div>
+          </div>
+          <div class="chart-container"><canvas id="realtimeChart"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="section-head">
+            <div><h2>📊 Distribuição de Bots</h2><p>Estado operacional na nuvem.</p></div>
+          </div>
+          <div class="chart-container"><canvas id="donutChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="grid two-col">
+        <div class="card">
+          <div class="section-head">
+            <div><h2>🤖 Seus bots recentes</h2><p>Gerencie seus projetos rapidamente.</p></div>
+            <button class="secondary" onclick="navigate('bots')">Ver todos</button>
+          </div>
+          <div class="bot-list" id="dashboardBots"></div>
+        </div>
+
+        <div class="card">
+          <div class="section-head">
+            <div><h2>⚡ Controlador do Cluster</h2><p>Atualize arquivos do Cefilu nos workers.</p></div>
+            <span class="stat-ico">🚀</span>
+          </div>
+          <div class="quick-actions" style="margin-top:0">
+            <button class="primary" id="updateCluster">Atualizar arquivos do Cefilu</button>
+          </div>
+          <div id="clusterUpdateMsg" class="small muted" style="margin-top:8px"></div>
+          <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+          <div class="section-head">
+            <div><h2>📡 Histórico de Ações</h2><p>Últimos comandos enviados aos workers.</p></div>
+          </div>
+          <div id="actionLog" class="small muted" style="max-height:120px;overflow-y:auto">Nenhuma ação registrada nesta sessão.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Seção Meus Bots -->
+    <section id="page-bots" class="page hidden">
+      <h2>🤖 Meus bots cadastrados</h2>
+      <p class="page-intro">Gerencie, pause, exclua, visualize logs ou edite arquivos dos bots distribuídos automaticamente pelo cluster.</p>
+      <div class="toolbar">
+        <input class="search" id="botSearch" placeholder="🔍 Pesquisar bot..." oninput="drawBots()">
+        <button class="primary" onclick="openCreateBot()">✨ Cadastrar bot</button>
+      </div>
+      <div class="card table-wrap">
+        <table class="table">
+          <thead><tr><th>Bot</th><th>Dispositivo Worker</th><th>Status</th><th>Ações</th></tr></thead>
+          <tbody id="botsTable"></tbody>
+        </table>
+        <div id="botsEmpty" class="empty hidden">🤖 Nenhum bot cadastrado. Clique em "Cadastrar bot" para começar!</div>
+      </div>
+
+      <!-- Logs dos Bots -->
+      <div class="card" style="margin-top:16px">
+        <h2>📜 Logs dos bots</h2>
+        <p class="small muted">Veja as últimas mensagens de saída e erros do bot selecionado.</p>
+        <div id="logsOutput" class="small muted" style="margin:8px 0">Escolha "Ver logs" ao lado de um bot.</div>
+        <pre id="logsText" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:300px;overflow:auto;background:#080d18;border:1px solid var(--line);padding:12px;border-radius:10px;font-family:'Fira Code',monospace;font-size:11px;color:var(--cyan)"></pre>
+      </div>
+    </section>
+
+    <!-- Seção Cluster / Workers -->
+    <section id="page-workers" class="page hidden">
+      <h2>💻 Dispositivos / Workers do Cluster</h2>
+      <p class="page-intro">O painel distribui automaticamente até 3 bots por worker elegível, priorizando maior espaço livre.</p>
+      <div class="card">
+        <div id="workersList"><span class="muted">Aguardando workers...</span></div>
+      </div>
+      <div class="card">
+        <h2>🛠️ Como adicionar um servidor ao cluster</h2>
+        <p class="small muted">Execute estes comandos na máquina que deseja adicionar (Python 3.10+ necessário):</p>
+        <pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#080d19;padding:12px;border-radius:10px;color:#dbeafe;font-family:'Fira Code',monospace;font-size:11px">mkdir -p "teste 2" && cd "teste 2"
+curl -fL https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/start.py -o start.py
+python3 start.py</pre>
+      </div>
+    </section>
+
+    <!-- Seção APIs Globais -->
+    <section id="page-globalapi" class="page hidden">
+      <h2>🌐 APIs Globais e Atualizações do Main.py</h2>
+      <p class="page-intro">Publique atualizações para os bots individuais ou compartilhe chaves para o pool global.</p>
+      <div class="card">
+        <h2>Atualizar main.py dos bots</h2>
+        <p class="small muted">A atualização obrigatória instala automaticamente; a opcional avisa o criador.</p>
+        <div class="field"><label>Tipo de atualização</label><select id="mainUpdateType"><option value="optional">Opcional — o criador decide</option><option value="mandatory">Obrigatória — instalar automaticamente</option></select></div>
+        <div class="field"><label>Descrição da atualização</label><textarea id="mainUpdateDescription" rows="3" maxlength="1500" placeholder="Descreva as correções e melhorias..."></textarea></div>
+        <button class="primary" id="publishMainUpdate">Publicar atualização do main.py</button>
+        <div id="mainUpdateMsg" class="small muted" style="margin-top:8px"></div>
+      </div>
+    </section>
+
+    <!-- Seção Carteira -->
+    <section id="page-wallet" class="page hidden">
+      <h2>💳 Carteira e Pontos</h2>
+      <p class="page-intro">Acompanhe seu saldo em pontos e projeções de consumo anti-bular.</p>
+      <div class="grid two-col">
+        <div class="card">
+          <div class="stat-top">Saldo disponível <span class="stat-ico">💎</span></div>
+          <div class="wallet-balance" id="walletPoints">150 <span>pontos</span></div>
+          <div class="muted small" id="walletValue">Valor equivalente: R$ 7,50</div>
+          <div class="quick-actions"><button class="primary" onclick="navigate('points')">⚡ Adicionar pontos</button></div>
+        </div>
+        <div class="card">
+          <h2>📊 Consumo estimado</h2>
+          <div class="usage-line"><span>Por hora</span><b id="walletHour">2 pontos</b></div>
+          <div class="usage-line"><span>Por dia</span><b id="walletDay">48 pontos</b></div>
+          <p class="footer-note">🛡️ Sistema protegido contra exploits: o consumo é calculado continuamente pelo Uptime real.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Seção Comprar Pontos -->
+    <section id="page-points" class="page hidden">
+      <h2>⚡ Comprar pontos</h2>
+      <p class="page-intro">🔥 Cada ponto custa apenas <b>R$ 0,05</b> (R$ 5,00 a cada 100 pts).</p>
+      <div class="grid package-grid" id="packages"></div>
+    </section>
+
+    <!-- Seção Meu Perfil -->
+    <section id="page-profile" class="page hidden">
+      <h2>👤 Meu perfil administrativo</h2>
+      <p class="page-intro">Informações da sua conta autenticada via Firebase.</p>
+      <div class="card profile-grid" style="display:grid">
+        <div class="field"><label>E-mail do Administrador</label><input id="profileEmail" readonly value=""></div>
+        <div class="field"><label>UID Firebase</label><input id="profileUid" readonly value=""></div>
+        <button class="danger" onclick="firebaseLogout()" style="width:fit-content;margin-top:10px">🚪 Sair da conta</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Modal de Configurações / Arquivos do Bot -->
+<div id="modalBg" class="modal-bg hidden" onclick="if(event.target===this)closeModal()"><div class="modal" id="modal"></div></div>
+<div id="toast" class="toast hidden"></div>
+
+<!-- Firebase SDKs -->
+<script type="module">
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import {getDatabase,ref,onValue,get,set,update,remove} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+
+const firebaseConfig={apiKey:'AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE',authDomain:'bothub-bca02.firebaseapp.com',databaseURL:'https://bothub-bca02-default-rtdb.firebaseio.com',projectId:'bothub-bca02',storageBucket:'bothub-bca02.firebasestorage.app',messagingSenderId:'890310788815',appId:'1:890310788815:web:a08d772d6f1afffb3e99ba',measurementId:'G-ZHEP6R0XVW'};
+const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getDatabase(app);
+const testRef=path=>ref(db,path);
+
+let workerData={},botData={},stopListeners=[],busy=false,lastAssignment='';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;min'}[c]));
+const bytes=n=>{let v=Number(n)||0,u=['B','KB','MB','GB','TB'],i=0;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i?1:0)+' '+u[i]};
+const duration=s=>{s=Math.max(0,Math.floor(Number(s)||0));const d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);return (d?d+'d ':'')+(h+'h '+m+'min')};
+const ageText=ms=>{if(!Number.isFinite(ms)||ms<0)return 'desconhecido';return duration(ms/1000)+' atrás'};
+
+function online(w){return !!w&&Date.now()-Number(w.lastSeen||0)<20000}
+function capacity(w){if(!online(w))return 0;const ram=Math.max(0,Math.floor((Number(w.ramFreeBytes||0)-350*1024*1024)/(250*1024*1024)));const disk=Math.max(0,Math.floor((Number(w.diskFreeBytes||0)-1024*1024*1024)/(100*1024*1024)));return Math.min(ram,disk)}
+function eligible(w){return capacity(w)>0}
+function stopSubs(){stopListeners.forEach(f=>f());stopListeners=[]}
+function watch(path,cb){const r=testRef(path);stopListeners.push(onValue(r,s=>cb(s.val()||{}),e=>{console.error('[BotHub Firebase]',path,e)}))}
+function runningSet(){const s=new Set();for(const w of Object.values(workerData)){const ids=w.runningBotIds;if(Array.isArray(ids))ids.forEach(id=>s.add(String(id)));else if(ids&&typeof ids==='object')Object.keys(ids).forEach(id=>s.add(String(id)))}return s}
+
+window.refreshFirebaseData=async function(){
+  const [w,b]=await Promise.all([get(testRef('workers')),get(testRef('bots'))]);
+  workerData=w.val()||{}; botData=b.val()||{};
+  drawWorkers(); drawBots(); await rebalance();
+}
+
+function drawWorkers(){
+  const entries=Object.entries(workerData),live=entries.filter(([,w])=>online(w));
+  $('statOnlineWorkers').textContent=live.length;
+  const sum=(arr,k)=>arr.reduce((n,[,w])=>n+(Number(w[k])||0),0);
+  $('statRamFree').textContent=bytes(sum(live,'ramFreeBytes'));
+  $('statRamTotal').textContent='Total: '+bytes(sum(live,'ramTotalBytes'));
+
+  const list=$('workersList');
+  if(!list) return;
+  list.innerHTML=entries.length?entries.map(([id,w])=>{
+    const isOnline=online(w);
+    return `<div class="bot-row">
+      <div style="flex:1"><strong>${esc(w.label||w.hostname||id)}</strong>
+        <div class="small muted">ID: ${esc(id)} · IP: ${esc(w.publicIp||'—')} · CPU: ${Number(w.cpuPercent||0).toFixed(1)}%</div>
+        <div class="small muted">RAM livre: ${bytes(w.ramFreeBytes)} / Disco livre: ${bytes(w.diskFreeBytes)}</div>
+      </div>
+      <span class="status ${isOnline?'':'off'}">${isOnline?'Online 🟢':'Offline ⚪'}</span>
+    </div>`;
+  }).join(''):'<div class="muted">Nenhum worker registrado.</div>';
+}
+
+function drawBots(){
+  const entries=Object.entries(botData);
+  const active=entries.filter(([,b])=>b.enabled);
+  const running=runningSet();
+  $('statBots').textContent=entries.length;
+  $('statActiveBots').textContent=active.filter(([id])=>running.has(id)).length;
+
+  // Render dashboard recent
+  const dashEl=$('dashboardBots');
+  if(dashEl){
+    dashEl.innerHTML=entries.length?entries.slice(0,4).map(([id,b])=>{
+      const isRunning=running.has(id);
+      return `<div class="bot-row" style="cursor:pointer" onclick="openBotFileModal('${id}')">
+        <div class="bot-avatar">🤖</div>
+        <div class="bot-info">
+          <div class="bot-name">${esc(b.name||'Bot')}</div>
+          <div class="bot-meta">Worker: ${esc(b.workerId||'Na fila')}</div>
+        </div>
+        <span class="status ${isRunning?'':'off'}">${isRunning?'Ligado 🟢':'Pausado ⚪'}</span>
+      </div>`;
+    }).join(''):'<div class="empty">🤖 Nenhum bot cadastrado.</div>';
+  }
+
+  // Render table
+  const table=$('botsTable'), empty=$('botsEmpty');
+  if(!table) return;
+  const q=($('botSearch')?.value||'').toLowerCase();
+  const filtered=entries.filter(([,b])=>(b.name||'').toLowerCase().includes(q));
+  table.innerHTML=filtered.length?filtered.map(([id,b])=>{
+    const isRunning=running.has(id);
+    return `<tr>
+      <td><b>${esc(b.name)}</b><div class="small muted">ID: <code>${id.slice(0,8)}</code></div></td>
+      <td>${esc(b.workerId||'Na fila')}</td>
+      <td><span class="status ${isRunning?'':'off'}">${isRunning?'Ligado 🟢':'Offline/Pausado'}</span></td>
+      <td>
+        <div style="display:flex;gap:4px">
+          <button class="secondary" onclick="showBotLogs('${id}')" style="padding:5px 8px;font-size:11px">📜 Logs</button>
+          <button class="primary" onclick="openBotFileModal('${id}')" style="padding:5px 8px;font-size:11px">📁 Arquivos</button>
+          <button class="danger" onclick="deleteBot('${id}')" style="padding:5px 8px;font-size:11px">🗑️</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join(''):'';
+  empty.classList.toggle('hidden', filtered.length>0);
+}
+
+async function rebalance(){
+  if(busy)return; busy=true;
+  try{
+    const nodes=Object.entries(workerData).filter(([,w])=>eligible(w)).sort((a,b)=>capacity(b[1])-capacity(a[1]));
+    const counts={}; nodes.forEach(([id])=>counts[id]=0);
+    const assignments={}; const seenTokens=new Set();
+    const enabled=Object.entries(botData).filter(([,b])=>b.enabled!==false);
+    for(const [bid,b] of enabled){
+      const secret=String(b.token||'').trim();
+      if(!secret||seenTokens.has(secret)){assignments[bid]=null;continue}
+      seenTokens.add(secret);
+      let target=b.workerId||nodes[0]?.[0]||null;
+      if(target && counts[target]<3) counts[target]++;
+      assignments[bid]=target;
+    }
+    const signature=JSON.stringify(assignments);
+    if(signature===lastAssignment){busy=false;return}
+    lastAssignment=signature;
+    const updates={};
+    for(const [bid,b] of Object.entries(botData)){
+      const wid=b.enabled?assignments[bid]||null:null;
+      if((b.workerId||null)!==wid) updates['bots/'+bid+'/workerId']=wid;
+    }
+    if(Object.keys(updates).length) await update(ref(db),updates);
+  }catch(e){console.error('Rebalance:',e);}finally{busy=false}
+}
+
+window.deleteBot=async function(id){
+  if(!confirm('Excluir este bot do Firebase?'))return;
+  try{
+    await remove(testRef('bots/'+id));
+    await refreshFirebaseData();
+    window.toast('Bot excluído com sucesso!');
+  }catch(e){alert('Erro ao excluir: '+e.message)}
+}
+
+window.showBotLogs=async function(id){
+  const out=$("logsOutput"),pre=$("logsText");
+  out.textContent="Buscando logs..."; pre.textContent="";
+  try{
+    const b=botData[id],wid=b&&b.workerId;
+    if(!wid || !online(workerData[wid])) throw new Error("Worker offline ou bot não atribuído.");
+    const result=await sendWorkerCommand(wid,{operation:"logs",botId:id});
+    pre.textContent=result.result?.logs||"Nenhum log disponível.";
+    out.textContent=`Logs carregados com sucesso (${bytes(result.result?.size||0)})`;
+  }catch(e){out.textContent="Erro: "+e.message;}
+}
+
+window.openBotFileModal=function(id){
+  const b=botData[id];
+  if(!b) return;
+  window.openModal(`
+    <div class="modal-head"><h3>📁 Gerenciar Bot: ${esc(b.name)}</h3><button class="close" onclick="closeModal()">×</button></div>
+    <div class="field"><label>Token do Bot</label><input id="modalToken" type="password" value="${esc(b.token||'')}"></div>
+    <p class="small muted">Para editar arquivos via painel, certifique-se de que o bot está atribuído a um worker online.</p>
+    <div class="modal-actions"><button class="secondary" onclick="closeModal()">Fechar</button><button class="primary" onclick="saveBotToken('${id}')">Salvar Token</button></div>
+  `);
+}
+
+window.saveBotToken=async function(id){
+  const token=$('modalToken').value.trim();
+  if(!token) return alert('Insira um token válido.');
+  await update(testRef('bots/'+id),{token,updatedAt:Date.now()});
+  closeModal();
+  window.toast('Token atualizado!');
+  refreshFirebaseData();
+}
+
+window.openCreateBot=function(){
+  window.openModal(`
+    <div class="modal-head"><h3>✨ Cadastrar Bot Discord</h3><button class="close" onclick="closeModal()">×</button></div>
+    <div class="field"><label>Nome do Bot</label><input id="newBotName" maxlength="100" placeholder="Meu Bot"></div>
+    <div class="field"><label>Token do Bot</label><input id="newBotToken" type="password" placeholder="Token privado do Discord"></div>
+    <div class="modal-actions"><button class="secondary" onclick="closeModal()">Cancelar</button><button class="primary" onclick="createBotSubmit()">Cadastrar e Distribuir</button></div>
+  `);
+}
+
+window.createBotSubmit=async function(){
+  const name=$('newBotName').value.trim(), token=$('newBotToken').value.trim();
+  if(!name || token.length<30) return alert('Informe um nome e um token válido.');
+  const id=crypto.randomUUID().replaceAll('-','');
+  await set(testRef('bots/'+id),{name,token,config:{},enabled:true,desiredState:'on',workerId:null,createdAt:Date.now()});
+  closeModal();
+  window.toast('Bot cadastrado com sucesso!');
+  refreshFirebaseData();
+}
+
+async function sendWorkerCommand(wid,command,timeoutMs=30000){
+  const id=crypto.randomUUID().replaceAll("-","");
+  const label=String(command.operation||"ação");
+  await set(testRef("workerCommands/"+wid+"/"+id),{...command,requestId:id,requestedAt:Date.now(),status:"waiting",panelLabel:label});
+  const startedAt=Date.now();
+  while(Date.now()-startedAt<timeoutMs){
+    await new Promise(r=>setTimeout(r,1200));
+    const snap=await get(testRef("workerResults/"+wid+"/"+id));
+    const result=snap.val();
+    if(result){
+      await remove(testRef("workerResults/"+wid+"/"+id)).catch(()=>{});
+      if(result.status!=="ok") throw new Error(result.message||"Worker recusou a operação.");
+      return result;
+    }
+  }
+  throw new Error("Tempo esgotado aguardando o worker.");
+}
+
+// Autenticação Firebase
+$('loginBtn').onclick=async()=>{
+  const email=$('email').value.trim(), pass=$('password').value;
+  $('loginMsg').textContent='';
+  try{
+    await signInWithEmailAndPassword(auth,email,pass);
+  }catch(e){
+    $('loginMsg').textContent='Erro no login: '+e.message;
+  }
+};
+
+window.firebaseLogout=()=>signOut(auth);
+$('logoutBtn').onclick=()=>signOut(auth);
+
+onAuthStateChanged(auth,async user=>{
+  if(!user){
+    stopSubs();
+    $('app').classList.add('hidden');
+    $('loginScreen').classList.remove('hidden');
+    return;
+  }
+  try{
+    const s=await get(ref(db,'admins/'+user.uid));
+    if(s.val()!==true){
+      const legacy=await get(ref(db,'teste2/admins/'+user.uid));
+      if(legacy.val()!==true){
+        $('loginMsg').textContent='UID não autorizado em /admins/'+user.uid;
+        await signOut(auth);
+        return;
+      }
+    }
+    $('loginScreen').classList.add('hidden');
+    $('app').classList.remove('hidden');
+    $('profileEmail').value=user.email||'';
+    $('profileUid').value=user.uid;
+    $('sideName').textContent=user.email?.split('@')[0]||'Admin';
+    $('sideAvatar').textContent=(user.email||'A')[0].toUpperCase();
+
+    watch('workers',v=>{workerData=v;drawWorkers();rebalance()});
+    watch('bots',v=>{botData=v;drawBots();rebalance()});
+    $('connectionStatus').textContent='Conectado 🟢';
+    refreshFirebaseData();
+  }catch(e){
+    $('loginMsg').textContent='Erro de permissão Firebase: '+e.message;
+    await signOut(auth);
+  }
+});
+
+// Ações de Atualização
+$('updateCluster').onclick=async()=>{
+  const msg=$('clusterUpdateMsg');
+  if(!confirm('Atualizar controlador em todos os workers?'))return;
+  msg.textContent='Publicando solicitação...';
+  try{
+    const updateId='manual-'+Date.now();
+    await set(testRef('botHubClusterUpdates/current'),{
+      updateId, type:'mandatory', clusterOnly:true,
+      files:['start.py','add_cluster_server.py','bothub_firebase_worker.py'],
+      requestedAt:Date.now(), requestedBy:auth.currentUser?.uid||'admin'
+    });
+    msg.textContent='Solicitação publicada com sucesso!';
+  }catch(e){msg.textContent='Erro: '+e.message;}
+};
+
+$('publishMainUpdate').onclick=async()=>{
+  const msg=$('mainUpdateMsg');
+  const type=$('mainUpdateType').value, desc=$('mainUpdateDescription').value.trim();
+  if(!desc) return alert('Escreva uma descrição.');
+  try{
+    await set(testRef('botHubUpdates/current'),{
+      updateId:'main-'+Date.now(), type, description:desc, clusterOnly:false,
+      requestedAt:Date.now(), requestedBy:auth.currentUser?.uid||'admin'
+    });
+    msg.textContent='Atualização do main.py publicada!';
+  }catch(e){msg.textContent='Erro: '+e.message;}
+};
+</script>
+
+<!-- Scripts de UI, Gráficos e Matrix -->
+<script>
+const canvas=document.getElementById('matrixCanvas'), ctx=canvas.getContext('2d');
+function resizeCanvas(){canvas.width=window.innerWidth; canvas.height=window.innerHeight;}
+window.addEventListener('resize',resizeCanvas); resizeCanvas();
+
+const chars='01BOT_HUB_AI_SYNAPSE_CORE_SYS_';
+const fontSize=14, columns=Math.floor(window.innerWidth/fontSize), drops=[];
+for(let i=0; i<columns; i++) drops[i]=1;
+setInterval(()=>{
+  ctx.fillStyle='rgba(7, 10, 18, 0.15)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#38bdf8'; ctx.font=fontSize+'px "Fira Code", monospace';
+  for(let i=0; i<drops.length; i++){
+    ctx.fillText(chars.charAt(Math.floor(Math.random()*chars.length)), i*fontSize, drops[i]*fontSize);
+    if(drops[i]*fontSize>canvas.height && Math.random()>0.975) drops[i]=0;
+    drops[i]++;
+  }
+},50);
+
+const asciiArtTarget=` ____        _   _     _      _     
+| __ )  ___ | |_| |__ | |  _ | |__  
+|  _ \\ / _ \\| __| '_ \\| | | || '_ \\ 
+| |_) | (_) | |_| | | | |_| || |_) |
+|____/ \\___/ \\__|_| |_|\\____/ \\___/ 
+
+           [ CLOUD, BOTS & AI 24/7 ]
+`;
+
+function startTypewriterOnce(){
+  const el=$('asciiTyped'), cursor=$('asciiCursor'), card=$('asciiCard');
+  if(!el) return;
+  let iterations=0, totalLength=asciiArtTarget.length;
+  function glitchFrame(){
+    let output='';
+    for(let i=0; i<totalLength; i++){
+      let ch=asciiArtTarget.charAt(i);
+      if(ch==='\n') output+='<br>';
+      else if(ch===' ') output+='&nbsp;';
+      else if(i<iterations) output+=ch;
+      else output+='?*@#&%`' [Math.floor(Math.random()*7)];
+    }
+    el.innerHTML=output;
+    if(iterations<totalLength){ iterations+=4; setTimeout(glitchFrame,16); }
+    else{
+      el.innerHTML=asciiArtTarget.replace(/\n/g,'<br>').replace(/ /g,'&nbsp;');
+      if(cursor) cursor.style.display='none';
+      if(card) card.classList.add('loop-active');
+    }
+  }
+  glitchFrame();
+}
+startTypewriterOnce();
+
+let realtimeChart, donutChart;
+function initCharts(){
+  const ctxLine=document.getElementById('realtimeChart')?.getContext('2d');
+  if(ctxLine && !realtimeChart){
+    realtimeChart=new Chart(ctxLine,{
+      type:'line',
+      data:{
+        labels:['10s atrás','8s atrás','6s atrás','4s atrás','2s atrás','Agora'],
+        datasets:[{label:'Uso de Servidor (%)', data:[15,22,18,35,28,30], borderColor:'#38bdf8', backgroundColor:'rgba(56,189,248,0.1)', borderWidth:2, fill:true, tension:0.4}]
+      },
+      options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#94a3b8'}},y:{min:0,max:100,grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#94a3b8'}}}}
+    });
+  }
+  const ctxDonut=document.getElementById('donutChart')?.getContext('2d');
+  if(ctxDonut && !donutChart){
+    donutChart=new Chart(ctxDonut,{
+      type:'doughnut',
+      data:{labels:['Ligados','Desligados'], datasets:[{data:[1,1], backgroundColor:['#10b981','#94a3b8'], borderWidth:0}]},
+      options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{color:'#f1f5f9'}}}}
+    });
+  }
+}
+setTimeout(initCharts, 200);
+
+window.navigate=function(p){
+  document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));
+  $('page-'+p).classList.remove('hidden');
+  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.toggle('active', x.dataset.page===p));
+  const titles={dashboard:['Visão geral','Desempenho do cluster'], bots:['Meus bots','Gerenciamento de bots'], workers:['Cluster / Workers','Dispositivos conectados'], globalapi:['APIs Globais','Atualizações do main.py'], wallet:['Carteira','Saldo e pontos'], points:['Comprar pontos','Pacotes BotHub'], profile:['Meu perfil','Conta Firebase']};
+  $('pageTitle').textContent=titles[p]?.[0]||p;
+  $('pageSub').textContent=titles[p]?.[1]||'';
+  $('sidebar').classList.remove('open');
+  window.scrollTo({top:0, behavior:'smooth'});
+  if(p==='dashboard') setTimeout(initCharts,50);
+}
+document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
+
+window.toggleSidebar=()=>$('sidebar').classList.toggle('open');
+window.openModal=html=>{$('modal').innerHTML=html; $('modalBg').classList.remove('hidden');}
+window.closeModal=()=>$('modalBg').classList.add('hidden');
+
+let toastTimer;
+window.toast=msg=>{
+  let t=$('toast'); t.textContent=msg; t.classList.remove('hidden');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.add('hidden'),3000);
+}
+
+// Renderizar pacotes de compra na aba pontos
+const PACKAGES=[
+  {name:'Starter Semanal', days:7, points:168, price:8.40},
+  {name:'Quinzenal Pro', days:15, points:360, price:18.00},
+  {name:'Mensal Ultimate 🔥', days:31, points:744, price:35.00, featured:true},
+  {name:'Trimestral VIP', days:93, points:2232, price:90.00},
+  {name:'Semestral Master', days:186, points:4464, price:175.00},
+  {name:'Anual Legend 👑', days:365, points:8760, price:320.00}
+];
+const pkgEl=$('packages');
+if(pkgEl){
+  pkgEl.innerHTML=PACKAGES.map(p=>`
+    <div class="card package ${p.featured?'featured':''}">
+      ${p.featured?'<span class="status" style="margin-bottom:10px;align-self:flex-start">🔥 Mais Popular</span>':''}
+      <h3>${p.name}</h3>
+      <div style="font-size:24px;font-weight:800;color:var(--cyan)">R$ ${p.price.toFixed(2).replace('.',',')}</div>
+      <div class="muted">${p.points} pontos (${p.days} dias)</div>
+      <button class="primary" onclick="window.toast('Redirecionando para PIX...')">⚡ Comprar pacote</button>
+    </div>
+  `).join('');
+}
+</script>
+</body>
+</html>
