@@ -6,7 +6,6 @@
 <meta name="theme-color" content="#070a12">
 <title>BotHub — Cyber Dashboard AI & Standard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
-<!-- Importando o Chart.js para os gráficos em tempo real -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 :root{
@@ -118,7 +117,7 @@ select{min-height:42px}
 .auth-btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
 .login-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.5;margin-top:18px}
 
-/* App Layout & Sidebar Responsiva Corrigida para Telas Verticais */
+/* App Layout & Sidebar Responsiva */
 .app{display:grid;grid-template-columns:260px 1fr;min-height:100vh;position:relative;z-index:2}
 .sidebar{
   border-right:1px solid var(--line);
@@ -289,7 +288,7 @@ button.danger:hover{background:rgba(244,63,94,0.22)}
 
 .two-col{grid-template-columns:1fr 1fr}
 
-/* Banner ASCII com Animação Cyber Corrigida */
+/* Banner ASCII com Animação Cyber */
 @keyframes subtlePulse {
   0%, 100% { opacity: 0.88; }
   50% { opacity: 1; text-shadow: 0 0 10px rgba(56, 189, 248, 0.35); }
@@ -334,7 +333,7 @@ pre.ascii-content{margin: 0;line-height: 1.2;white-space: pre;}
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
 
-/* Estilo detalhado para os Bots com foto e info rica */
+/* Cards detalhados dos Bots com foto e info rica */
 .bot-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 10px; }
 .bot-detailed-card {
   background: rgba(255,255,255,0.02);
@@ -361,7 +360,6 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
 
 .mobile-menu{display:none}
 
-/* Ajustes perfeitos para telas verticais e celulares */
 @media(max-width:1050px){
   .stats{grid-template-columns:repeat(2,1fr)}
   .two-col{grid-template-columns:1fr}
@@ -438,7 +436,6 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
 
     <!-- Seção Visão Geral -->
     <div id="page-overview" class="page">
-      <!-- Banner ASCII com efeito de digitação e glitch reativado -->
       <div class="ascii-card" id="asciiCard">
         <div class="ascii-header">
           <div class="ascii-dots">
@@ -638,7 +635,10 @@ python3 start.py</pre>
   </main>
 </div>
 
+<!-- Script UI & Matrix -->
 <script>
+const $ = id => document.getElementById(id);
+
 /* Fundo Matrix Cyber */
 const canvas = document.getElementById('matrixCanvas');
 const ctx = canvas.getContext('2d');
@@ -666,7 +666,7 @@ function drawMatrix() {
 }
 setInterval(drawMatrix, 50);
 
-/* Animação ASCII com Glitch & Typewriter reativada */
+/* Animação ASCII com Glitch & Typewriter */
 const asciiArtTarget = ` ____        _   _     _      _     
 | __ )  ___ | |_| |__ | |  _ | |__  
 |  _ \\ / _ \\| __| '_ \\| | | || '_ \\ 
@@ -746,7 +746,7 @@ function startTypewriterOnce() {
   glitchFrame();
 }
 
-/* Navegação por abas corrigida para mobile/vertical */
+/* Navegação por abas responsiva */
 function toggleSidebar() { $('sidebar').classList.toggle('open'); }
 const pageInfo = {
   overview: ['Visão geral do Cluster', 'Monitoramento em tempo real dos workers e instâncias.'],
@@ -810,6 +810,8 @@ function initRealtimeChart(){
     }, 2000);
   }
 }
+
+const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 </script>
 
 <!-- Firebase SDK & Lógica de Cluster -->
@@ -818,13 +820,13 @@ import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase
 import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import {getDatabase,ref,onValue,get,set,update,remove} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
+const $ = id => document.getElementById(id);
+
 const firebaseConfig={apiKey:'AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE',authDomain:'bothub-bca02.firebaseapp.com',databaseURL:'https://bothub-bca02-default-rtdb.firebaseio.com',projectId:'bothub-bca02',storageBucket:'bothub-bca02.firebasestorage.app',messagingSenderId:'890310788815',appId:'1:890310788815:web:a08d772d6f1afffb3e99ba',measurementId:'G-ZHEP6R0XVW'};
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getDatabase(app);
 const testRef=path=>ref(db,path);
-const $=id=>document.getElementById(id);
 
 let workerData={},botData={},stopListeners=[],busy=false,lastAssignment='';
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const bytes=n=>{let v=Number(n)||0,u=['B','KB','MB','GB','TB'],i=0;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i?1:0)+' '+u[i]};
 const duration=s=>{s=Math.max(0,Math.floor(Number(s)||0));const d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);return (d?d+'d ':'')+(h+'h '+m+'min')};
 const ageText=ms=>{if(!Number.isFinite(ms)||ms<0)return 'desconhecido';return duration(ms/1000)+' atrás'};
@@ -896,7 +898,6 @@ function drawBots(){
   $('active').textContent=reallyRunning.length;
   $('queued').textContent=queued.length;
 
-  /* Renderização aprimorada com Cards ricos, avatares/fotos e info detalhada do bot */
   $('bots').innerHTML=bots.length ? `<div class="bot-card-grid">` + bots.map(([id,b])=>{
     const isRunning=running.has(id);
     const avatarHtml = b.avatarUrl 
