@@ -1341,8 +1341,8 @@ def main():
         os.execv(str(vp),[str(vp),str(Path(__file__).resolve())])
     lock_handle = acquire_worker_lock()
     if lock_handle is None:
-        print("[BotHub] Já existe um controlador rodando nesta pasta. Este processo será encerrado para evitar bots duplicados.", flush=True)
-        return
+        print("[BotHub] Já existe outro controlador ativo e o bloqueio não pôde ser assumido. Encerrando com código 75 para o supervisor não entrar em loop.", flush=True)
+        return 75
     signal.signal(signal.SIGTERM, handle_shutdown_signal)
     signal.signal(signal.SIGINT, handle_shutdown_signal)
     atexit.register(cleanup_children)
@@ -1436,5 +1436,8 @@ def main():
     cleanup_children()
 
 if __name__=="__main__":
-    try:main()
-    except Exception as e:print("Erro fatal:",e,file=sys.stderr);raise
+    try:
+        raise SystemExit(main())
+    except Exception as e:
+        print("Erro fatal:",e,file=sys.stderr)
+        raise
