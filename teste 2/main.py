@@ -7327,14 +7327,26 @@ async def atualizar_memoria_foto_perfil(forcar=False):
     except (OSError, ValueError, TypeError):
         perfil = {}
 
-    if mesma_foto and not descricao_anterior:
-        descricao_json = str(perfil.get("visual_description", "") or "").strip()
-        if descricao_json and not descricao_json.startswith("A imagem não pôde ser analisada."):
-            descricao_anterior = descricao_json
+    # O arquivo TXT é a fonte principal desta memória. Se ele existir vazio,
+    # estiver sem descrição ou contiver a antiga mensagem de erro, força nova análise.
+    # Não reutiliza visual_description do JSON nesses casos: isso poderia marcar
+    # uma descrição antiga como válida e impedir a atualização do TXT.
+    arquivo_txt_existe = os.path.isfile(caminho_txt)
+    descricao_txt_valida = bool(
+        mesma_foto
+        and descricao_anterior
+        and not descricao_anterior.lower().startswith("a imagem não pôde ser analisada")
+        and not descricao_anterior.lower().startswith("a imagem nao pode ser analisada")
+    )
 
-    # Só ignora quando a mesma imagem já possui uma descrição válida.
-    # Se a tentativa anterior falhou, on_ready tentará novamente no próximo início.
-    if not forcar and mesma_foto and descricao_anterior:
+    if not arquivo_txt_existe and mesma_foto and not descricao_anterior:
+        descricao_json = str(perfil.get("visual_description", "") or "").strip()
+        if descricao_json and not descricao_json.lower().startswith("a imagem não pôde ser analisada"):
+            descricao_anterior = descricao_json
+            descricao_txt_valida = True
+
+    # Só ignora se o próprio TXT já tiver uma descrição real para este avatar.
+    if not forcar and descricao_txt_valida:
         return False
 
     descricao = ""
@@ -7396,10 +7408,9 @@ async def atualizar_memoria_foto_perfil(forcar=False):
         log_console(
             f"AVISO: não foi possível analisar o avatar ({detalhe}). A tentativa será repetida."
         )
-        # Não substitui uma descrição válida da mesma imagem por uma mensagem de erro.
-        descricao = descricao_anterior or (
-            "A imagem não pôde ser analisada. A análise será tentada novamente na próxima inicialização."
-        )
+        # Não grava texto de erro como se fosse descrição visual.
+        # Campo vazio sinaliza que a análise precisa ser tentada novamente.
+        descricao = descricao_anterior if descricao_txt_valida else ""
 
     texto = (
         marcador + "\n"
@@ -7416,7 +7427,7 @@ async def atualizar_memoria_foto_perfil(forcar=False):
         "name": str(bot.user.name),
         "avatar_url": avatar_url,
         # Não injeta uma mensagem de erro no prompt da IA como se fosse descrição visual.
-        "visual_description": descricao[:1600] if analise_ok or descricao_anterior else "",
+        "visual_description": descricao[:1600] if analise_ok else "",
         "avatar_memory_file": "foto de perfil.txt",
     })
     tmp_json = caminho_json + ".tmp"
@@ -7427,7 +7438,7 @@ async def atualizar_memoria_foto_perfil(forcar=False):
     if analise_ok:
         log_console("Memória do avatar atualizada; descrição visual disponível para a IA.")
     else:
-        log_console("Memória do avatar sincronizada; análise visual pendente e será repetida.")
+        log_console("Memória do avatar sincronizada sem texto de erro; o campo vazio fará a análise ser repetida.")
     return analise_ok
 
 
