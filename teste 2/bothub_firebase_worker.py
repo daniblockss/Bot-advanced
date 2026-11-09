@@ -4,13 +4,14 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
+WORKER_VERSION="2026.11.08.2"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
 TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
-PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
+PROCS={};LOGS={};LOG_OFFSETS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 
 def save_json(path,data):
@@ -92,10 +93,20 @@ def fb(method,path,tok,data=None,_retried=False):
 def stats(cfg):
     d=shutil.disk_usage(str(ROOT))
     running=[k for k,p in PROCS.items() if p.poll() is None]
+    ready=[]
+    for bot_id in running:
+        try:
+            log_path=ROOT/"bots"/sid(bot_id)/"bot.log"
+            with log_path.open("rb") as handle:
+                handle.seek(int(LOG_OFFSETS.get(bot_id,0)))
+                recent=handle.read(512*1024).decode("utf-8",errors="replace")
+            if "Conectado como" in recent: ready.append(bot_id)
+        except Exception: pass
     x={"deviceId":cfg["device_id"],"uid":cfg.get("uid",""),"hostname":socket.gethostname(),
        "label":socket.gethostname(),"platform":platform.platform(),"diskFreeBytes":d.free,
-       "diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"runningBots":len(running),
-       "runningBotIds":running,"lastSeen":int(time.time()*1000),
+       "diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"workerVersion":WORKER_VERSION,
+       "runningBots":len(running),"runningBotIds":running,"readyBotIds":ready,
+       "lastSeen":int(time.time()*1000),
        "uptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerUptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerStartedAt":int(WORKER_STARTED*1000)}
@@ -671,6 +682,8 @@ def start(k,b):
     p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
         stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),**popen_kwargs)
     PROCS[k]=p;LOGS[k]=log
+    try:LOG_OFFSETS[k]=log.tell()
+    except Exception:LOG_OFFSETS[k]=0
     # Detecta falhas imediatas no main.py para que o loop possa tentar novamente.
     time.sleep(1.5)
     if p.poll() is not None:
@@ -1044,21 +1057,36 @@ def load_worker_queue(tok, device_id):
             print("[BotHub] bot atribuído sem token no cadastro Firebase:", bot_id, flush=True)
     return queue
 
-def download_latest_main(folder):
+def fetch_latest_main():
     url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"
     response=S.get(url,timeout=45);response.raise_for_status()
     data=response.content
     if len(data)<10000: raise RuntimeError("main.py baixado está incompleto.")
     compile(data.decode("utf-8"),"main.py","exec")
+    return data
+
+def main_file_version(data):
+    return hashlib.sha256(data).hexdigest()[:12]
+
+def download_latest_main(folder):
+    data=fetch_latest_main()
     target=folder/"main.py";tmp=folder/"main.py.update.tmp"
     backup=folder/".main.py.last-good"
+    old_version="desconhecida"
     if target.exists():
         old=target.read_bytes()
         if len(old)>=10000:
             compile(old.decode("utf-8"),"main.py (versão anterior)","exec")
+            old_version=main_file_version(old)
             backup_tmp=backup.with_suffix(".tmp")
             backup_tmp.write_bytes(old);backup_tmp.replace(backup)
     tmp.write_bytes(data);tmp.replace(target)
+    new_version=main_file_version(data)
+    save_json(folder/".bothub_main_version.json",{"version":new_version,"sha256":hashlib.sha256(data).hexdigest(),"updatedAt":int(time.time()*1000)})
+    if old_version!="desconhecida" and old_version!=new_version:
+        print("[BotHub] main.py atualizado:",old_version,"->",new_version,flush=True)
+    else:
+        print("[BotHub] main.py versão atual:",new_version,flush=True)
     return len(data)
 
 def notify_update(bot_id, bot_cfg, update):
@@ -1070,7 +1098,9 @@ def notify_update(bot_id, bot_cfg, update):
         if not owner:return
         channel=discord_api(token_value,"POST","/users/@me/channels",{"recipient_id":str(owner)})
         mode="OBRIGATÓRIA" if update.get("type")=="mandatory" else "OPCIONAL"
-        description=str(update.get("description") or "Melhorias e correções.")[:1500]
+        description=("Versão instalada: **"+str(update.get("currentVersion") or "desconhecida")+"**\\n"+
+                     "Versão mais recente: **"+str(update.get("latestVersion") or "desconhecida")+"**\\n"+
+                     str(update.get("description") or "Melhorias e correções.")[:1400])
         content=("📦 **Atualização BotHub disponível — "+mode+"**\n"+description+
                  ("\n\nEsta atualização será instalada automaticamente." if mode=="OBRIGATÓRIA"
                   else "\n\nPara instalar, digite !update neste chat com o bot."))
@@ -1091,8 +1121,21 @@ def process_release_updates(tok, queue):
         except Exception:state={}
         update_id=str(release.get("updateId"))
         if state.get("updateId")!=update_id:
-            notify_update(raw_id,bot_cfg,release)
-            state={"updateId":update_id,"announced":True,"updated":False}
+            try:
+                latest_data=fetch_latest_main()
+                latest_version=main_file_version(latest_data)
+                installed_data=(folder/"main.py").read_bytes() if (folder/"main.py").is_file() else b""
+                installed_version=main_file_version(installed_data) if installed_data else "ausente"
+            except Exception as version_error:
+                print("[BotHub] Comparação de versões falhou para",raw_id,":",str(version_error)[:150],flush=True)
+                latest_version="indisponível";installed_version="desconhecida"
+            state={"updateId":update_id,"announced":False,"updated":installed_version==latest_version,
+                   "currentVersion":installed_version,"latestVersion":latest_version}
+            if installed_version!=latest_version:
+                notify_update(raw_id,bot_cfg,dict(release,currentVersion=installed_version,latestVersion=latest_version))
+                state["announced"]=True
+            else:
+                print("[BotHub] Atualização já aplicada em",raw_id,"(versão",latest_version+"); aviso ignorado.",flush=True)
             save_json(state_file,state)
         request_file=folder/".bothub_update_request"
         mandatory=release.get("type")=="mandatory"
@@ -1351,6 +1394,7 @@ def main():
     kill_bot_processes_under_root()
     print("[BotHub] Todos os main.py antigos desta instalação foram encerrados; iniciando os bots atribuídos.", flush=True)
     print("[BotHub] Worker iniciado sem pedir ID, e-mail ou senha.",flush=True)
+    print("[BotHub] VERSÃO DO WORKER:",WORKER_VERSION,flush=True)
     while True:
         try:
             t=token(cfg);did=urllib.parse.quote(cfg["device_id"],safe="")
