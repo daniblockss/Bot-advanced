@@ -870,7 +870,7 @@ function watch(path,cb){
 function runningSet(){
   const s=new Set();
   for(const w of Object.values(workerData)){
-    const ids=w.runningBotIds;
+    const ids=w.readyBotIds;
     if(Array.isArray(ids))ids.forEach(id=>s.add(String(id)));
     else if(ids&&typeof ids==='object')Object.keys(ids).forEach(id=>s.add(String(id)));
   }
@@ -898,7 +898,7 @@ function drawWorkers(){
 
   $('workers').innerHTML=entries.length?entries.map(([id,w])=>{
     const isOnline=online(w),seen=Number(w.lastSeen||0),runCount=Array.isArray(w.runningBotIds)?w.runningBotIds.length:Object.keys(w.runningBotIds||{}).length,ipDup=w.publicIp&&duplicateIps.has(w.publicIp);
-    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipDup?'<span class="badge off">IP repetido</span>':'')+'<div class="hint">ID: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">IP: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
+    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipDup?'<span class="badge off">IP repetido</span>':'')+'<div class="hint">ID: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">Versão do worker: '+esc(w.workerVersion||'não informada')+'</div><div class="hint">IP: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
   }).join(''):'<div class="muted">Nenhum worker registrado.</div>';
 
   document.querySelectorAll('[data-remove-worker]').forEach(b=>b.onclick=()=>removeWorker(b.dataset.removeWorker));
@@ -930,7 +930,7 @@ function drawBots(){
           </div>
         </div>
         <div class="small muted" style="line-height:1.4">
-          <div><b>Status:</b> ${isRunning ? '<span style="color:var(--green)">Ligado</span>' : b.enabled ? '<span style="color:var(--cyan)">Ativo</span>' : '<span style="color:var(--red)">Pausado</span>'}</div>
+          <div><b>Status:</b> ${isRunning ? '<span style="color:var(--green)">Ligado — confirmado pelo worker/Discord</span>' : b.enabled ? '<span style="color:var(--cyan)">Ativo — aguardando confirmação</span>' : '<span style="color:var(--red)">Pausado</span>'}</div>
           <div><b>Worker:</b> ${esc(b.workerId || 'Fila')}</div>
         </div>
         <div style="display:flex;gap:6px;margin-top:auto;padding-top:6px;flex-wrap:wrap">
