@@ -496,7 +496,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
         </div>
         <div class="card">
           <h2 style="font-size:15px;margin:0 0 8px">📡 Ações do Cluster</h2>
-          <div id="actionLog" class="hint" style="max-height:165px;overflow-y:auto;font-size:11.5px">Nenhuma ação registrada.</div>
+          <div id="actionLog" class="hint" style="max-height:165px;overflow-y:auto;font-size:11.5px">Nenhuma ação registrada.</div><h3 style="font-size:13px;margin:12px 0 5px">🔋 Avisos de bateria</h3><div id="batteryAlerts" class="hint">Nenhum aviso de bateria.</div>
         </div>
       </div>
     </div>
@@ -893,7 +893,44 @@ function botStatus(id,b,ready,processes){
   return processes.has(id)?'<span style="color:#fbbf24">Desligando</span>':'<span style="color:var(--red)">Desligado</span>';
 }
 
-function drawWorkers(){
+let batteryAlertState={},batteryAlertItems=[];
+function batterySummary(w){
+  if(w.batteryPresent!==true||w.batteryPercent===null||w.batteryPercent===undefined||!Number.isFinite(Number(w.batteryPercent)))return "Sem bateria detectada";
+  const pct=Number(w.batteryPercent),states={charging:"Carregando ⚡",discharging:"Descarregando 🔋",full:"Carga completa ✅",not_charging:"Não carregando",unknown:"Desconhecido"};
+  const state=states[w.batteryStatus]||(w.batteryPlugged===true?"Conectado à energia":"Estado desconhecido");
+  let extra=[];
+  if(w.batteryPluggedType)extra.push(({PLUGGED_USB:"USB",PLUGGED_AC:"Tomada",PLUGGED_WIRELESS:"Sem fio",UNPLUGGED:"Desconectado"})[w.batteryPluggedType]||w.batteryPluggedType);
+  if(w.batteryTemperatureC!==undefined&&w.batteryTemperatureC!==null)extra.push(Number(w.batteryTemperatureC).toFixed(1)+" °C");
+  if(w.batteryHealth)extra.push("Saúde: "+String(w.batteryHealth));
+  if(w.batteryVoltageMv!==undefined&&w.batteryVoltageMv!==null)extra.push(Number(w.batteryVoltageMv)+" mV");
+  if(w.batteryCurrentUa!==undefined&&w.batteryCurrentUa!==null)extra.push(Number(w.batteryCurrentUa)+" µA");
+  return pct+"% · "+state+(extra.length?" · "+extra.join(" · "):"");
+}
+function addBatteryAlert(id,w,message){
+  const name=w.label||w.hostname||id;
+  batteryAlertItems.unshift({time:new Date().toLocaleTimeString(),message:esc(name)+": "+esc(message)});
+  batteryAlertItems=batteryAlertItems.slice(0,10);
+  const box=$("batteryAlerts");
+  if(box)box.innerHTML=batteryAlertItems.map(a=>'<div class="hint" style="padding:6px 0;border-bottom:1px solid var(--line)">🔔 <b>'+a.time+'</b> · '+a.message+'</div>').join("");
+}
+function checkBatteryAlerts(entries){
+  for(const [id,w] of entries){
+    if(!online(w)||w.batteryPresent!==true||!Number.isFinite(Number(w.batteryPercent)))continue;
+    const now={percent:Number(w.batteryPercent),plugged:w.batteryPlugged===true,status:String(w.batteryStatus||"unknown")};
+    const old=batteryAlertState[id];
+    if(!old){
+      if(now.percent<=15)addBatteryAlert(id,w,"Bateria baixa ("+now.percent+"%). Conecte o carregador.");
+      batteryAlertState[id]=now;continue;
+    }
+    if(old.percent>15&&now.percent<=15)addBatteryAlert(id,w,"Bateria baixa: "+now.percent+"%. Carregue o dispositivo.");
+    else if(old.percent>25&&now.percent<=25)addBatteryAlert(id,w,"Atenção: bateria em "+now.percent+"%.");
+    if(old.status!=="charging"&&now.status==="charging")addBatteryAlert(id,w,"Começou a carregar ("+now.percent+"%).");
+    if(old.status!=="full"&&now.status==="full")addBatteryAlert(id,w,"Bateria chegou a 100% / carga completa.");
+    if(old.plugged&&!now.plugged)addBatteryAlert(id,w,now.percent>=99?"Carregador desconectado com bateria cheia.":"Foi desconectado da energia ("+now.percent+"%).");
+    batteryAlertState[id]=now;
+  }
+}
+function drawWorkers(){\n  checkBatteryAlerts(Object.entries(workerData));
   const entries=Object.entries(workerData),live=entries.filter(([,w])=>online(w));
   $('online').textContent=live.length;
   $('capacity').textContent=live.reduce((total,[,w])=>total+capacity(w),0);
@@ -915,7 +952,7 @@ function drawWorkers(){
   $('workers').innerHTML=entries.length?entries.map(([id,w])=>{
     const isOnline=online(w),seen=Number(w.lastSeen||0),runCount=Array.isArray(w.runningBotIds)?w.runningBotIds.length:Object.keys(w.runningBotIds||{}).length,ipDup=w.publicIp&&duplicateIps.has(w.publicIp);
     const remainingCapacity=isOnline?capacity(w):0;
-    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipDup?'<span class="badge off">IP repetido</span>':'')+'<div class="hint">ID: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">Versão do worker: '+esc(w.workerVersion||'não informada')+'</div><div class="hint">IP: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Ainda aguenta: '+remainingCapacity+' bots adicionais (estimativa)</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
+    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipDup?'<span class="badge off">IP repetido</span>':'')+'<div class="hint">ID: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">Versão do worker: '+esc(w.workerVersion||'não informada')+'</div><div class="hint">IP: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Bateria: '+batterySummary(w)+'</div><div class="hint">Ainda aguenta: '+remainingCapacity+' bots adicionais (estimativa)</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
   }).join(''):'<div class="muted">Nenhum worker registrado.</div>';
 
   document.querySelectorAll('[data-remove-worker]').forEach(b=>b.onclick=()=>removeWorker(b.dataset.removeWorker));
