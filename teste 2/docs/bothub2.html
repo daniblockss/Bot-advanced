@@ -506,7 +506,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
       <div class="card">
         <h2>Dispositivos / workers conectados</h2>
         <div id="workers"><span class="muted">Aguardando workers…</span></div>
-        <p class="hint" style="margin-top:10px">Cada worker gerencia até 3 bots com base no espaço livre e recursos.</p>
+        <p class="hint" style="margin-top:10px">Cada worker recebe uma quantidade dinâmica de bots conforme a RAM e o disco livres, mantendo uma reserva para o sistema.</p>
       </div>
     </div>
 
@@ -853,7 +853,7 @@ const ageText=ms=>{if(!Number.isFinite(ms)||ms<0)return 'desconhecido';return du
 const STALE_MS=60*60*1000; let cleanupBusy=false,lastCleanup=0;
 
 function online(w){return !!w&&Date.now()-Number(w.lastSeen||0)<20000}
-function capacity(w){if(!online(w))return 0;const ram=Math.max(0,Math.floor((Number(w.ramFreeBytes||0)-350*1024*1024)/(250*1024*1024)));const disk=Math.max(0,Math.floor((Number(w.diskFreeBytes||0)-1024*1024*1024)/(100*1024*1024)));return Math.min(ram,disk)}
+function capacity(w){if(!online(w))return 0;const ram=Math.max(0,Math.floor((Number(w.ramFreeBytes||0)-512*1024*1024)/(300*1024*1024)));const disk=Math.max(0,Math.floor((Number(w.diskFreeBytes||0)-1024*1024*1024)/(100*1024*1024)));return Math.min(ram,disk)}
 function eligible(w){return capacity(w)>0}
 function stopSubs(){stopListeners.forEach(f=>f());stopListeners=[]}
 
@@ -1154,7 +1154,7 @@ async function rebalance(){
       if(!target||!Object.prototype.hasOwnProperty.call(counts,target)||counts[target]>=capacity(workerData[target])){
         target=nodes.find(([id,w])=>counts[id]<capacity(w))?.[0]||previous;
       }else if(!eligible(workerData[target])){
-        target=nodes.find(([id])=>counts[id]<3)?.[0]||previous;
+        target=nodes.find(([id,w])=>counts[id]<capacity(w))?.[0]||previous;
       }
       if(target&&Object.prototype.hasOwnProperty.call(counts,target))counts[target]++;
       assignments[bid]=target;
