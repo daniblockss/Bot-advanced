@@ -877,6 +877,22 @@ function runningSet(){
   return s;
 }
 
+function processSet(){
+  const s=new Set();
+  for(const w of Object.values(workerData)){
+    const ids=w.runningBotIds;
+    if(Array.isArray(ids))ids.forEach(id=>s.add(String(id)));
+    else if(ids&&typeof ids==='object')Object.keys(ids).forEach(id=>s.add(String(id)));
+  }
+  return s;
+}
+
+function botStatus(id,b,ready,processes){
+  const wanted=b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off';
+  if(wanted)return ready.has(id)?'<span style="color:var(--green)">Ligado</span>':'<span style="color:var(--cyan)">Ligando</span>';
+  return processes.has(id)?'<span style="color:#fbbf24">Desligando</span>':'<span style="color:var(--red)">Desligado</span>';
+}
+
 function drawWorkers(){
   const entries=Object.entries(workerData),live=entries.filter(([,w])=>online(w));
   $('online').textContent=live.length;
@@ -908,6 +924,7 @@ function drawBots(){
   const bots=Object.entries(botData);
   const active=bots.filter(([,b])=>b.enabled);
   const running=runningSet();
+  const processes=processSet();
   const reallyRunning=active.filter(([id])=>running.has(id));
   const queued=active.filter(([,b])=>!b.workerId||!eligible(workerData[b.workerId]));
 
@@ -930,8 +947,8 @@ function drawBots(){
           </div>
         </div>
         <div class="small muted" style="line-height:1.4">
-          <div><b>Status:</b> ${isRunning ? '<span style="color:var(--green)">Ligado — confirmado pelo worker/Discord</span>' : b.enabled ? '<span style="color:var(--cyan)">Ativo — aguardando confirmação</span>' : '<span style="color:var(--red)">Pausado</span>'}</div>
-          <div><b>Worker:</b> ${esc(b.workerId || 'Fila')}</div>
+          <div><b>Status:</b> ${botStatus(id,b,running,processes)}</div>
+          <div><b>Worker:</b> ${esc(b.workerId || b.lastWorkerId || 'Na fila')}</div>
         </div>
         <div style="display:flex;gap:6px;margin-top:auto;padding-top:6px;flex-wrap:wrap">
           <button class="primary" style="flex:1;padding:6px;font-size:11.5px" data-open-bot="${esc(id)}">⚙️ Painel</button>
