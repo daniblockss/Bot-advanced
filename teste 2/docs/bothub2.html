@@ -117,7 +117,7 @@ select{min-height:42px}
 .auth-btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
 .login-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.5;margin-top:18px}
 
-/* App Layout & Sidebar Responsiva */
+/* App Layout & Sidebar Vertical Optimizada */
 .app{display:grid;grid-template-columns:260px 1fr;min-height:100vh;position:relative;z-index:2}
 .sidebar{
   border-right:1px solid var(--line);
@@ -135,7 +135,7 @@ select{min-height:42px}
 
 .nav-btn{
   width:100%;display:flex;align-items:center;gap:10px;
-  padding:10px 12px;
+  padding:11px 12px;
   border-radius:10px;
   background:transparent;
   color:var(--muted);
@@ -148,25 +148,6 @@ select{min-height:42px}
   overflow:hidden;
 }
 
-.nav-btn::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%) scaleY(0);
-  width: 3px;
-  height: 60%;
-  background: var(--cyan);
-  border-radius: 0 4px 4px 0;
-  transition: transform 0.2s ease;
-}
-
-.nav-btn:hover{
-  background: rgba(56, 189, 248, 0.08);
-  color: #fff;
-  transform: translateX(4px);
-}
-
 .nav-btn.active{
   background: linear-gradient(90deg, rgba(56, 189, 248, 0.15), rgba(59, 130, 246, 0.05));
   color: #fff;
@@ -174,11 +155,6 @@ select{min-height:42px}
   box-shadow: inset 0 0 12px rgba(56, 189, 248, 0.08), 0 4px 12px rgba(0, 0, 0, 0.2);
   font-weight: 600;
 }
-
-.nav-btn.active::before {
-  transform: translateY(-50%) scaleY(1);
-}
-
 .nav-ico{width:18px;text-align:center;font-size:15px}
 
 .side-bottom{margin-top:auto;padding-top:10px}
@@ -199,17 +175,17 @@ select{min-height:42px}
 
 .main{
   min-width:0;
-  padding:20px 24px 40px;
+  padding:16px 20px 40px;
   max-width:1400px;
   width:100%;
   margin:0 auto;
 }
 .topbar{
   display:flex;justify-content:space-between;align-items:center;
-  margin-bottom:24px;gap:10px;
+  margin-bottom:20px;gap:10px;
 }
-.page-title{font-size:20px;font-weight:800;letter-spacing:-0.5px;margin:0}
-.page-sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.page-title{font-size:19px;font-weight:800;letter-spacing:-0.5px;margin:0}
+.page-sub{color:var(--muted);font-size:12px;margin-top:2px}
 .top-actions{display:flex;align-items:center;gap:10px}
 
 .icon-btn{
@@ -235,8 +211,9 @@ button.primary, .primary{
   font-size:13.5px;
   cursor:pointer;
   border:0;
+  width: 100%;
 }
-button.primary:hover{filter:brightness(1.08);transform:translateY(-1px)}
+@media(min-width: 600px) { button.primary, .primary { width: auto; } }
 
 button.secondary, .secondary{
   background:rgba(255,255,255,0.04);
@@ -249,7 +226,7 @@ button.secondary, .secondary{
   font-size:13px;
   cursor:pointer;
 }
-button.secondary:hover{background:rgba(56,189,248,0.08);border-color:var(--line-hover)}
+button.secondary:hover{background:rgba(56, 189, 248, 0.08);border-color:var(--line-hover)}
 
 button.danger, .danger{
   background:rgba(244,63,94,0.12);
@@ -264,29 +241,32 @@ button.danger, .danger{
 }
 button.danger:hover{background:rgba(244,63,94,0.22)}
 
-.grid{display:grid;gap:14px}
-.stats{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:16px}
+.grid{display:grid;gap:12px}
+.stats{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:14px}
+@media(min-width: 768px){.stats{grid-template-columns:repeat(4,minmax(0,1fr));}}
+
 .card{
   background:var(--panel);
   border:1px solid var(--line);
   border-radius:var(--radius);
-  padding:20px;
+  padding:16px;
   box-shadow:var(--shadow);
   min-width:0;
-  margin-bottom:14px;
+  margin-bottom:12px;
 }
-.stat-top{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px;font-weight:500}
+.stat-top{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:11.5px;font-weight:500}
 .stat-ico{
-  height:32px;width:32px;border-radius:9px;
+  height:30px;width:30px;border-radius:8px;
   display:grid;place-items:center;
   background:rgba(56,189,248,0.1);
   color:var(--cyan);
-  font-size:14px;
+  font-size:13px;
 }
-.stat-num{font-size:24px;font-weight:800;letter-spacing:-0.5px;margin:8px 0 2px;color:#fff}
-.stat-foot{font-size:11px;color:var(--muted)}
+.stat-num{font-size:22px;font-weight:800;letter-spacing:-0.5px;margin:6px 0 2px;color:#fff}
+.stat-foot{font-size:10.5px;color:var(--muted)}
 
-.two-col{grid-template-columns:1fr 1fr}
+.two-col{grid-template-columns:1fr}
+@media(min-width: 900px){.two-col{grid-template-columns:1fr 1fr}}
 
 /* Banner ASCII com Animação Cyber */
 @keyframes subtlePulse {
@@ -297,32 +277,27 @@ button.danger:hover{background:rgba(244,63,94,0.22)}
   background: #050810;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 12px 14px;
   font-family: 'Fira Code', monospace;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--cyan);
-  margin-bottom: 16px;
+  margin-bottom: 14px;
   overflow-x: auto;
 }
 .ascii-card.loop-active { animation: subtlePulse 5s ease-in-out infinite; }
 .ascii-header{
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  color: var(--muted);
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-  padding-bottom: 5px;
-  font-size: 10px;
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px; color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.05);
+  padding-bottom: 4px; font-size: 9.5px;
 }
 .ascii-dots { display: flex; gap: 4px; }
-.ascii-dot { width: 7px; height: 7px; border-radius: 50%; }
+.ascii-dot { width: 6px; height: 6px; border-radius: 50%; }
 .dot-r { background: var(--red); }
 .dot-y { background: #f59e0b; }
 .dot-g { background: var(--green); }
-pre.ascii-content{margin: 0;line-height: 1.2;white-space: pre;}
+pre.ascii-content{margin: 0;line-height: 1.15;white-space: pre;}
 .typing-cursor {
-  display: inline-block; width: 6px; height: 12px; background-color: var(--cyan);
+  display: inline-block; width: 5px; height: 11px; background-color: var(--cyan);
   vertical-align: middle; margin-left: 2px; animation: blinkCursor 0.8s infinite;
 }
 @keyframes blinkCursor{0%,100%{opacity:1}50%{opacity:0}}
@@ -330,11 +305,13 @@ pre.ascii-content{margin: 0;line-height: 1.2;white-space: pre;}
 .badge{font-size:11px;padding:4px 9px;border-radius:20px;background:rgba(16, 185, 129, 0.12);color:#34d399;font-weight:600;border:1px solid rgba(16,185,129,0.25);white-space:nowrap}
 .badge.off{background:rgba(244,63,94,0.12);color:#fb7185;border-color:rgba(244,63,94,0.25)}
 
-.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
 
-/* Cards detalhados dos Bots com foto e info rica */
-.bot-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 10px; }
+/* Cards de Bots */
+.bot-card-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 10px; }
+@media(min-width: 600px){.bot-card-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }}
+
 .bot-detailed-card {
   background: rgba(255,255,255,0.02);
   border: 1px solid var(--line);
@@ -342,41 +319,44 @@ pre.ascii-content{margin: 0;line-height: 1.2;white-space: pre;}
   padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   transition: all 0.2s;
 }
 .bot-detailed-card:hover { border-color: var(--cyan); background: rgba(56,189,248,0.03); }
 .bot-card-header { display: flex; align-items: center; gap: 10px; }
-.bot-avatar-lg { width: 44px; height: 44px; border-radius: 12px; object-fit: cover; background: linear-gradient(135deg, var(--blue), var(--purple)); display: grid; place-items: center; font-size: 20px; font-weight: 700; color: #fff; }
+.bot-avatar-lg { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; background: linear-gradient(135deg, var(--blue), var(--purple)); display: grid; place-items: center; font-size: 18px; font-weight: 700; color: #fff; }
 
-/* Modal individual do Bot */
+/* Modal Individual Imersivo (Aparece como um "novo html" elegante) */
 .modal-overlay {
-  position: fixed; inset: 0; background: rgba(2, 4, 8, 0.8); backdrop-filter: blur(5px);
-  z-index: 100; display: grid; place-items: center; padding: 16px;
+  position: fixed; inset: 0; background: rgba(3, 6, 12, 0.88); backdrop-filter: blur(8px);
+  z-index: 100; display: grid; place-items: center; padding: 12px;
 }
 .modal-box {
   background: var(--panel); border: 1px solid var(--cyan); border-radius: var(--radius);
-  width: min(750px, 100%); max-height: 90vh; overflow-y: auto; padding: 24px; box-shadow: var(--shadow);
+  width: 100%; max-width: 680px; height: 92vh; max-height: 720px; display: flex; flex-direction: column;
+  box-shadow: var(--shadow); overflow: hidden; animation: fadeIn .25s ease;
 }
-.modal-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--line); margin-bottom: 16px; padding-bottom: 10px; flex-wrap: wrap; }
-.modal-tab-btn { background: rgba(255,255,255,0.03); border: 1px solid var(--line); padding: 6px 12px; border-radius: 8px; color: var(--muted); font-weight: 600; font-size: 12.5px; cursor: pointer; }
+.modal-header-bar {
+  padding: 16px 20px; background: var(--panel-solid); border-bottom: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.modal-body-content { padding: 16px; overflow-y: auto; flex: 1; }
+
+.modal-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin-bottom: 14px; padding-bottom: 8px; overflow-x: auto; }
+.modal-tab-btn { background: rgba(255,255,255,0.03); border: 1px solid var(--line); padding: 7px 12px; border-radius: 8px; color: var(--muted); font-weight: 600; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .modal-tab-btn.active { background: rgba(56, 189, 248, 0.15); color: var(--cyan); border-color: var(--cyan); }
 
-.chart-container { position: relative; width: 100%; height: 210px; margin-top: 10px; }
+.chart-container { position: relative; width: 100%; height: 190px; margin-top: 8px; }
 
-code{font-family:'Fira Code',monospace;color:#c4b5fd;background:rgba(255,255,255,0.04);padding:2px 6px;border-radius:4px;font-size:12px}
-pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;border:1px solid var(--line);padding:14px;border-radius:10px;color:#dbeafe;font-family:'Fira Code',monospace;font-size:12px}
+code{font-family:'Fira Code',monospace;color:#c4b5fd;background:rgba(255,255,255,0.04);padding:2px 6px;border-radius:4px;font-size:11.5px}
+pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;border:1px solid var(--line);padding:12px;border-radius:10px;color:#dbeafe;font-family:'Fira Code',monospace;font-size:11.5px}
 
-.error{color:#fda4af;white-space:pre-wrap;margin-top:6px;font-size:12.5px}
-.ok{color:#6ee7b7;white-space:pre-wrap;margin-top:6px;font-size:12.5px}
-.hint{color:var(--muted);font-size:12.5px;line-height:1.5}
+.error{color:#fda4af;white-space:pre-wrap;margin-top:6px;font-size:12px}
+.ok{color:#6ee7b7;white-space:pre-wrap;margin-top:6px;font-size:12px}
+.hint{color:var(--muted);font-size:12px;line-height:1.45}
 
 .mobile-menu{display:none}
 
-@media(max-width:1050px){
-  .stats{grid-template-columns:repeat(2,1fr)}
-  .two-col{grid-template-columns:1fr}
-}
 @media(max-width:768px){
   .app{grid-template-columns:1fr}
   .sidebar{
@@ -384,9 +364,8 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
     transition:left .25s cubic-bezier(0.16, 1, 0.3, 1); box-shadow:var(--shadow);
   }
   .sidebar.open{left:0}
-  .main{padding:16px 12px 40px}
+  .main{padding:14px 10px 40px}
   .mobile-menu{display:grid}
-  .stats{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -406,7 +385,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
     <input id="password" type="password" autocomplete="current-password" placeholder="Senha da conta Firebase">
     <button id="loginBtn" class="auth-btn">Entrar no painel</button>
     <div id="loginMsg" class="error"></div>
-    <div class="login-note">Acesso restrito a administradores autorizados no banco de dados do Firebase. 🛡️</div>
+    <div class="login-note">Acesso restrito a administradores autorizados no Firebase. 🛡️</div>
   </div>
 </div>
 
@@ -425,9 +404,9 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
         <div class="avatar">⚡</div>
         <div style="min-width:0;flex:1">
           <div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis">Admin BotHub</div>
-          <div class="small muted" id="connectionStatusBadge"><span class="badge" style="font-size:10px;padding:2px 6px">Conectado</span></div>
+          <div class="small muted"><span class="badge" style="font-size:9.5px;padding:2px 5px">Conectado</span></div>
         </div>
-        <button class="icon-btn" id="logout" style="height:30px;width:30px" title="Sair">🚪</button>
+        <button class="icon-btn" id="logout" style="height:28px;width:28px" title="Sair">🚪</button>
       </div>
     </div>
   </aside>
@@ -438,7 +417,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
         <button class="icon-btn mobile-menu" onclick="toggleSidebar()">☰</button>
         <div>
           <h1 class="page-title" id="pageTitle">Visão geral do Cluster</h1>
-          <div class="page-sub" id="pageSub">Monitoramento em tempo real dos workers, bots e instâncias globais.</div>
+          <div class="page-sub" id="pageSub">Monitoramento em tempo real dos workers e bots.</div>
         </div>
       </div>
       <div class="top-actions">
@@ -463,66 +442,61 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
 
       <div class="grid stats">
         <div class="card" style="margin-bottom:0">
-          <div class="stat-top">Dispositivos online <span class="stat-ico">💻</span></div>
+          <div class="stat-top">Online <span class="stat-ico">💻</span></div>
           <div id="online" class="stat-num">0</div>
           <div class="stat-foot">Workers conectados</div>
         </div>
         <div class="card" style="margin-bottom:0">
-          <div class="stat-top">Com capacidade <span class="stat-ico">⚡</span></div>
+          <div class="stat-top">Capacidade <span class="stat-ico">⚡</span></div>
           <div id="capacity" class="stat-num">0</div>
-          <div class="stat-foot">Elegíveis p/ distribuição</div>
+          <div class="stat-foot">Elegíveis p/ bots</div>
         </div>
         <div class="card" style="margin-bottom:0">
-          <div class="stat-top">Bots ligados <span class="stat-ico">🤖</span></div>
+          <div class="stat-top">Ligados <span class="stat-ico">🤖</span></div>
           <div id="active" class="stat-num">0</div>
-          <div class="stat-foot">Executando ativamente</div>
+          <div class="stat-foot">Em execução</div>
         </div>
         <div class="card" style="margin-bottom:0">
           <div class="stat-top">Na fila <span class="stat-ico">⏳</span></div>
           <div id="queued" class="stat-num">0</div>
-          <div class="stat-foot">Aguardando worker livre</div>
+          <div class="stat-foot">Aguardando vaga</div>
         </div>
       </div>
 
-      <div class="grid stats" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));margin-top:14px">
+      <div class="grid stats" style="grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));margin-top:10px">
         <div class="card" style="margin-bottom:0">
-          <div class="muted small">RAM livre total</div>
-          <div id="ramFreeTotal" class="stat-num" style="font-size:18px">—</div>
-          <div id="ramTotalLabel" class="hint">RAM total: —</div>
+          <div class="muted small">RAM livre</div>
+          <div id="ramFreeTotal" class="stat-num" style="font-size:16px">—</div>
+          <div id="ramTotalLabel" class="hint" style="font-size:10px">RAM: —</div>
         </div>
         <div class="card" style="margin-bottom:0">
-          <div class="muted small">Armazenamento livre</div>
-          <div id="diskFreeTotal" class="stat-num" style="font-size:18px">—</div>
-          <div id="diskTotalLabel" class="hint">Total: —</div>
+          <div class="muted small">Disco livre</div>
+          <div id="diskFreeTotal" class="stat-num" style="font-size:16px">—</div>
+          <div id="diskTotalLabel" class="hint" style="font-size:10px">Total: —</div>
         </div>
         <div class="card" style="margin-bottom:0">
-          <div class="muted small">CPU média online</div>
-          <div id="cpuAvg" class="stat-num" style="font-size:18px">—</div>
+          <div class="muted small">CPU média</div>
+          <div id="cpuAvg" class="stat-num" style="font-size:16px">—</div>
         </div>
         <div class="card" style="margin-bottom:0">
-          <div class="muted small">Worker mais antigo</div>
-          <div id="longestUptime" class="stat-num" style="font-size:18px">—</div>
-        </div>
-        <div class="card" style="margin-bottom:0">
-          <div class="muted small">Bateria média</div>
-          <div id="batteryAvg" class="stat-num" style="font-size:18px">—</div>
-          <div id="batteryCount" class="hint">Aguardando dados</div>
+          <div class="muted small">Uptime Max</div>
+          <div id="longestUptime" class="stat-num" style="font-size:16px">—</div>
         </div>
       </div>
 
-      <div class="grid two-col" style="margin-top:14px">
+      <div class="grid two-col" style="margin-top:12px">
         <div class="card">
-          <div class="section-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <h2 style="font-size:16px;margin:0">📈 Desempenho do Cluster</h2>
-            <span class="small muted">Latência Firebase Realtime</span>
+          <div class="section-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h2 style="font-size:15px;margin:0">📈 Desempenho</h2>
+            <span class="small muted">Tempo real</span>
           </div>
           <div class="chart-container">
             <canvas id="realtimeChart"></canvas>
           </div>
         </div>
         <div class="card">
-          <h2 style="font-size:16px;margin:0 0 10px">📡 Histórico de Ações dos Servidores</h2>
-          <div id="actionLog" class="hint" style="max-height:190px;overflow-y:auto">Nenhuma ação registrada nesta sessão.</div>
+          <h2 style="font-size:15px;margin:0 0 8px">📡 Ações do Cluster</h2>
+          <div id="actionLog" class="hint" style="max-height:165px;overflow-y:auto;font-size:11.5px">Nenhuma ação registrada.</div>
         </div>
       </div>
     </div>
@@ -532,59 +506,53 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
       <div class="card">
         <h2>Dispositivos / workers conectados</h2>
         <div id="workers"><span class="muted">Aguardando workers…</span></div>
-        <p class="hint" style="margin-top:12px">Os dispositivos executam os bots. O painel distribui automaticamente até 3 bots por worker elegível, priorizando o maior espaço livre.</p>
+        <p class="hint" style="margin-top:10px">Cada worker gerencia até 3 bots com base no espaço livre e recursos.</p>
       </div>
     </div>
 
     <!-- Seção Gerenciar Bots -->
     <div id="page-botsSection" class="page hidden">
-      <div class="card" style="margin-bottom: 16px;">
+      <div class="card" style="margin-bottom: 14px;">
         <h2>Cadastrar bot Discord</h2>
-        <div class="grid two-col" style="gap:10px; margin-top:8px">
-          <div>
-            <label>Nome do bot</label>
-            <input id="botName" maxlength="100" placeholder="Meu bot">
-          </div>
-          <div>
-            <label>Token do bot</label>
-            <input id="botToken" type="password" autocomplete="off" placeholder="Token privado do bot">
-          </div>
-        </div>
-        <button id="createBot" class="primary" style="margin-top:12px">Cadastrar e distribuir</button>
+        <label>Nome do bot</label>
+        <input id="botName" maxlength="100" placeholder="Meu bot">
+        <label>Token do bot</label>
+        <input id="botToken" type="password" autocomplete="off" placeholder="Token privado">
+        <button id="createBot" class="primary" style="margin-top:10px">Cadastrar e distribuir</button>
         <div id="createMsg" class="hint"></div>
       </div>
 
       <div class="card">
-        <h2>Bots cadastrados no cluster</h2>
-        <p class="hint">Clique em <b>"Painel Individual"</b> em qualquer bot para gerenciar arquivos, logs e perfis isoladamente.</p>
-        <div id="bots" style="margin-top:12px"><span class="muted">Aguardando dados…</span></div>
-        <div id="queueMsg" class="hint" style="margin-top: 10px;"></div>
+        <h2>Bots cadastrados</h2>
+        <p class="hint">Clique em <b>"Painel Individual"</b> em qualquer bot para abrir a central isolada de arquivos e logs.</p>
+        <div id="bots" style="margin-top:10px"><span class="muted">Aguardando dados…</span></div>
+        <div id="queueMsg" class="hint" style="margin-top: 8px;"></div>
       </div>
     </div>
 
-    <!-- Seção Atualizações & Sistema (Unificada) -->
+    <!-- Seção Atualizações & Sistema (Separada corretamente) -->
     <div id="page-updatesSection" class="page hidden">
       <div class="grid two-col">
         <div class="card">
-          <h2>Atualizar main.py dos bots</h2>
-          <p class="hint">Publica uma atualização para os bots individuais.</p>
+          <h2>Atualizar main.py (Bots)</h2>
+          <p class="hint">Publica atualização para os bots individuais do cluster.</p>
           <label>Tipo de atualização</label>
           <select id="mainUpdateType">
             <option value="optional">Opcional — o criador decide</option>
             <option value="mandatory">Obrigatória — instalar automaticamente</option>
           </select>
-          <label>Descrição da atualização</label>
-          <textarea id="mainUpdateDescription" rows="3" maxlength="1500" placeholder="Descreva as correções e melhorias"></textarea>
-          <button id="publishMainUpdate" class="primary" style="margin-top:12px">Publicar atualização</button>
+          <label>Descrição</label>
+          <textarea id="mainUpdateDescription" rows="2" maxlength="1500" placeholder="Descreva as melhorias"></textarea>
+          <button id="publishMainUpdate" class="primary" style="margin-top:10px">Publicar atualização</button>
           <div id="mainUpdateMsg" class="hint"></div>
         </div>
 
         <div class="card">
           <h2>Controlador do Cluster (Workers)</h2>
-          <p class="hint">Atualiza o instalador e o worker a partir do GitHub.</p>
-          <div style="margin-top: 30px;"></div>
-          <button id="updateCluster" class="primary">Atualizar arquivos do Cefilu (Cluster)</button>
-          <div id="clusterUpdateMsg" class="hint" style="margin-top: 12px;"></div>
+          <p class="hint">Atualiza os scripts do repositório em todos os workers conectados.</p>
+          <div style="margin-top: 24px;"></div>
+          <button id="updateCluster" class="primary">Atualizar arquivos do Cefilu</button>
+          <div id="clusterUpdateMsg" class="hint" style="margin-top: 10px;"></div>
         </div>
       </div>
     </div>
@@ -592,77 +560,103 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
     <!-- Seção Como Adicionar Servidor -->
     <div id="page-setupSection" class="page hidden">
       <div class="card">
-        <h2>Como adicionar um servidor ao cluster</h2>
-        <p class="hint">O único ponto de entrada é <code>start.py</code>. Ele baixa/verifica o instalador e o worker, registra os detalhes em <code>start.log</code> e transfere o próprio processo ao instalador. Requer Python 3.10+ e internet.</p>
+        <h2>Adicionar servidor ao cluster</h2>
+        <p class="hint">Execute no terminal da máquina desejada (Python 3.10+):</p>
         <pre class="code-block">mkdir -p "teste 2" && cd "teste 2"
 curl -fL https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/start.py -o start.py
 python3 start.py</pre>
-        <p class="hint" style="margin-top:14px">Passos complementares:</p>
-        <div class="row"><div><strong>1. Se o servidor não tiver Python ou venv</strong><div class="hint">O instalador precisa de Python 3.10+ para começar. Em Debian/Ubuntu, instale <code>python3-venv</code> e <code>python3-pip</code>.</div></div></div>
-        <div class="row"><div><strong>2. Criar uma conta Firebase para o worker</strong><div class="hint">No Firebase Console, abra Authentication → Users e crie uma conta de e-mail e senha para este dispositivo.</div></div></div>
-        <div class="row"><div><strong>3. Autorizar o worker</strong><div class="hint">Em Realtime Database → Dados, configure <code>workerUids/ID_DO_DISPOSITIVO</code> com o UID da conta como valor de texto.</div></div></div>
-        <div class="row"><div><strong>4. Confirmar no painel</strong><div class="hint">Deixe o worker rodando e aguarde 15–30 segundos para aparecer na aba de Workers.</div></div></div>
       </div>
     </div>
   </main>
 </div>
 
-<!-- Modal de Painel Individual do Bot -->
+<!-- Painel Individual do Bot (Estilo "Novo HTML" Imersivo para Celular/Vertical) -->
 <div id="botModal" class="modal-overlay hidden">
   <div class="modal-box">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
-      <h3 id="modalBotTitle" style="margin:0; font-size:18px; color:var(--cyan)">Painel do Bot</h3>
-      <button class="icon-btn" onclick="closeBotModal()">✕</button>
+    <div class="modal-header-bar">
+      <h3 id="modalBotTitle" style="margin:0; font-size:16px; color:var(--cyan)">Painel Individual</h3>
+      <button class="icon-btn" onclick="closeBotModal()" style="height:30px;width:30px">✕</button>
     </div>
 
-    <div class="modal-tabs">
-      <button class="modal-tab-btn active" onclick="switchBotTab('files')">📁 Arquivos</button>
-      <button class="modal-tab-btn" onclick="switchBotTab('logs')">📋 Logs</button>
-      <button class="modal-tab-btn" onclick="switchBotTab('profile')">👤 Perfil & Config</button>
-    </div>
-
-    <!-- Aba de Arquivos (Exclui bot_settings.json e main.py) -->
-    <div id="botTabFiles" class="bot-tab-content">
-      <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap">
-        <button class="secondary" onclick="loadBotFiles()">📂 Atualizar Lista</button>
-        <button class="secondary" onclick="restartSelectedBot()">🔄 Reiniciar Bot</button>
+    <div class="modal-body-content">
+      <div class="modal-tabs">
+        <button class="modal-tab-btn active" onclick="switchBotTab('files')">📁 Arquivos</button>
+        <button class="modal-tab-btn" onclick="switchBotTab('logs')">📋 Logs</button>
+        <button class="modal-tab-btn" onclick="switchBotTab('profile')">👤 Perfil & Config</button>
       </div>
-      <div id="modalFileStatus" class="hint"></div>
-      <div id="modalFileList" style="margin:10px 0; max-height:160px; overflow-y:auto"></div>
-      <label>Arquivo selecionado</label>
-      <input id="modalFilePath" placeholder="Ex.: config.json ou utils.py">
-      <label>Conteúdo (UTF-8)</label>
-      <textarea id="modalFileContent" rows="8" spellcheck="false" placeholder="Selecione um arquivo ou crie um novo..."></textarea>
-      <div style="display:flex; gap:8px; margin-top:10px">
-        <button class="primary" onclick="saveBotFile()">💾 Salvar Arquivo</button>
-        <button class="danger" onclick="deleteBotFile()">🗑️ Excluir Arquivo</button>
+
+      <!-- Aba de Arquivos -->
+      <div id="botTabFiles" class="bot-tab-content">
+        <div style="display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap">
+          <button class="secondary" onclick="loadBotFiles()">📂 Atualizar</button>
+          <button class="secondary" onclick="restartSelectedBot()">🔄 Reiniciar</button>
+        </div>
+        <div id="modalFileStatus" class="hint"></div>
+        <div id="modalFileList" style="margin:8px 0; max-height:130px; overflow-y:auto"></div>
+        <label>Arquivo selecionado</label>
+        <input id="modalFilePath" placeholder="Ex.: utils.py ou config.json">
+        <label>Conteúdo UTF-8</label>
+        <textarea id="modalFileContent" rows="7" spellcheck="false" placeholder="Selecione um arquivo..."></textarea>
+        <div style="display:flex; gap:6px; margin-top:8px">
+          <button class="primary" onclick="saveBotFile()">💾 Salvar</button>
+          <button class="danger" onclick="deleteBotFile()">🗑️ Excluir</button>
+        </div>
       </div>
-    </div>
 
-    <!-- Aba de Logs -->
-    <div id="botTabLogs" class="bot-tab-content hidden">
-      <button class="secondary" onclick="fetchBotLogs()" style="margin-bottom:10px">🔄 Atualizar Logs</button>
-      <div id="modalLogsStatus" class="hint"></div>
-      <pre id="modalLogsText" class="code-block" style="max-height:280px; overflow:auto; margin-top:6px"></pre>
-    </div>
+      <!-- Aba de Logs -->
+      <div id="botTabLogs" class="bot-tab-content hidden">
+        <button class="secondary" onclick="fetchBotLogs()" style="margin-bottom:8px">🔄 Atualizar Logs</button>
+        <div id="modalLogsStatus" class="hint"></div>
+        <pre id="modalLogsText" class="code-block" style="max-height:240px; overflow:auto; margin-top:4px"></pre>
+      </div>
 
-    <!-- Aba de Perfil -->
-    <div id="botTabProfile" class="bot-tab-content hidden">
-      <label>Novo Nome do Bot</label>
-      <input id="modalProfileName" maxlength="32" placeholder="Novo nome">
-      <label>Nova Descrição</label>
-      <textarea id="modalProfileDesc" rows="2" maxlength="400" placeholder="Descrição do bot"></textarea>
-      <label>Nova Foto (PNG/JPEG, até 4MB)</label>
-      <input id="modalProfileAvatar" type="file" accept="image/png,image/jpeg">
-      <button class="primary" onclick="saveBotProfile()" style="margin-top:12px">💾 Aplicar Alterações no Discord</button>
-      <div id="modalProfileMsg" class="hint"></div>
+      <!-- Aba de Perfil & Config (Com compressão Base64 client-side) -->
+      <div id="botTabProfile" class="bot-tab-content hidden">
+        <label>Nome do Bot</label>
+        <input id="modalProfileName" maxlength="32" placeholder="Nome">
+        <label>Descrição</label>
+        <textarea id="modalProfileDesc" rows="2" maxlength="400" placeholder="Descrição"></textarea>
+        <label>Foto de Perfil (Salva no Firebase e sincronizada)</label>
+        <input id="modalProfileAvatarFile" type="file" accept="image/png,image/jpeg" onchange="handleAvatarCompress(event)">
+        <input id="modalProfileAvatarBase64" type="hidden">
+        <div style="display:flex; align-items:center; gap:10px; margin-top:8px">
+          <img id="modalAvatarPreview" src="" alt="" style="width:40px;height:40px;border-radius:10px;object-fit:cover;display:none">
+          <span class="small muted">Prévia da imagem compactada</span>
+        </div>
+        <button class="primary" onclick="saveBotProfileOnlySite()" style="margin-top:12px">💾 Salvar Perfil (Sincronizado)</button>
+        <div id="modalProfileMsg" class="hint"></div>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- Script UI & Matrix -->
+<!-- Script UI, Sons & Matrix -->
 <script>
 const $ = id => document.getElementById(id);
+
+/* Efeitos sonoros em puro JS com Web Audio API */
+function playClickSound() {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(700, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(250, audioCtx.currentTime + 0.04);
+    gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.04);
+  } catch(e) {}
+}
+
+document.addEventListener('click', e => {
+  if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+    playClickSound();
+  }
+});
 
 /* Fundo Matrix Cyber */
 const canvas = document.getElementById('matrixCanvas');
@@ -774,7 +768,7 @@ function startTypewriterOnce() {
 /* Navegação por abas responsiva */
 function toggleSidebar() { $('sidebar').classList.toggle('open'); }
 const pageInfo = {
-  overview: ['Visão geral do Cluster', 'Monitoramento em tempo real dos workers e instâncias.'],
+  overview: ['Visão geral do Cluster', 'Monitoramento em tempo real dos workers e bots.'],
   workersSection: ['Workers & Cluster', 'Controle de dispositivos e arquivos do Cefilu.'],
   botsSection: ['Gerenciar Bots', 'Cadastro, estado e perfis dos bots Discord.'],
   updatesSection: ['Atualizações & Sistema', 'Publicação de atualizações de main.py e cluster.'],
@@ -806,7 +800,7 @@ function initRealtimeChart(){
       data: {
         labels: ['10s', '8s', '6s', '4s', '2s', 'Agora'],
         datasets: [{
-          label: 'Carga de Sincronização (%)',
+          label: 'Carga (%)',
           data: [12, 18, 15, 24, 19, 21],
           borderColor: '#38bdf8',
           backgroundColor: 'rgba(56, 189, 248, 0.1)',
@@ -893,22 +887,19 @@ function drawWorkers(){
   $('ramFreeTotal').textContent=bytes(sum(live,'ramFreeBytes'));
   $('ramTotalLabel').textContent='RAM total: '+bytes(sum(live,'ramTotalBytes'));
   $('diskFreeTotal').textContent=bytes(sum(live,'diskFreeBytes'));
-  $('diskTotalLabel').textContent='Capacidade total: '+bytes(sum(live,'diskTotalBytes'));
+  $('diskTotalLabel').textContent='Total: '+bytes(sum(live,'diskTotalBytes'));
   const cpus=live.map(([,w])=>Number(w.cpuPercent)).filter(Number.isFinite);
   $('cpuAvg').textContent=cpus.length?(cpus.reduce((a,b)=>a+b,0)/cpus.length).toFixed(1)+'%':'—';
   $('longestUptime').textContent=live.length?duration(Math.max(...live.map(([,w])=>Number(w.uptimeSeconds)||0))):'—';
-  const batteries=live.filter(([,w])=>w.batteryPresent===true&&w.batteryPercent!==null&&w.batteryPercent!==undefined&&Number.isFinite(Number(w.batteryPercent)));
-  $('batteryAvg').textContent=batteries.length?(batteries.reduce((n,[,w])=>n+Number(w.batteryPercent),0)/batteries.length).toFixed(0)+'%':'—';
-  $('batteryCount').textContent=batteries.length+' dispositivo(s) com bateria detectada';
 
   const ips={};
   for(const [id,w] of entries){const ip=w.publicIp;if(ip)ips[ip]=(ips[ip]||0)+1}
   const duplicateIps=new Set(Object.entries(ips).filter(([,n])=>n>1).map(([ip])=>ip));
 
   $('workers').innerHTML=entries.length?entries.map(([id,w])=>{
-    const isOnline=online(w),seen=Number(w.lastSeen)||0,runCount=Array.isArray(w.runningBotIds)?w.runningBotIds.length:Object.keys(w.runningBotIds||{}).length,ipDup=w.publicIp&&duplicateIps.has(w.publicIp);
-    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipDup?'<span class="badge off">IP repetido</span>':'')+'<div class="hint">ID: '+esc(id)+' · '+esc(w.platform||'sistema desconhecido')+'</div><div class="hint">IP: '+esc(w.publicIp||'não informado')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+' · núcleos: '+esc(w.cpuCount||'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre / '+bytes(w.ramTotalBytes)+' total · Disco: '+bytes(w.diskFreeBytes)+' livre / '+bytes(w.diskTotalBytes)+' total</div><div class="hint">Ligado há: '+duration(w.uptimeSeconds)+' · bots atribuídos: '+(counts[id]||0)+' · bots ligados: '+runCount+'</div><div class="hint">Último heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre/capaz':isOnline?'Sem capacidade':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir registro</button>':'')+'</div></div>';
-  }).join(''):'<div class="muted">Nenhum dispositivo registrado ainda.</div>';
+    const isOnline=online(w),seen=Number(w.lastSeen||0),runCount=Array.isArray(w.runningBotIds)?w.runningBotIds.length:Object.keys(w.runningBotIds||{}).length,ipDup=w.publicIp&&duplicateIps.has(w.publicIp);
+    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipDup?'<span class="badge off">IP repetido</span>':'')+'<div class="hint">ID: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">IP: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
+  }).join(''):'<div class="muted">Nenhum worker registrado.</div>';
 
   document.querySelectorAll('[data-remove-worker]').forEach(b=>b.onclick=()=>removeWorker(b.dataset.removeWorker));
 }
@@ -925,8 +916,8 @@ function drawBots(){
 
   $('bots').innerHTML=bots.length ? `<div class="bot-card-grid">` + bots.map(([id,b])=>{
     const isRunning=running.has(id);
-    const avatarHtml = b.avatarUrl 
-      ? `<img class="bot-avatar-lg" src="${esc(b.avatarUrl)}" alt="Avatar">` 
+    const avatarHtml = b.avatarBase64 
+      ? `<img class="bot-avatar-lg" src="${b.avatarBase64}" alt="Avatar">` 
       : `<div class="bot-avatar-lg">🤖</div>`;
     
     return `
@@ -934,16 +925,16 @@ function drawBots(){
         <div class="bot-card-header">
           ${avatarHtml}
           <div style="min-width:0;flex:1">
-            <div style="font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.name||'Bot')}</div>
+            <div style="font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.name||'Bot')}</div>
             <div class="small muted">ID: <code>${esc(id.slice(0,8))}</code></div>
           </div>
         </div>
         <div class="small muted" style="line-height:1.4">
-          <div><b>Status:</b> ${isRunning ? '<span style="color:var(--green)">Ligado (Confirmado)</span>' : b.enabled ? '<span style="color:var(--cyan)">Ativo (Aguardando)</span>' : '<span style="color:var(--red)">Desativado</span>'}</div>
-          <div><b>Worker:</b> ${esc(b.workerId || 'Na fila / Nenhum')}</div>
+          <div><b>Status:</b> ${isRunning ? '<span style="color:var(--green)">Ligado</span>' : b.enabled ? '<span style="color:var(--cyan)">Ativo</span>' : '<span style="color:var(--red)">Pausado</span>'}</div>
+          <div><b>Worker:</b> ${esc(b.workerId || 'Fila')}</div>
         </div>
         <div style="display:flex;gap:6px;margin-top:auto;padding-top:6px;flex-wrap:wrap">
-          <button class="primary" style="flex:1;padding:6px;font-size:12px" data-open-bot="${esc(id)}">⚙️ Painel Individual</button>
+          <button class="primary" style="flex:1;padding:6px;font-size:11.5px" data-open-bot="${esc(id)}">⚙️ Painel</button>
           <button class="secondary" style="padding:6px 10px" data-toggle="${esc(id)}" data-enabled="${b.enabled?'1':'0'}">${b.enabled?'⏹️':'▶️'}</button>
           <button class="danger" style="padding:6px 10px" data-delete="${esc(id)}">🗑️</button>
         </div>
@@ -951,7 +942,7 @@ function drawBots(){
     `;
   }).join('') + `</div>` : '<div class="muted">Nenhum bot cadastrado.</div>';
 
-  $('queueMsg').textContent=queued.length?'Servidores esgotados. Tente novamente mais tarde. ('+queued.length+' na fila)':'';
+  $('queueMsg').textContent=queued.length?'Servidores ocupados. ('+queued.length+' na fila)':'';
   document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>toggleBot(b.dataset.toggle,b.dataset.enabled!=='1'));
   document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>deleteBot(b.dataset.delete));
   document.querySelectorAll('[data-open-bot]').forEach(b=>b.onclick=()=>openBotModal(b.dataset.openBot));
@@ -962,7 +953,17 @@ window.openBotModal = function(id) {
   currentModalBotId = id;
   const b = botData[id];
   if(!b) return;
-  $('modalBotTitle').textContent = `Painel do Bot: ${b.name || id}`;
+  $('modalBotTitle').textContent = `Painel: ${b.name || id}`;
+  $('modalProfileName').value = b.name || '';
+  $('modalProfileDesc').value = b.description || '';
+  if(b.avatarBase64) {
+    $('modalAvatarPreview').src = b.avatarBase64;
+    $('modalAvatarPreview').style.display = 'block';
+    $('modalProfileAvatarBase64').value = b.avatarBase64;
+  } else {
+    $('modalAvatarPreview').style.display = 'none';
+    $('modalProfileAvatarBase64').value = '';
+  }
   $('botModal').classList.remove('hidden');
   switchBotTab('files');
   loadBotFiles();
@@ -992,22 +993,54 @@ function getSelectedBotAndWorker() {
   return { id, b, wid };
 }
 
+/* Redimensionar e comprimir imagem no client-side via Canvas */
+window.handleAvatarCompress = function(event) {
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 120;
+      const MAX_HEIGHT = 120;
+      let width = img.width;
+      let height = img.height;
+      if (width > height) {
+        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+      } else {
+        if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.75); // Compactado em JPEG 75%
+      $('modalProfileAvatarBase64').value = dataUrl;
+      $('modalAvatarPreview').src = dataUrl;
+      $('modalAvatarPreview').style.display = 'block';
+    }
+    img.src = e.target.result;
+  }
+  reader.readAsDataURL(file);
+};
+
 window.loadBotFiles = async function() {
   const status = $('modalFileStatus'), list = $('modalFileList');
-  status.className = "hint"; status.textContent = "Carregando arquivos…"; list.innerHTML = "";
+  status.className = "hint"; status.textContent = "Carregando…"; list.innerHTML = "";
   try {
     const { id, wid } = getSelectedBotAndWorker();
     const result = await sendWorkerCommand(wid, { operation: "list", botId: id, path: "" });
     let items = (result.result && result.result.items) || [];
     
-    // FILTRANDO: Omitir bot_settings.json e main.py
-    items = items.filter(item => item.name !== 'bot_settings.json' && item.name !== 'main.py');
+    // Ocultar bot_settings.json, main.py e configs.txt sem exibir aviso redundante
+    items = items.filter(item => item.name !== 'bot_settings.json' && item.name !== 'main.py' && item.name !== 'configs.txt');
 
     list.innerHTML = items.length ? items.map(item => {
       const icon = item.directory ? "📁" : "📄";
       return `<div class="row"><div><strong>${icon} ${esc(item.name)}</strong><div class="hint">${item.directory?"pasta":bytes(item.size)}</div></div><button class="secondary" style="padding:4px 8px;font-size:11px" onclick="openBotFile('${esc(item.path)}', ${item.directory?1:0})">${item.directory?"Abrir":"Editar"}</button></div>`;
-    }).join("") : '<div class="muted">Nenhum arquivo adicional encontrado.</div>';
-    status.textContent = "Arquivos carregados (bot_settings.json e main.py ocultos por segurança).";
+    }).join("") : '<div class="muted">Nenhum arquivo customizado.</div>';
+    status.textContent = "";
   } catch(e) {
     status.className = "error"; status.textContent = e.message;
   }
@@ -1022,7 +1055,7 @@ window.openBotFile = async function(path, isDir) {
     const data = await sendWorkerCommand(wid, { operation: "read", botId: id, path });
     $('modalFilePath').value = path;
     $('modalFileContent').value = data.result.content;
-    status.textContent = "Arquivo aberto: " + path;
+    status.textContent = "Aberto: " + path;
   } catch(e) {
     status.className = "error"; status.textContent = e.message;
   }
@@ -1034,10 +1067,10 @@ window.saveBotFile = async function() {
     const { id, wid } = getSelectedBotAndWorker();
     const path = $('modalFilePath').value.trim();
     const content = $('modalFileContent').value;
-    if(!path) throw new Error("Informe o caminho do arquivo.");
-    if(path === 'bot_settings.json' || path === 'main.py') throw new Error("Edição de main.py e bot_settings.json é restrita.");
+    if(!path) throw new Error("Informe o arquivo.");
+    if(['bot_settings.json', 'main.py', 'configs.txt'].includes(path)) throw new Error("Edição restrita para este arquivo.");
     await sendWorkerCommand(wid, { operation: "write", botId: id, path, content });
-    status.className = "ok"; status.textContent = "Arquivo salvo com sucesso!";
+    status.className = "ok"; status.textContent = "Salvo com sucesso!";
     loadBotFiles();
   } catch(e) {
     status.className = "error"; status.textContent = e.message;
@@ -1047,7 +1080,7 @@ window.saveBotFile = async function() {
 window.deleteBotFile = async function() {
   const path = $('modalFilePath').value.trim();
   if(!path) return alert("Informe o arquivo.");
-  if(path === 'bot_settings.json' || path === 'main.py') return alert("Exclusão restrita.");
+  if(['bot_settings.json', 'main.py', 'configs.txt'].includes(path)) return alert("Exclusão restrita.");
   if(!confirm("Excluir " + path + "?")) return;
   try {
     const { id, wid } = getSelectedBotAndWorker();
@@ -1063,7 +1096,7 @@ window.restartSelectedBot = async function() {
   try {
     const { id, wid } = getSelectedBotAndWorker();
     await sendWorkerCommand(wid, { operation: "restart", botId: id });
-    alert("Solicitação de reinício enviada com sucesso!");
+    alert("Reinício solicitado!");
   } catch(e) {
     alert(e.message);
   }
@@ -1071,38 +1104,33 @@ window.restartSelectedBot = async function() {
 
 window.fetchBotLogs = async function() {
   const status = $('modalLogsStatus'), pre = $('modalLogsText');
-  status.textContent = "Buscando logs…"; pre.textContent = "";
+  status.textContent = "Buscando…"; pre.textContent = "";
   try {
     const { id, wid } = getSelectedBotAndWorker();
     const result = await sendWorkerCommand(wid, { operation: "logs", botId: id });
     const data = result.result || {};
-    pre.textContent = data.logs || "Nenhum log disponível.";
+    pre.textContent = data.logs || "Nenhum log.";
     status.textContent = "Tamanho: " + bytes(data.size || 0);
   } catch(e) {
     status.className = "error"; status.textContent = e.message;
   }
 };
 
-window.saveBotProfile = async function() {
-  const msg = $('modalProfileMsg'); msg.className = "hint"; msg.textContent = "Atualizando perfil…";
+window.saveBotProfileOnlySite = async function() {
+  const msg = $('modalProfileMsg'); msg.className = "hint"; msg.textContent = "Salvando perfil no site…";
   try {
-    const { id, wid } = getSelectedBotAndWorker();
+    const id = currentModalBotId;
     const name = $('modalProfileName').value.trim();
     const description = $('modalProfileDesc').value.trim();
-    const file = $('modalProfileAvatar').files[0];
-    const command = { operation: "profile", botId: id };
-    if(name) command.name = name;
-    if(description) command.description = description;
-    if(file) {
-      command.avatarDataUrl = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(String(r.result));
-        r.onerror = () => rej(new Error("Erro ao ler imagem."));
-        r.readAsDataURL(file);
-      });
-    }
-    await sendWorkerCommand(wid, command);
-    msg.className = "ok"; msg.textContent = "Perfil atualizado com sucesso!";
+    const avatarBase64 = $('modalProfileAvatarBase64').value;
+
+    const updates = {};
+    if(name) updates['bots/' + id + '/name'] = name;
+    updates['bots/' + id + '/description'] = description;
+    updates['bots/' + id + '/avatarBase64'] = avatarBase64;
+
+    await update(ref(db), updates);
+    msg.className = "ok"; msg.textContent = "Perfil salvo e sincronizado com sucesso!";
     await refreshData();
   } catch(e) {
     msg.className = "error"; msg.textContent = e.message;
@@ -1147,7 +1175,7 @@ async function rebalance(){
       }
       await set(testRef('workerTasks/'+wid),assigned);
     }
-  }catch(e){console.error('Rebalance:',e);$('queueMsg').textContent='Erro ao distribuir: '+e.message}
+  }catch(e){console.error('Rebalance:',e);}
   finally{busy=false}
 }
 
@@ -1160,12 +1188,12 @@ async function toggleBot(id,enabled){
     await update(testRef('bots/'+id),changes);
     lastAssignment='';
     await refreshData();
-  }catch(e){alert('Não foi possível alterar o bot: '+e.message)}
+  }catch(e){alert('Erro: '+e.message)}
 }
 
 async function deleteBot(id){
   const bot=botData[id];if(!bot)return;
-  if(!confirm('Excluir este bot? O cadastro remoto será apagado.'))return;
+  if(!confirm('Excluir este bot?'))return;
   try{
     const workerId=bot.workerId||bot.lastWorkerId||null;
     await set(testRef('botHubDeletions/'+id),{botId:id,workerId,requestedAt:Date.now(),processed:{}});
@@ -1179,7 +1207,7 @@ async function deleteBot(id){
     await update(ref(db),updates);
     lastAssignment='';
     await refreshData();
-  }catch(e){alert('Erro ao excluir: '+e.message)}
+  }catch(e){alert('Erro: '+e.message)}
 }
 
 async function refreshData(){
@@ -1196,13 +1224,13 @@ async function cleanupStaleWorkers(){
       const seen=Number(w.lastSeen||w.createdAt)||0;
       if(seen>0&&Date.now()-seen>STALE_MS){await remove(testRef('workers/'+id));delete workerData[id];}
     }
-  }catch(e){console.warn('Limpeza:',e)}finally{cleanupBusy=false}
+  }catch(e){}finally{cleanupBusy=false}
 }
 
 async function removeWorker(id){
   const w=workerData[id];if(!w)return;
-  if(online(w)){alert('Dispositivo ainda online.');return}
-  if(!confirm('Excluir registro antigo de '+id+'?'))return;
+  if(online(w)){alert('Dispositivo online.');return}
+  if(!confirm('Excluir registro?'))return;
   try{await remove(testRef('workers/'+id));delete workerData[id];drawWorkers();}catch(e){alert(e.message)}
 }
 
@@ -1210,14 +1238,13 @@ async function sendWorkerCommand(wid,command,timeoutMs=50000){
   const id=crypto.randomUUID().replaceAll("-","");
   const label=String(command.operation||"ação")+" "+String(command.botId||"");
   const logBox=$("actionLog");
-  const addLog=(status,detail="")=>{
+  const addLog=(status)=>{
     const row=document.createElement("div");row.className="row";
-    const left=document.createElement("span");left.textContent=label+" — "+status+(detail?" · "+detail:"");
-    const right=document.createElement("span");right.className="muted";right.textContent=new Date().toLocaleTimeString();
-    row.append(left,right);logBox.prepend(row);
-    while(logBox.children.length>25)logBox.lastElementChild.remove();
+    row.innerHTML=`<span>${label} — ${status}</span><span class="muted">${new Date().toLocaleTimeString()}</span>`;
+    logBox.prepend(row);
+    while(logBox.children.length>20)logBox.lastElementChild.remove();
   };
-  addLog("Enviando","servidor "+wid);
+  addLog("Enviando");
   await set(testRef("workerCommands/"+wid+"/"+id),{...command,requestId:id,requestedAt:Date.now(),status:"waiting",panelLabel:label});
   const startedAt=Date.now();
   while(Date.now()-startedAt<timeoutMs){
@@ -1226,12 +1253,12 @@ async function sendWorkerCommand(wid,command,timeoutMs=50000){
     const result=snap.val();
     if(result){
       await remove(testRef("workerResults/"+wid+"/"+id)).catch(()=>{});
-      if(result.status!=="ok"){throw new Error(result.message||"Worker recusou a operação.");}
-      addLog("Concluída",result.message||"servidor confirmou");
+      if(result.status!=="ok"){throw new Error(result.message||"Worker recusou.");}
+      addLog("Concluído");
       return result;
     }
   }
-  throw new Error("Tempo esgotado para resposta do servidor.");
+  throw new Error("Tempo esgotado para resposta do worker.");
 }
 
 $('publishMainUpdate').onclick=async()=>{
@@ -1252,12 +1279,12 @@ $('updateCluster').onclick=async()=>{
   msg.className='hint';msg.textContent='Solicitando atualização…';
   try{
     await set(testRef('botHubClusterUpdates/current'),{updateId:'manual-'+Date.now(),type:'mandatory',clusterOnly:true,files:['start.py','add_cluster_server.py','bothub_firebase_worker.py'],requestedAt:Date.now()});
-    msg.className='ok';msg.textContent='Solicitação publicada com sucesso!';
+    msg.className='ok';msg.textContent='Solicitação publicada!';
   }catch(e){msg.className='error';msg.textContent=e.message}
 };
 
 $('loginBtn').onclick=async()=>{
-  const btn=$('loginBtn');btn.disabled=true;$('loginMsg').textContent='Conectando ao Firebase…';
+  const btn=$('loginBtn');btn.disabled=true;$('loginMsg').textContent='Conectando…';
   try{
     await signInWithEmailAndPassword(auth,$('email').value.trim(),$('password').value);
   }catch(e){
@@ -1270,12 +1297,12 @@ $('logout').onclick=()=>signOut(auth);
 
 $('createBot').onclick=async()=>{
   const name=$('botName').value.trim(),token=$('botToken').value.trim();
-  if(!name||token.length<30){$('createMsg').textContent='Informe um nome e token válido.';return}
+  if(!name||token.length<30){$('createMsg').textContent='Informe nome e token válido.';return}
   try{
     if(Object.values(botData).some(b=>String(b.token||'').trim()===token)){throw new Error('Token já cadastrado.');}
     const id=crypto.randomUUID().replaceAll('-','');
     await set(testRef('bots/'+id),{name,token,config:{},enabled:true,desiredState:'on',workerId:null,createdAt:Date.now(),updatedAt:Date.now()});
-    $('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado e distribuído!';
+    $('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado!';
     lastAssignment='';await refreshData();
   }catch(e){$('createMsg').textContent='Erro: '+e.message}
 };
@@ -1303,11 +1330,11 @@ onAuthStateChanged(auth,async user=>{
     if(s.val()!==true){
       const legacy=await get(ref(db,'teste2/admins/'+user.uid));
       if(legacy.val()===true){s=legacy;}
-      else{$('loginMsg').textContent='UID não autorizado em /admins/'+user.uid;await signOut(auth);return;}
+      else{$('loginMsg').textContent='UID não autorizado.';await signOut(auth);return;}
     }
     start();
   }catch(e){
-    $('loginMsg').textContent='Erro de permissão: '+e.message;
+    $('loginMsg').textContent='Erro: '+e.message;
     await signOut(auth);
   }
 });
