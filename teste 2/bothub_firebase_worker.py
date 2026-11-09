@@ -957,7 +957,8 @@ def load_worker_queue(tok, device_id):
     ram_free = int(local_stats.get("ramFreeBytes") or 0)
     disk_free = int(local_stats.get("diskFreeBytes") or 0)
     # Reserva RAM/disco para o sistema operacional e crescimento dos arquivos.
-    ram_capacity = max(0, (ram_free - 350 * 1024 * 1024) // (250 * 1024 * 1024))
+    # Reserva 512 MiB para o sistema e estima 300 MiB por bot para evitar pressão de memória.
+    ram_capacity = max(0, (ram_free - 512 * 1024 * 1024) // (300 * 1024 * 1024))
     disk_capacity = max(0, (disk_free - 1024 * 1024 * 1024) // (100 * 1024 * 1024))
     capacity = min(int(ram_capacity), int(disk_capacity))
     assigned_here = sum(
