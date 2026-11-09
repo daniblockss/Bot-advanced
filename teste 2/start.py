@@ -22,7 +22,7 @@ INSTALLER = ROOT / "add_cluster_server.py"
 WORKER = ROOT / "bothub_firebase_worker.py"
 VENV = ROOT / "venv"
 WORKER_PYTHON = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-CHECK_INTERVAL = max(30, int(os.getenv("BOTHUB_UPDATE_INTERVAL", "60")))
+SUPERVISOR_POLL_INTERVAL = max(2, int(os.getenv("BOTHUB_SUPERVISOR_POLL_SECONDS", "3")))
 RESTART_DELAY = 5
 STOP_TIMEOUT = 20
 
@@ -103,27 +103,21 @@ def install_component(item: dict, data: bytes) -> None:
         pass
 
 def prepare_initial_files() -> None:
+    """Valida os arquivos locais; baixa do GitHub somente no primeiro bootstrap."""
     for item in COMPONENTS:
-        log.info("Preparando %s pelo GitHub.", item["name"])
         try:
-            data = fetch_component(item)
-            current = item["path"].read_bytes() if item["path"].is_file() else b""
-            if current != data:
-                install_component(item, data)
-                log.info("%s baixado/atualizado (%d bytes; SHA-256 %s).",
-                         item["name"], len(data), hashlib.sha256(data).hexdigest())
-            else:
-                log.info("%s já está na versão atual.", item["name"])
-        except Exception as download_error:
-            log.exception("Falha ao preparar %s.", item["name"])
-            try:
-                validate(item["path"].read_bytes(), item)
-            except Exception as local_error:
-                raise RuntimeError(
-                    f'{item["name"]} não pôde ser baixado e não há cópia local válida. '
-                    f"Download: {download_error}; cópia local: {local_error}"
-                ) from download_error
-            log.warning("Usando a cópia local validada de %s.", item["name"])
+            validate(item["path"].read_bytes(), item)
+            log.info("%s local validado. Atualizações serão aplicadas somente por solicitação no painel.",
+                     item["name"])
+            continue
+        except Exception as local_error:
+            log.warning("%s ausente ou inválido (%s); tentando bootstrap pelo GitHub.",
+                        item["name"], local_error)
+
+        data = fetch_component(item)
+        install_component(item, data)
+        log.info("%s baixado no bootstrap (%d bytes; SHA-256 %s).",
+                 item["name"], len(data), hashlib.sha256(data).hexdigest())
 
 def stop_worker(process: subprocess.Popen | None) -> None:
     if process is None or process.poll() is not None:
@@ -170,44 +164,13 @@ def setup_environment() -> None:
     if not WORKER_PYTHON.is_file():
         raise RuntimeError("O instalador terminou, mas o Python do ambiente virtual não existe.")
 
-def check_for_updates(process: subprocess.Popen) -> subprocess.Popen:
-    # Primeiro baixa e valida tudo. Se a rede falhar, o worker atual continua funcionando.
-    updates = []
-    for item in COMPONENTS:
-        latest = fetch_component(item)
-        current = item["path"].read_bytes() if item["path"].is_file() else b""
-        if latest != current:
-            updates.append((item, latest))
-
-    if not updates:
-        log.info("Verificação concluída: scripts do worker já estão atualizados.")
-        return process
-
-    log.info("Nova versão detectada: %s.", ", ".join(item["name"] for item, _ in updates))
-    stop_worker(process)
-    try:
-        for item, data in updates:
-            # O arquivo antigo só é substituído depois de a versão nova ser baixada e validada.
-            install_component(item, data)
-            log.info("%s atualizado (%d bytes; SHA-256 %s).",
-                     item["name"], len(data), hashlib.sha256(data).hexdigest())
-        log.info("Atualização concluída. Reiniciando o worker; start.py permanece ligado.")
-        return start_worker()
-    except Exception:
-        log.exception("Falha ao aplicar atualização; tentando iniciar a cópia local validada.")
-        try:
-            return start_worker()
-        except Exception:
-            log.exception("Não foi possível iniciar o worker após a atualização.")
-            raise
-
 def main() -> int:
     log.info("=" * 64)
     log.info("Supervisor BotHub iniciado; start.py permanecerá ativo.")
     log.info("Python: %s | plataforma: %s | executável: %s",
              sys.version.split()[0], platform.platform(), sys.executable)
-    log.info("Diretório: %s | PID: %s | verificação: %ss",
-             ROOT, os.getpid(), CHECK_INTERVAL)
+    log.info("Diretório: %s | PID: %s | monitoramento do processo: %ss",
+             ROOT, os.getpid(), SUPERVISOR_POLL_INTERVAL)
     if sys.version_info < (3, 10):
         log.critical("É necessário Python 3.10 ou superior.")
         return 2
@@ -217,23 +180,16 @@ def main() -> int:
         prepare_initial_files()
         setup_environment()
         worker_process = start_worker()
-        log.info("Worker iniciado. O supervisor verificará atualizações periodicamente.")
+        log.info("Worker iniciado. Atualizações de scripts somente serão aplicadas quando solicitadas no painel.")
 
         while True:
-            time.sleep(CHECK_INTERVAL)
+            # Este monitor só recupera uma queda do processo. Não consulta o GitHub.
+            time.sleep(SUPERVISOR_POLL_INTERVAL)
             if worker_process.poll() is not None:
                 log.warning("Worker encerrou com código %s. Reiniciando em %ss.",
                             worker_process.returncode, RESTART_DELAY)
                 time.sleep(RESTART_DELAY)
                 worker_process = start_worker()
-                continue
-            try:
-                worker_process = check_for_updates(worker_process)
-            except Exception:
-                log.exception("Não foi possível verificar/aplicar atualização. O supervisor continuará ativo.")
-                if worker_process.poll() is not None:
-                    time.sleep(RESTART_DELAY)
-                    worker_process = start_worker()
     except KeyboardInterrupt:
         log.info("Encerramento solicitado; finalizando apenas o worker.")
     except Exception:
