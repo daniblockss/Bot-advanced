@@ -16,6 +16,7 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
+SUPERVISOR_VERSION = "2026.11.08.2"
 ROOT = Path(__file__).resolve().parent
 LOG_FILE = ROOT / "start.log"
 INSTALLER = ROOT / "add_cluster_server.py"
@@ -167,6 +168,7 @@ def setup_environment() -> None:
 def main() -> int:
     log.info("=" * 64)
     log.info("Supervisor BotHub iniciado; start.py permanecerá ativo.")
+    log.info("VERSÃO DO SUPERVISOR: %s", SUPERVISOR_VERSION)
     log.info("Python: %s | plataforma: %s | executável: %s",
              sys.version.split()[0], platform.platform(), sys.executable)
     log.info("Diretório: %s | PID: %s | monitoramento do processo: %ss",
