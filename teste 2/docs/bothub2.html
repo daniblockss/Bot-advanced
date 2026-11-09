@@ -930,7 +930,8 @@ function checkBatteryAlerts(entries){
     batteryAlertState[id]=now;
   }
 }
-function drawWorkers(){\n  checkBatteryAlerts(Object.entries(workerData));
+function drawWorkers(){
+  checkBatteryAlerts(Object.entries(workerData));
   const entries=Object.entries(workerData),live=entries.filter(([,w])=>online(w));
   $('online').textContent=live.length;
   $('capacity').textContent=live.reduce((total,[,w])=>total+capacity(w),0);
