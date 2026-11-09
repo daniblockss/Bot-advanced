@@ -4002,7 +4002,7 @@ def _pergunta_sobre_identidade_do_bot(pergunta):
     """Detecta perguntas que precisam consultar o perfil/memórias do próprio bot."""
     texto = normalizar(str(pergunta or ""))
     termos = (
-        "quem e voce", "quem e vc", "como voce e", "como vc e",
+        "quem e voce", "quem e vc", "como que e voce", "como que voce e", "como voce e", "como vc e",
         "como voce se parece", "qual sua aparencia", "sua aparencia",
         "sua foto", "foto de perfil", "seu avatar", "seu perfil",
         "descreva voce", "descreva seu visual", "como e voce",
