@@ -676,14 +676,14 @@ def start(k,b):
     save_json(cp,cfg)
     if k in PROCS and PROCS[k].poll() is None:return
     log=open(folder/"bot.log","ab",buffering=0)
+    try:log_start_offset=log.tell()
+    except Exception:log_start_offset=0
     popen_kwargs = {}
     if sys.platform.startswith("linux"):
         popen_kwargs["preexec_fn"] = child_parent_death_signal
     p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
         stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),**popen_kwargs)
-    PROCS[k]=p;LOGS[k]=log
-    try:LOG_OFFSETS[k]=log.tell()
-    except Exception:LOG_OFFSETS[k]=0
+    PROCS[k]=p;LOGS[k]=log;LOG_OFFSETS[k]=log_start_offset
     # Detecta falhas imediatas no main.py para que o loop possa tentar novamente.
     time.sleep(1.5)
     if p.poll() is not None:
