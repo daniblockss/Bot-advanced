@@ -1,49 +1,49 @@
 
 import subprocess
-import re
+import json
 
-def bateria():
+def verificar_bateria():
     try:
         resultado = subprocess.run(
-            ["dumpsys", "battery"],
+            ["termux-battery-status"],
             capture_output=True,
             text=True,
             timeout=10
         )
 
-        dados = resultado.stdout
+        if resultado.returncode != 0:
+            print("Erro:", resultado.stderr)
+            return
 
-        def pegar(nome):
-            match = re.search(
-                rf"{nome}:\s*(.+)",
-                dados
-            )
-            return match.group(1).strip() if match else "Indisponível"
+        bateria = json.loads(resultado.stdout)
 
-        nivel = pegar("level")
-        temperatura = pegar("temperature")
-        status = pegar("status")
-        conectado = pegar("AC powered")
-
-        estados = {
-            "1": "Desconhecido",
-            "2": "Carregando ⚡",
-            "3": "Descarregando 🔋",
-            "4": "Não está carregando",
-            "5": "Carga completa ✅"
+        status = {
+            "CHARGING": "Carregando ⚡",
+            "DISCHARGING": "Descarregando 🔋",
+            "FULL": "Carga completa ✅",
+            "NOT_CHARGING": "Não carregando",
+            "UNKNOWN": "Desconhecido"
         }
 
-        print("\n======= BATERIA =======")
-        print(f"Porcentagem: {nivel}%")
-        print(f"Estado: {estados.get(status, status)}")
-        print(f"Conectado à tomada: {conectado}")
+        fontes = {
+            "PLUGGED_USB": "USB",
+            "PLUGGED_AC": "Tomada",
+            "PLUGGED_WIRELESS": "Sem fio",
+            "UNPLUGGED": "Desconectado"
+        }
 
-        if temperatura != "Indisponível":
-            print(f"Temperatura: {int(temperatura) / 10} °C")
-
-        print("=======================\n")
+        print("\n========== BATERIA ==========")
+        print(f"Porcentagem: {bateria.get('percentage')}%")
+        print(f"Estado: {status.get(bateria.get('status'), 'Desconhecido')}")
+        print(f"Conexão: {fontes.get(bateria.get('plugged'), 'Desconhecida')}")
+        print(f"Temperatura: {bateria.get('temperature')} °C")
+        print(f"Saúde: {bateria.get('health')}")
+        print(f"Voltagem: {bateria.get('voltage')} mV")
+        print(f"Corrente: {bateria.get('current')} µA")
+        print("=============================\n")
 
     except Exception as erro:
-        print("Erro:", erro)
+        print("Erro ao consultar bateria:", erro)
 
-bateria()
+
+verificar_bateria()
