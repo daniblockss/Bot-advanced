@@ -20,6 +20,14 @@ import ipaddress
 import heapq
 import sqlite3
 from contextlib import closing, nullcontext
+
+class _AsyncNullContext:
+    async def __aenter__(self):
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
@@ -10301,7 +10309,7 @@ async def on_message(message):
 
     processar_anexos = deve_responder or cid in CANAIS_CONFIGURADOS
     if processar_anexos:
-        async with (message.channel.typing() if deve_responder else nullcontext()):
+        async with (message.channel.typing() if deve_responder else _AsyncNullContext()):
             anexos_imagem = []
             for a in message.attachments:
                 if anexo_e_audio(a):
