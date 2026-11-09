@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.08.3"
+WORKER_VERSION="2026.11.08.4"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -130,39 +130,69 @@ def stats(cfg):
             available=mem.get("MemAvailable",mem.get("MemFree",0)+mem.get("Buffers",0)+mem.get("Cached",0))
             x.update(ramFreeBytes=available,ramTotalBytes=total,cpuPercent=0,cpuCount=os.cpu_count() or 1)
         except Exception:x.update(ramFreeBytes=0,ramTotalBytes=0,cpuPercent=0,cpuCount=os.cpu_count() or 1)
-    # Battery telemetry is optional: desktops and Raspberry Pis often have no battery.
-    battery = None
-    try:
-        import psutil
-        battery = psutil.sensors_battery()
-    except Exception:
-        battery = None
-    if battery is not None:
-        x.update(batteryPresent=True,
-                 batteryPercent=max(0,min(100,int(round(battery.percent)))),
-                 batteryPlugged=battery.power_plugged,
-                 batteryStatus=("charging" if battery.power_plugged else "discharging"))
-    else:
-        # Linux fallback for devices exposing a battery through power_supply sysfs.
+    # Termux:API tem prioridade nos workers Android/Termux.
+    termux_battery = None
+    termux_cmd = shutil.which("termux-battery-status")
+    if termux_cmd:
         try:
-            for supply in Path("/sys/class/power_supply").iterdir():
-                kind=(supply/"type").read_text(encoding="utf-8").strip().lower()
-                if kind != "battery":
-                    continue
-                raw=(supply/"capacity").read_text(encoding="utf-8").strip()
-                percent=max(0,min(100,int(float(raw))))
-                try: status=(supply/"status").read_text(encoding="utf-8").strip().lower()
-                except Exception: status="unknown"
-                x.update(batteryPresent=True,batteryPercent=percent,
-                         batteryPlugged=status in ("charging","full"),
-                         batteryStatus=status)
-                break
-            else:
-                x.update(batteryPresent=False,batteryPercent=None,
-                         batteryPlugged=None,batteryStatus="unavailable")
+            result = subprocess.run([termux_cmd], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                parsed = json.loads(result.stdout)
+                if isinstance(parsed, dict) and parsed.get("percentage") is not None:
+                    termux_battery = parsed
+        except Exception as exc:
+            print("[BotHub] Termux:API bateria indisponível:", str(exc)[:120], flush=True)
+    if termux_battery is not None:
+        raw_status = str(termux_battery.get("status") or "UNKNOWN").upper()
+        status_map = {"CHARGING":"charging","DISCHARGING":"discharging","FULL":"full",
+                      "NOT_CHARGING":"not_charging","UNKNOWN":"unknown"}
+        raw_plugged = str(termux_battery.get("plugged") or "UNPLUGGED").upper()
+        x.update(
+            batteryPresent=True,
+            batteryPercent=max(0,min(100,int(float(termux_battery.get("percentage") or 0)))),
+            batteryPlugged=raw_plugged != "UNPLUGGED",
+            batteryStatus=status_map.get(raw_status,"unknown"),
+            batterySource="termux",
+            batteryPluggedType=raw_plugged,
+            batteryTemperatureC=termux_battery.get("temperature"),
+            batteryHealth=termux_battery.get("health"),
+            batteryVoltageMv=termux_battery.get("voltage"),
+            batteryCurrentUa=termux_battery.get("current")
+        )
+    else:
+        # Fallback para psutil e Linux power_supply (servidores sem Termux).
+        battery = None
+        try:
+            import psutil
+            battery = psutil.sensors_battery()
         except Exception:
-            x.update(batteryPresent=False,batteryPercent=None,
-                     batteryPlugged=None,batteryStatus="unavailable")
+            battery = None
+        if battery is not None:
+            x.update(batteryPresent=True,
+                     batteryPercent=max(0,min(100,int(round(battery.percent)))),
+                     batteryPlugged=battery.power_plugged,
+                     batteryStatus=("charging" if battery.power_plugged else "discharging"),
+                     batterySource="psutil")
+        else:
+            try:
+                for supply in Path("/sys/class/power_supply").iterdir():
+                    kind=(supply/"type").read_text(encoding="utf-8").strip().lower()
+                    if kind != "battery":
+                        continue
+                    raw=(supply/"capacity").read_text(encoding="utf-8").strip()
+                    percent=max(0,min(100,int(float(raw))))
+                    try: status=(supply/"status").read_text(encoding="utf-8").strip().lower()
+                    except Exception: status="unknown"
+                    x.update(batteryPresent=True,batteryPercent=percent,
+                             batteryPlugged=status in ("charging","full"),
+                             batteryStatus=status,batterySource="sysfs")
+                    break
+                else:
+                    x.update(batteryPresent=False,batteryPercent=None,
+                             batteryPlugged=None,batteryStatus="unavailable",batterySource="none")
+            except Exception:
+                x.update(batteryPresent=False,batteryPercent=None,
+                         batteryPlugged=None,batteryStatus="unavailable",batterySource="none")
     return x
 
 def sid(v):
