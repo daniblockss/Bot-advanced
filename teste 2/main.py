@@ -28,6 +28,41 @@ class _AsyncNullContext:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
+
+class _TypingIndicator:
+    """Indicador de digitação opcional: falhas de rede não podem interromper on_message."""
+    def __init__(self, channel, timeout=2.5):
+        self.channel = channel
+        self.timeout = timeout
+        self.manager = None
+        self.entered = False
+
+    async def __aenter__(self):
+        try:
+            self.manager = self.channel.typing()
+            await asyncio.wait_for(self.manager.__aenter__(), timeout=self.timeout)
+            self.entered = True
+        except Exception as error:
+            logging.getLogger("breeze.discord").warning(
+                "Não foi possível mostrar 'digitando' (%s); continuando sem o indicador.",
+                type(error).__name__,
+            )
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if self.entered and self.manager is not None:
+            try:
+                await asyncio.wait_for(
+                    self.manager.__aexit__(exc_type, exc, tb),
+                    timeout=self.timeout,
+                )
+            except Exception as error:
+                logging.getLogger("breeze.discord").debug(
+                    "Falha ao encerrar indicador de digitação: %s",
+                    type(error).__name__,
+                )
+        return False
+
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
@@ -10309,7 +10344,7 @@ async def on_message(message):
 
     processar_anexos = deve_responder or cid in CANAIS_CONFIGURADOS
     if processar_anexos:
-        async with (message.channel.typing() if deve_responder else _AsyncNullContext()):
+        async with (_TypingIndicator(message.channel) if deve_responder else _AsyncNullContext()):
             anexos_imagem = []
             for a in message.attachments:
                 if anexo_e_audio(a):
@@ -10514,7 +10549,7 @@ async def on_message(message):
 
     # 6. Prosseguir com Resposta IA
     if deve_responder:
-        async with message.channel.typing():
+        async with _TypingIndicator(message.channel):
             txt = message.content.replace(f"<@{bot.user.id}>", "").strip() or ""
             # Remove apenas a chamada inicial pelo nome; a pergunta segue intacta para a IA.
             if chamou_por_nome and nome_chamada_match:
