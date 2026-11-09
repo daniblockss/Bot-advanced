@@ -845,7 +845,17 @@ class VoiceSystem(commands.Cog):
 
     async def reconcile(self, guild):
         async with self.lock(guild.id):
-            channels = {channel.id: channel for channel in await guild.fetch_channels()}
+            try:
+                canais_servidor = await asyncio.wait_for(guild.fetch_channels(), timeout=15)
+            except (asyncio.TimeoutError, discord.HTTPException, OSError) as error:
+                log.warning(
+                    "Não foi possível sincronizar canais de voz do servidor %s (%s); "
+                    "o bot continuará funcionando e tentará novamente depois.",
+                    guild.id,
+                    type(error).__name__,
+                )
+                return
+            channels = {channel.id: channel for channel in canais_servidor}
             await self.recover_pending(guild, channels)
             for room in self.store.rooms(guild.id):
                 channel = channels.get(room["channel_id"])
@@ -1871,7 +1881,7 @@ BLOCKRUN_ROUTING_MODELS = {
     "coding": "cohere/north-mini-code",
     "vision": "nvidia/llama-3.2-11b-vision",
 }
-AHM7_API_BASE = "https://ahm7xmakki.com/api"
+AHM7_API_BASE = "https://freeapi.pro/api"  # Endpoint atualizado do serviço AHM7.
 AHM7_TOOLS = {
     "pixelster": ("🎨", "PixelSter"),
     "visionchat": ("👁️", "VisionChat"),
@@ -1964,7 +1974,7 @@ AI_SETTINGS_DEFAULT = {
         "llm7": {"temperature": 0.6, "max_tokens": 8000},
     },
 }
-VISION_ENDPOINT = "https://ahm7xmakki.com/api/imgchat"
+VISION_ENDPOINT = f"{AHM7_API_BASE}/imgchat"
 
 MEMORIA_GERAL_FILE = "memoria_geral"
 IMPORTANTE_FILE = "importantes"
