@@ -447,9 +447,9 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
           <div class="stat-foot">Workers conectados</div>
         </div>
         <div class="card" style="margin-bottom:0">
-          <div class="stat-top">Capacidade <span class="stat-ico">⚡</span></div>
+          <div class="stat-top">Bots que todos os servidores ainda suportam <span class="stat-ico">⚡</span></div>
           <div id="capacity" class="stat-num">0</div>
-          <div class="stat-foot">Elegíveis p/ bots</div>
+          <div class="stat-foot">Vagas adicionais estimadas no conjunto</div>
         </div>
         <div class="card" style="margin-bottom:0">
           <div class="stat-top">Ligados <span class="stat-ico">🤖</span></div>
@@ -896,7 +896,7 @@ function botStatus(id,b,ready,processes){
 function drawWorkers(){
   const entries=Object.entries(workerData),live=entries.filter(([,w])=>online(w));
   $('online').textContent=live.length;
-  $('capacity').textContent=entries.filter(([,w])=>eligible(w)).length;
+  $('capacity').textContent=live.reduce((total,[,w])=>total+capacity(w),0);
   const counts={};
   Object.values(botData).filter(b=>b.enabled&&b.workerId).forEach(b=>counts[b.workerId]=(counts[b.workerId]||0)+1);
   const sum=(arr,k)=>arr.reduce((n,[,w])=>n+(Number(w[k])||0),0);
@@ -914,7 +914,8 @@ function drawWorkers(){
 
   $('workers').innerHTML=entries.length?entries.map(([id,w])=>{
     const isOnline=online(w),seen=Number(w.lastSeen||0),runCount=Array.isArray(w.runningBotIds)?w.runningBotIds.length:Object.keys(w.runningBotIds||{}).length,ipDup=w.publicIp&&duplicateIps.has(w.publicIp);
-    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipDup?'<span class="badge off">IP repetido</span>':'')+'<div class="hint">ID: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">Versão do worker: '+esc(w.workerVersion||'não informada')+'</div><div class="hint">IP: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
+    const remainingCapacity=isOnline?capacity(w):0;
+    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipDup?'<span class="badge off">IP repetido</span>':'')+'<div class="hint">ID: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">Versão do worker: '+esc(w.workerVersion||'não informada')+'</div><div class="hint">IP: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Ainda aguenta: '+remainingCapacity+' bots adicionais (estimativa)</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
   }).join(''):'<div class="muted">Nenhum worker registrado.</div>';
 
   document.querySelectorAll('[data-remove-worker]').forEach(b=>b.onclick=()=>removeWorker(b.dataset.removeWorker));
