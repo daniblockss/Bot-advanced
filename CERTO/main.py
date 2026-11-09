@@ -4051,9 +4051,10 @@ def _carregar_memorias_do_bot_relevantes(pergunta, guild_id=None):
     termos = termos_foto if any(t in q for t in termos_foto) else termos_identidade
     selecionados = [(nome, caminho) for nome, caminho in candidatos.items()
                     if any(t in normalizar(nome) for t in termos)]
-    if not selecionados:
-        selecionados = [(n, p) for n, p in candidatos.items()
-                        if n in {"foto de perfil.txt", "bot_personality.json"}]
+    # O perfil visual e a descrição de personalidade são fontes centrais sobre o próprio bot.
+    for nome_base in ("foto de perfil.txt", "bot_personality.json"):
+        if nome_base in candidatos and all(nome != nome_base for nome, _ in selecionados):
+            selecionados.append((nome_base, candidatos[nome_base]))
 
     partes = []
     for nome, caminho in selecionados[:6]:
