@@ -1,39 +1,49 @@
 
-import os
+import subprocess
+import re
 
-BASE = "/sys/class/power_supply"
-
-def ler(arquivo):
+def bateria():
     try:
-        with open(arquivo, "r") as f:
-            return f.read().strip()
-    except:
-        return None
+        resultado = subprocess.run(
+            ["dumpsys", "battery"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
 
-print("\n======= BATERIA DO DISPOSITIVO =======")
+        dados = resultado.stdout
 
-for dispositivo in os.listdir(BASE):
-    caminho = os.path.join(BASE, dispositivo)
+        def pegar(nome):
+            match = re.search(
+                rf"{nome}:\s*(.+)",
+                dados
+            )
+            return match.group(1).strip() if match else "Indisponível"
 
-    tipo = ler(os.path.join(caminho, "type"))
+        nivel = pegar("level")
+        temperatura = pegar("temperature")
+        status = pegar("status")
+        conectado = pegar("AC powered")
 
-    if tipo != "Battery":
-        continue
+        estados = {
+            "1": "Desconhecido",
+            "2": "Carregando ⚡",
+            "3": "Descarregando 🔋",
+            "4": "Não está carregando",
+            "5": "Carga completa ✅"
+        }
 
-    capacidade = ler(os.path.join(caminho, "capacity"))
-    status = ler(os.path.join(caminho, "status"))
-    temperatura = ler(os.path.join(caminho, "temp"))
+        print("\n======= BATERIA =======")
+        print(f"Porcentagem: {nivel}%")
+        print(f"Estado: {estados.get(status, status)}")
+        print(f"Conectado à tomada: {conectado}")
 
-    print(f"Bateria: {capacidade}%" if capacidade else "Bateria: indisponível")
-    print(f"Estado: {status or 'Indisponível'}")
+        if temperatura != "Indisponível":
+            print(f"Temperatura: {int(temperatura) / 10} °C")
 
-    if temperatura:
-        try:
-            valor = int(temperatura)
-            if valor > 100:
-                valor /= 10
-            print(f"Temperatura: {valor} °C")
-        except:
-            print(f"Temperatura: {temperatura}")
+        print("=======================\n")
 
-print("======================================")
+    except Exception as erro:
+        print("Erro:", erro)
+
+bateria()
