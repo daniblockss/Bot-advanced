@@ -147,6 +147,7 @@ def main():
         print("ERRO: é necessário Python 3.10 ou superior.")
         return 2
     update_installer()
+    ensure_termux_api()
     ROOT.mkdir(parents=True, exist_ok=True)
     if not PYTHON.exists():
         print("[BotHub Installer] Criando ambiente Python dentro desta pasta...")
