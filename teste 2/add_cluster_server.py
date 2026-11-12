@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Instalador BotHub: instala e inicia o worker na pasta atual."""
 from __future__ import annotations
-import os, platform, subprocess, sys, urllib.request
+import os, platform, shutil, subprocess, sys, urllib.request
 from pathlib import Path
 
 GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
@@ -17,6 +17,35 @@ TERMUX = "com.termux" in str(Path.home()).lower() or "ANDROID_ROOT" in os.enviro
 def run(args):
     print("\n[BotHub Installer] $", " ".join(map(str, args)), flush=True)
     subprocess.check_call(args)
+
+def ensure_termux_api():
+    """Garante o pacote de comandos Termux:API antes de instalar o worker."""
+    if not TERMUX:
+        return
+
+    battery_command = shutil.which("termux-battery-status")
+    if battery_command:
+        print("[BotHub Installer] Termux:API detectada. Continuando...", flush=True)
+        return
+
+    pkg = shutil.which("pkg")
+    if not pkg:
+        raise RuntimeError(
+            "Termux foi detectado, mas o comando 'pkg' não está disponível. "
+            "Não foi possível instalar termux-api."
+        )
+
+    print("[BotHub Installer] Termux:API não encontrada. Instalando com 'pkg install -y termux-api'...", flush=True)
+    subprocess.check_call([pkg, "install", "-y", "termux-api"])
+
+    if not shutil.which("termux-battery-status"):
+        raise RuntimeError(
+            "O pacote termux-api foi instalado, mas 'termux-battery-status' "
+            "não foi encontrado. Confira a instalação do Termux:API."
+        )
+
+    print("[BotHub Installer] Termux:API instalada e verificada.", flush=True)
+
 
 def update_installer():
     """Confere a cópia pública no GitHub e reinicia se houver versão mais nova."""
