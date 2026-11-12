@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.08.4"
+WORKER_VERSION="2026.11.12.1"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -133,13 +133,32 @@ def stats(cfg):
     # Termux:API tem prioridade nos workers Android/Termux.
     termux_battery = None
     termux_cmd = shutil.which("termux-battery-status")
+    # Em algumas instalações do Termux, o PATH do processo pode estar incompleto.
+    if not termux_cmd:
+        prefix = os.environ.get("PREFIX", "")
+        candidate = Path(prefix) / "bin" / "termux-battery-status" if prefix else None
+        if candidate and candidate.is_file():
+            termux_cmd = str(candidate)
     if termux_cmd:
         try:
-            result = subprocess.run([termux_cmd], capture_output=True, text=True, timeout=10)
+            result = subprocess.run(
+                [termux_cmd], capture_output=True, text=True, timeout=10,
+                env=os.environ.copy()
+            )
             if result.returncode == 0:
                 parsed = json.loads(result.stdout)
-                if isinstance(parsed, dict) and parsed.get("percentage") is not None:
-                    termux_battery = parsed
+                percentage = parsed.get("percentage") if isinstance(parsed, dict) else None
+                if percentage is not None:
+                    percentage = float(percentage)
+                    if 0 <= percentage <= 100:
+                        termux_battery = parsed
+                    else:
+                        print("[BotHub] Termux:API retornou percentual de bateria inválido.", flush=True)
+            else:
+                detail = (result.stderr or result.stdout or "").strip()
+                print("[BotHub] Termux:API retornou código", result.returncode, detail[:120], flush=True)
+        except subprocess.TimeoutExpired:
+            print("[BotHub] Termux:API demorou demais para responder; usando fallback.", flush=True)
         except Exception as exc:
             print("[BotHub] Termux:API bateria indisponível:", str(exc)[:120], flush=True)
     if termux_battery is not None:
