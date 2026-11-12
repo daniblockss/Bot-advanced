@@ -5,7 +5,7 @@ from __future__ import annotations
 import os, platform, shutil, subprocess, sys, urllib.request, shlex, time
 from pathlib import Path
 
-INSTALLER_VERSION = "2026.11.12.3"
+INSTALLER_VERSION = "2026.11.12.4"
 GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 INSTALLER_URL = GITHUB_RAW + "/add_cluster_server.py"
 WORKER_URL = GITHUB_RAW + "/bothub_firebase_worker.py"
@@ -19,6 +19,25 @@ TERMUX = "com.termux" in str(Path.home()).lower() or "ANDROID_ROOT" in os.enviro
 def run(args):
     print("\n[BotHub Installer] $", " ".join(map(str, args)), flush=True)
     subprocess.check_call(args)
+
+
+def wake_screen_once():
+    """Solicita que o Android acenda a tela sem alternar para apagada."""
+    if not TERMUX:
+        return
+    command = shutil.which("input") or "/system/bin/input"
+    try:
+        result = subprocess.run(
+            [command, "keyevent", "224"],
+            capture_output=True, text=True, timeout=8
+        )
+        if result.returncode == 0:
+            print("[BotHub Installer] Solicitação para acender a tela enviada.", flush=True)
+        else:
+            print("[BotHub Installer] Não foi possível acender a tela automaticamente; "
+                  "o Android pode bloquear esse comando.", flush=True)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print("[BotHub Installer] Comando de tela indisponível:", str(exc)[:120], flush=True)
 
 def ensure_termux_api():
     """Garante o pacote de comandos Termux:API antes de instalar o worker."""
@@ -269,6 +288,7 @@ def main():
     if sys.version_info < (3, 10):
         print("ERRO: é necessário Python 3.10 ou superior.")
         return 2
+    wake_screen_once()
     update_installer()
     print("[BotHub Installer] Versão:", INSTALLER_VERSION, flush=True)
     ensure_termux_api()
