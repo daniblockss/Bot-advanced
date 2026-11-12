@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.2</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -304,6 +304,7 @@ pre.ascii-content{margin: 0;line-height: 1.15;white-space: pre;}
 
 .badge{font-size:11px;padding:4px 9px;border-radius:20px;background:rgba(16, 185, 129, 0.12);color:#34d399;font-weight:600;border:1px solid rgba(16,185,129,0.25);white-space:nowrap}
 .badge.off{background:rgba(244,63,94,0.12);color:#fb7185;border-color:rgba(244,63,94,0.25)}
+.badge.shared{background:rgba(56,189,248,0.12);color:#7dd3fc;border:1px solid rgba(56,189,248,0.28)}
 
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
@@ -946,15 +947,21 @@ function drawWorkers(){
   $('cpuAvg').textContent=cpus.length?(cpus.reduce((a,b)=>a+b,0)/cpus.length).toFixed(1)+'%':'—';
   $('longestUptime').textContent=live.length?duration(Math.max(...live.map(([,w])=>Number(w.uptimeSeconds)||0))):'—';
 
-  const ips={};
-  for(const [id,w] of entries){const ip=w.publicIp;if(ip)ips[ip]=(ips[ip]||0)+1}
-  const duplicateIps=new Set(Object.entries(ips).filter(([,n])=>n>1).map(([ip])=>ip));
+  // IP público igual em workers online é comum quando vários tablets usam o mesmo Wi-Fi/NAT.
+  // Cada instalação continua identificada pelo device ID exclusivo.
+  const sharedIpCounts={};
+  for(const [id,w] of entries){
+    const ip=String(w.publicIp||'').trim();
+    if(online(w)&&ip)sharedIpCounts[ip]=(sharedIpCounts[ip]||0)+1;
+  }
+  const sharedIps=new Set(Object.entries(sharedIpCounts).filter(([,n])=>n>1).map(([ip])=>ip));
+  const hasSharedIps=sharedIps.size>0;
 
   $('workers').innerHTML=entries.length?entries.map(([id,w])=>{
-    const isOnline=online(w),seen=Number(w.lastSeen||0),runCount=Array.isArray(w.runningBotIds)?w.runningBotIds.length:Object.keys(w.runningBotIds||{}).length,ipDup=w.publicIp&&duplicateIps.has(w.publicIp);
+    const isOnline=online(w),seen=Number(w.lastSeen||0),runCount=Array.isArray(w.runningBotIds)?w.runningBotIds.length:Object.keys(w.runningBotIds||{}).length,ipShared=isOnline&&w.publicIp&&sharedIps.has(String(w.publicIp).trim());
     const remainingCapacity=isOnline?capacity(w):0;
-    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipDup?'<span class="badge off">IP repetido</span>':'')+'<div class="hint">ID: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">Versão do worker: '+esc(w.workerVersion||'não informada')+'</div><div class="hint">IP: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Bateria: '+batterySummary(w)+'</div><div class="hint">Ainda aguenta: '+remainingCapacity+' bots adicionais (estimativa)</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
-  }).join(''):'<div class="muted">Nenhum worker registrado.</div>';
+    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipShared?'<span class="badge shared" title="Outro worker conectado está usando o mesmo IP público">IP compartilhado · mesma rede</span>':'')+'<div class="hint">ID exclusivo: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">Versão do worker: '+esc(w.workerVersion||'não informada')+'</div><div class="hint">IP público: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Bateria: '+batterySummary(w)+'</div><div class="hint">Ainda aguenta: '+remainingCapacity+' bots adicionais (estimativa)</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
+  }).join('')+(hasSharedIps?'<div class="hint" style="margin-top:10px;padding:9px 11px;border:1px solid rgba(56,189,248,0.22);border-radius:9px;background:rgba(56,189,248,0.06)">ℹ️ IP público compartilhado é normal quando vários dispositivos estão no mesmo Wi-Fi ou roteador. Cada worker continua independente e é reconhecido pelo seu ID exclusivo.</div>':''):'<div class="muted">Nenhum worker registrado.</div>';
 
   document.querySelectorAll('[data-remove-worker]').forEach(b=>b.onclick=()=>removeWorker(b.dataset.removeWorker));
 }
