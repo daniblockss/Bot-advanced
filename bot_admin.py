@@ -208,8 +208,10 @@ async def show_points(ctx):await ctx.reply(f"Você tem **{points(ctx.author.id)}
 @bot.command(name="comprar-pontos",aliases=["comprar"])
 async def buy(ctx,amount:int=0):
  if amount<1 or amount>1000000:return await ctx.reply("Use !comprar-pontos quantidade. A equipe confirmará o pagamento antes de adicionar pontos.")
+ request_id=uuid.uuid4().hex
+ put(f"botHubPointPurchases/{ctx.author.id}/{request_id}",{"amount":amount,"status":"pending","createdAt":int(time.time()*1000),"guildId":str(ctx.guild.id if ctx.guild else 0),"ticketChannelId":str(ctx.channel.id)})
  mentions=" ".join(f"<@{uid}>" for uid in STAFF)
- await ctx.reply(f"{mentions} {ctx.author.mention} solicitou a compra de **{amount} pontos**. A equipe deve confirmar o pagamento antes de usar !add.",allowed_mentions=discord.AllowedMentions(users=True))
+ await ctx.reply(f"{mentions} {ctx.author.mention} solicitou a compra de **{amount} pontos**. Pedido: `{request_id[:8]}`. A equipe deve confirmar o pagamento antes de usar !add.",allowed_mentions=discord.AllowedMentions(users=True))
 @bot.command(name="add-bot")
 async def add_bot(ctx,*,args=""):
  try: await ctx.message.delete()
