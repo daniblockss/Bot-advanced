@@ -10,7 +10,7 @@ CFGFILE=ROOT/"worker.json"
 TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
-PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
+PROCS={};LOGS={};CLEAN_EXITED={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 
 def save_json(path,data):
@@ -133,6 +133,28 @@ def stats(cfg):
 
 def sid(v):
     return "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or "bot"
+
+def clean_exit_state(k, requested_at=None):
+    path=ROOT/"bots"/sid(k)/".bothub_clean_exit.json"
+    try:
+        data=json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        saved=float(data.get("startRequestedAt") or 0)
+        if requested_at is None or float(requested_at or 0) <= saved:
+            return saved
+        path.unlink(missing_ok=True)
+    except Exception:
+        pass
+    return None
+
+def mark_clean_exit(k, requested_at, code=0):
+    folder=ROOT/"bots"/sid(k)
+    folder.mkdir(parents=True,exist_ok=True)
+    save_json(folder/".bothub_clean_exit.json",{
+        "startRequestedAt":float(requested_at or 0),
+        "exitCode":int(code),
+        "exitedAt":int(time.time()*1000)
+    })
+    CLEAN_EXITED[k]=float(requested_at or 0)
 
 def stop(k):
     p=PROCS.pop(k,None);l=LOGS.pop(k,None)
@@ -578,6 +600,11 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
 
 def start(k,b):
     folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True)
+    requested_at=float(b.get("startRequestedAt") or 0)
+    if clean_exit_state(k,requested_at) is not None:
+        CLEAN_EXITED[k]=requested_at
+        print("[BotHub] início pausado: última execução terminou com código 0; aguardando novo pedido do painel:",k,flush=True)
+        return
     bot_type=str(b.get("botType") or (b.get("config") or {}).get("botType") or "ia_chat").lower()
     if bot_type not in {"ia_chat","standard","bot_admin"}: bot_type="ia_chat"
     script_name={"ia_chat":"main.py","standard":"standard_main.py","bot_admin":"bot_admin.py"}[bot_type]
@@ -662,6 +689,14 @@ def start(k,b):
         except Exception:
             last_error="sem detalhes adicionais no log"
         print("[BotHub] o processo encerrou durante a inicialização (código",p.returncode,"):",last_error[-700:],flush=True)
+        if p.returncode == 0:
+            # Saída limpa não deve provocar um ciclo infinito de reinicializações.
+            mark_clean_exit(k, b.get("startRequestedAt"), p.returncode)
+            PROCS.pop(k,None)
+            LOGS.pop(k,None)
+            try: log.close()
+            except Exception: pass
+            raise RuntimeError("o processo encerrou com código 0; reinício automático pausado até um novo pedido de inicialização")
         PROCS.pop(k,None)
         LOGS.pop(k,None)
         try: log.close()
@@ -855,27 +890,41 @@ def download_latest_main(folder):
     tmp.write_bytes(data);tmp.replace(target)
     return len(data)
 
-def notify_update(bot_id, bot_cfg, update):
+def notify_update(bot_id, bot_cfg, update, notification_state):
     token_value=bot_cfg.get("token")
-    if not token_value:return
+    if not token_value:return False
     try:
         app_info=discord_api(token_value,"GET","/applications/@me",None)
         owner=(app_info.get("owner") or {}).get("id")
-        if not owner:return
-        channel=discord_api(token_value,"POST","/users/@me/channels",{"recipient_id":str(owner)})
+        if not owner:return False
+        owner=str(owner)
+        update_id=str(update.get("updateId") or "")
+        # A mesma pessoa pode ser dona de vários bots: avisar somente uma vez por versão.
+        if update_id and notification_state.get(owner)==update_id:
+            return True
+        channel=discord_api(token_value,"POST","/users/@me/channels",{"recipient_id":owner})
         mode="OBRIGATÓRIA" if update.get("type")=="mandatory" else "OPCIONAL"
         description=str(update.get("description") or "Melhorias e correções.")[:1500]
         content=("📦 **Atualização BotHub disponível — "+mode+"**\n"+description+
-                 ("\n\nEsta atualização será instalada automaticamente." if mode=="OBRIGATÓRIA"
+                 ("\n\nEsta atualização será instalada automaticamente." if mode=="mandatory"
                   else "\n\nPara instalar, digite !update neste chat com o bot."))
         discord_api(token_value,"POST","/channels/"+str(channel["id"])+"/messages",
                     {"content":content,"allowed_mentions":{"parse":[]}})
+        if update_id:
+            notification_state[owner]=update_id
+            save_json(ROOT/".bothub_update_notifications.json",notification_state)
+        return True
     except Exception as e:
         print("[BotHub] Não foi possível avisar o criador de",bot_id,":",str(e)[:180],flush=True)
+        return False
 
 def process_release_updates(tok, queue):
     release=fb("GET","botHubUpdates/current",tok)
     if not isinstance(release,dict) or not release.get("updateId") or release.get("clusterOnly"):return
+    notification_file=ROOT/".bothub_update_notifications.json"
+    try:notification_state=json.loads(notification_file.read_text(encoding="utf-8")) if notification_file.exists() else {}
+    except Exception:notification_state={}
+    if not isinstance(notification_state,dict):notification_state={}
     for raw_id,bot_cfg in list(queue.items()):
         if not isinstance(bot_cfg,dict) or not bot_cfg.get("enabled",True):continue
         if str(bot_cfg.get("botType") or "ia_chat").lower() != "ia_chat":
@@ -886,9 +935,9 @@ def process_release_updates(tok, queue):
         try:state=json.loads(state_file.read_text(encoding="utf-8")) if state_file.exists() else {}
         except Exception:state={}
         update_id=str(release.get("updateId"))
-        if state.get("updateId")!=update_id:
-            notify_update(raw_id,bot_cfg,release)
-            state={"updateId":update_id,"announced":True,"updated":False}
+        if state.get("updateId")!=update_id or not state.get("announced"):
+            announced=notify_update(raw_id,bot_cfg,release,notification_state)
+            state={"updateId":update_id,"announced":bool(announced),"updated":False}
             save_json(state_file,state)
         request_file=folder/".bothub_update_request"
         mandatory=release.get("type")=="mandatory"
@@ -1253,7 +1302,21 @@ def main():
                     print("[BotHub] não foi possível conferir autorização:",active_id,str(auth_restart_error)[:120],flush=True)
             for k,bot_cfg in leased.items():
                 try:
+                    requested_at=float(bot_cfg.get("startRequestedAt") or 0)
+                    saved_exit=clean_exit_state(k,requested_at)
+                    if saved_exit is not None:
+                        CLEAN_EXITED[k]=saved_exit
+                        continue
+                    CLEAN_EXITED.pop(k,None)
                     if k not in PROCS or PROCS[k].poll() is not None:
+                        # Se terminou normalmente depois de iniciar, pausa novas tentativas
+                        # até o painel registrar um novo pedido explícito de inicialização.
+                        previous=PROCS.get(k)
+                        if previous is not None and previous.poll() is not None and previous.returncode == 0:
+                            mark_clean_exit(k,requested_at,previous.returncode)
+                            print("[BotHub] bot encerrou com código 0; pausa persistida até novo pedido:",k,flush=True)
+                            stop(k)
+                            continue
                         sync_bot_state(k,'pull',t,cfg['device_id'])
                         sync_bot_state(k,'push',t,cfg['device_id'])
                         auto_start=bot_cfg.get("autoStart",True) is not False
