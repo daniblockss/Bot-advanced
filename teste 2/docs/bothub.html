@@ -6,7 +6,7 @@
 <header><div class="brand"><div class="logo">B</div><div><h1>BotHub</h1><div class="muted">Painel central · Firebase Realtime Database</div></div></div><div class="actions"><span id="connection" class="badge off">Desconectado</span><button id="logout" class="secondary hidden">Sair</button></div></header>
 <section id="login" class="card"><h2>Entrar no BotHub</h2><div class="hint">Entre com sua conta administradora do Firebase.</div><label>E-mail</label><input id="email" type="email" autocomplete="username" value="daniblocks100@gmail.com"><label>Senha do Firebase</label><input id="password" type="password" autocomplete="current-password" placeholder="Senha da conta Firebase"><button id="loginBtn">Entrar no painel</button><div id="loginMsg" class="error"></div></section>
 <div id="dashboard" class="hidden">
-<section class="card"><h2>Controlador do cluster</h2><p class="hint">Atualiza o instalador e o worker a partir do GitHub. Cada worker usa um processo auxiliar para encerrar o controlador antigo, substituir os arquivos e iniciar a versão nova.</p><div class="actions"><button id="updateCluster">Atualizar arquivos do Cefilu</button></div><div id="clusterUpdateMsg" class="hint"></div></section>
+<section class="card"><h2>Atualização geral do BotHub</h2><p class="hint">Publica atualização obrigatória para os Workers (instalador + controlador) e para todos os bots individuais (IA, Admin e Standard). Os Workers processam a atualização automaticamente.</p><div class="actions"><button id="updateCluster">Atualizar tudo — Workers + bots</button></div><div id="clusterUpdateMsg" class="hint"></div></section>
 <section class="card"><h2>📡 Histórico de ações dos servidores</h2><p class="hint">Acompanhe cada ação: enviada, aguardando servidor, recebida, em execução, concluída ou falhou.</p><div id="actionLog" class="hint">Nenhuma ação registrada nesta sessão.</div></section>
 <section class="card"><h2>Atualizar main.py dos bots</h2><p class="hint">Publica uma atualização para os bots individuais. A atualização obrigatória é instalada automaticamente; a opcional avisa o criador e só instala quando ele digitar <code>!update</code> na conversa privada com o bot.</p><label>Tipo de atualização</label><select id="mainUpdateType"><option value="optional">Opcional — o criador decide</option><option value="mandatory">Obrigatória — instalar automaticamente</option></select><label>Descrição da atualização</label><textarea id="mainUpdateDescription" rows="3" maxlength="1500" placeholder="Descreva as correções e melhorias do main.py"></textarea><div class="actions"><button id="publishMainUpdate">Publicar atualização do main.py</button></div><div id="mainUpdateMsg" class="hint"></div></section>
 <section class="grid"><div class="card"><div class="muted">Dispositivos online</div><div id="online" class="metric">0</div></div><div class="card"><div class="muted">Bots que todos os servidores ainda suportam</div><div id="capacity" class="metric">0</div></div><div class="card"><div class="muted">Bots realmente ligados</div><div id="active" class="metric">0</div></div><div class="card"><div class="muted">Na fila</div><div id="queued" class="metric">0</div></div><div class="card"><div class="muted">RAM disponível total</div><div id="ramFreeTotal" class="metric">—</div><div id="ramTotalLabel" class="hint">RAM total: —</div></div><div class="card"><div class="muted">Armazenamento livre total</div><div id="diskFreeTotal" class="metric">—</div><div id="diskTotalLabel" class="hint">Capacidade total: —</div></div><div class="card"><div class="muted">CPU média dos online</div><div id="cpuAvg" class="metric">—</div></div><div class="card"><div class="muted">Tempo online do worker mais antigo</div><div id="longestUptime" class="metric">—</div></div><div class="card"><div class="muted">Bateria média dos dispositivos</div><div id="batteryAvg" class="metric">—</div><div id="batteryCount" class="hint">Aguardando dados</div></div></section>
@@ -405,17 +405,28 @@ $('publishMainUpdate').onclick=async()=>{
  };
  $('updateCluster').onclick=async()=>{
   const msg=$('clusterUpdateMsg');
-  if(!confirm('Solicitar atualização do controlador em todos os workers conectados? Os workers vão reiniciar o controlador e manter os bots/memórias no Firebase.'))return;
-  msg.className='hint';msg.textContent='Publicando solicitação de atualização…';
+  if(!confirm('Publicar atualização OBRIGATÓRIA para todos os Workers e bots IA, Admin e Standard? Os Workers vão aplicar os arquivos do controlador e atualizar os bots atribuídos.'))return;
+  msg.className='hint';msg.textContent='Publicando atualização geral…';
+  const now=Date.now(),requestedBy=auth.currentUser?.uid||'admin';
   try{
-    const updateId='manual-'+Date.now()+'-'+crypto.randomUUID().slice(0,8);
     await set(testRef('botHubClusterUpdates/current'),{
-      updateId, type:'mandatory', clusterOnly:true,
+      updateId:'cluster-'+now+'-'+crypto.randomUUID().slice(0,8),
+      type:'mandatory',clusterOnly:true,
       files:['add_cluster_server.py','bothub_firebase_worker.py'],
-      requestedAt:Date.now(), requestedBy:auth.currentUser?.uid||'admin'
+      requestedAt:now,requestedBy
     });
-    msg.className='ok';msg.textContent='Solicitação publicada. Os workers online vão baixar e aplicar a atualização automaticamente.';
-  }catch(e){msg.className='error';msg.textContent='Não foi possível publicar a atualização: '+e.message}
+    await set(testRef('botHubUpdates/current'),{
+      updateId:'bots-'+now+'-'+crypto.randomUUID().slice(0,8),
+      type:'mandatory',clusterOnly:false,
+      description:'Atualização obrigatória geral do BotHub: bot-ia.py, bot-adm.py e bot-standard.py. Correções de identificação, inicialização, permissões e compatibilidade com Workers.',
+      requestedAt:now,requestedBy
+    });
+    msg.className='ok';
+    msg.textContent='Atualização geral publicada! Workers e bots online vão processar as atualizações obrigatórias automaticamente.';
+  }catch(e){
+    msg.className='error';
+    msg.textContent='Falha ao publicar a atualização geral: '+e.message+' Confira também se uma das duas solicitações já foi enviada.';
+  }
 };
 $('loginBtn').onclick=async()=>{ const btn=$('loginBtn');btn.disabled=true;$('loginMsg').textContent='Conectando ao Firebase…';try{await signInWithEmailAndPassword(auth,$('email').value.trim(),$('password').value);$('loginMsg').textContent='Login aceito. Verificando autorização…'}catch(e){$('loginMsg').textContent='Login Firebase falhou ('+(e.code||'erro')+'): '+e.message}finally{btn.disabled=false}}; $('loginBtn').dataset.handlerReady='1';
 $('logout').onclick=()=>signOut(auth);

@@ -14,7 +14,7 @@ PROCS={};LOGS={};CLEAN_EXITED={};S=requests.Session();WORKER_STARTED=time.time()
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 LAST_SAVED_RUNTIME=None;RUNTIME_STATE_LOADED=False
 
-WORKER_VERSION="2026.11.13.7"
+WORKER_VERSION="2026.11.13.8"
 
 def runtime_environment():
     """Identifica Android/Termux por caminhos antigos e atuais do Android."""
