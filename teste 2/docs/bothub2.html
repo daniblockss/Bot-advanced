@@ -937,9 +937,8 @@ function watch(path,cb){
 function runningSet(){
   const s=new Set();
   for(const w of Object.values(workerData)){
-    // O Worker publica runningBotIds a partir dos processos que continuam vivos.
-    // readyBotIds não é publicado pelo worker atual e deixava todos como "Ligando".
-    const ids=w.runningBotIds;
+    // readyBotIds só contém bots que confirmaram on_ready no gateway do Discord.
+    const ids=w.readyBotIds;
     if(Array.isArray(ids))ids.forEach(id=>s.add(String(id)));
     else if(ids&&typeof ids==='object')Object.keys(ids).forEach(id=>s.add(String(id)));
   }
@@ -958,7 +957,11 @@ function processSet(){
 
 function botStatus(id,b,ready,processes){
   const wanted=b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off';
-  if(wanted)return ready.has(id)?'<span style="color:var(--green)">Ligado</span>':'<span style="color:var(--cyan)">Ligando</span>';
+  if(wanted){
+    if(ready.has(id))return '<span style="color:var(--green)">Ligado · Discord conectado</span>';
+    if(processes.has(id))return '<span style="color:var(--cyan)">Conectando ao Discord</span>';
+    return '<span style="color:var(--muted)">Aguardando inicialização</span>';
+  }
   return processes.has(id)?'<span style="color:#fbbf24">Desligando</span>':'<span style="color:var(--red)">Desligado</span>';
 }
 
@@ -1097,7 +1100,7 @@ function drawBots(){
   const active=bots.filter(([,b])=>b.enabled);
   const running=runningSet();
   const processes=processSet();
-  const reallyRunning=active.filter(([id])=>running.has(id));
+  const reallyRunning=active.filter(([id])=>processes.has(id));
   const queued=active.filter(([,b])=>!b.workerId||!eligible(workerData[b.workerId]));
 
   $('active').textContent=reallyRunning.length;
