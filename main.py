@@ -9815,7 +9815,13 @@ def _bot_auth_guild_ids():
         values = _bot_auth_settings().get("authorized_guild_ids", [])
     if not isinstance(values, (list, tuple, set)):
         return set()
-    allowed = {int(value) for value in values if str(value).isdigit()}\n    try:\n        with open(COMUNIDADES_AUTORIZADAS_FILE, "r", encoding="utf-8") as arquivo:\n            allowed.update(int(line.strip()) for line in arquivo if line.strip().isdigit())\n    except OSError:\n        pass\n    return allowed
+    allowed = {int(value) for value in values if str(value).isdigit()}
+    try:
+        with open(COMUNIDADES_AUTORIZADAS_FILE, "r", encoding="utf-8") as arquivo:
+            allowed.update(int(line.strip()) for line in arquivo if line.strip().isdigit())
+    except OSError:
+        pass
+    return allowed
 
 
 def _bot_auth_user_ids():
