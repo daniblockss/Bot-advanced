@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.6"
+WORKER_VERSION="2026.11.12.7"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -146,7 +146,25 @@ def termux_diagnostics():
     now=time.monotonic()
     if now-TERMUX_DIAGNOSTICS_CACHE["at"]<60:
         return dict(TERMUX_DIAGNOSTICS_CACHE["data"])
-    api_installed=bool(shutil.which("termux-battery-status"))
+    # Não confiar apenas no PATH: o processo pode iniciar com PATH incompleto.
+    # Validar a API executando o comando e conferindo a resposta JSON.
+    api_cmd=shutil.which("termux-battery-status")
+    if not api_cmd:
+        prefix=os.environ.get("PREFIX","")
+        candidate=Path(prefix)/"bin"/"termux-battery-status" if prefix else None
+        if candidate and candidate.is_file():
+            api_cmd=str(candidate)
+    api_installed=False
+    if api_cmd:
+        try:
+            probe=subprocess.run([api_cmd],capture_output=True,text=True,timeout=5,
+                                 env=os.environ.copy())
+            payload=json.loads(probe.stdout) if probe.returncode==0 else None
+            api_installed=(isinstance(payload,dict) and
+                           payload.get("percentage") is not None and
+                           0 <= float(payload["percentage"]) <= 100)
+        except (OSError,ValueError,TypeError,subprocess.TimeoutExpired):
+            api_installed=False
     boot_installed=False
     for command in (["/system/bin/pm","path","com.termux.boot"],["pm","path","com.termux.boot"]):
         try:
