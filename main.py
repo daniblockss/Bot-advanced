@@ -9997,6 +9997,10 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    # Tickets privados do BOT ADMIN são atendidos somente pelo próprio BOT ADMIN.
+    if message.guild and str(getattr(message.channel, "topic", "") or "").startswith("bothub-ticket:"):
+        return
+
     # !allow nunca pode ser executado em canais de comunidade: apaga imediatamente.
     if message.guild and (message.content or "").strip().lower().startswith("!allow"):
         try:
