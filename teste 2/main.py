@@ -2737,38 +2737,7 @@ def tem_perm(message):
     conteudo = message.content.lower()
     return "!perm" in conteudo or ":perm:" in conteudo
 
-COMMUNITY_AUTH_TIMEOUT_SECONDS = 120
-_community_auth_leave_tasks = {}
-
-def agendar_saida_se_nao_autorizada(guild_id):
-    """Dá um prazo para !allow; se não houver autorização, o bot sai sem conversar com usuários."""
-    guild_id = int(guild_id)
-    tarefa_antiga = _community_auth_leave_tasks.get(guild_id)
-    if tarefa_antiga and not tarefa_antiga.done():
-        tarefa_antiga.cancel()
-
-    async def verificar_autorizacao_e_sair():
-        try:
-            await asyncio.sleep(COMMUNITY_AUTH_TIMEOUT_SECONDS)
-            guild = bot.get_guild(guild_id)
-            if guild is not None and not comunidade_autorizada(guild_id):
-                log_console(f"Comunidade {guild_id} não autorizada após {COMMUNITY_AUTH_TIMEOUT_SECONDS}s; saindo do servidor.")
-                await guild.leave()
-        except asyncio.CancelledError:
-            raise
-        except Exception as error:
-            log_console(f"Falha ao sair da comunidade pendente {guild_id} ({type(error).__name__}).")
-        finally:
-            current = _community_auth_leave_tasks.get(guild_id)
-            if current is asyncio.current_task():
-                _community_auth_leave_tasks.pop(guild_id, None)
-
-    _community_auth_leave_tasks[guild_id] = asyncio.create_task(verificar_autorizacao_e_sair())
-
-def cancelar_saida_comunidade_autorizada(guild_id):
-    tarefa = _community_auth_leave_tasks.pop(int(guild_id), None)
-    if tarefa and not tarefa.done():
-        tarefa.cancel()
+# Servidores não autorizados permanecem conectados, porém inativos.
 
 def comunidade_autorizada(guild_id):
     """Aplica a política de servidores definida no BotHub e as autorizações feitas no Discord."""
@@ -7084,7 +7053,6 @@ async def prefix_allow_comunidade(ctx):
         bot_allowlist.append(guild_id)
     config.setdefault("criadores_supremos_guild", {})[str(guild_id)] = int(ctx.guild.owner_id)
     salvar_config(config)
-    cancelar_saida_comunidade_autorizada(guild_id)
     try:
         await bot.tree.sync(guild=ctx.guild)
     except (discord.HTTPException, discord.Forbidden):
@@ -7669,8 +7637,6 @@ async def garantir_personalidade_inicial():
 @bot.event
 async def on_ready():
     for guild_pendente in list(bot.guilds):
-        if not comunidade_autorizada(guild_pendente.id):
-            agendar_saida_se_nao_autorizada(guild_pendente.id)
     DISCORD_LOGS.start(bot)
     try:
         await atualizar_memoria_foto_perfil()
