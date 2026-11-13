@@ -5,13 +5,12 @@ from __future__ import annotations
 import os, platform, shutil, subprocess, sys, urllib.request, shlex, time, json, zipfile, io
 from pathlib import Path
 
-INSTALLER_VERSION = "2026.11.12.10"
+INSTALLER_VERSION = "2026.11.12.11"
 GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 INSTALLER_URL = GITHUB_RAW + "/add_cluster_server.py"
 WORKER_URL = GITHUB_RAW + "/bothub_firebase_worker.py"
 ROOT = Path(__file__).resolve().parent
 WORKER = ROOT / "bothub_firebase_worker.py"
-START_SCRIPT = ROOT / "start.py"
 VENV = ROOT / "venv"
 PYTHON = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 TERMUX = "com.termux" in str(Path.home()).lower() or "ANDROID_ROOT" in os.environ
@@ -68,261 +67,37 @@ def ensure_termux_api():
     print("[BotHub Installer] Termux:API instalada e verificada.", flush=True)
 
 
-def termux_package_installed(package_name):
-    """Retorna True/False quando Android permite consultar; None se a consulta foi bloqueada."""
-    candidates = []
-    for binary in (shutil.which("cmd"), "/system/bin/cmd"):
-        if binary and Path(binary).exists():
-            candidates.extend([
-                [binary, "package", "list", "packages", package_name],
-                [binary, "package", "path", package_name],
-            ])
-    for binary in (shutil.which("pm"), "/system/bin/pm"):
-        if binary and Path(binary).exists():
-            candidates.extend([
-                [binary, "list", "packages", package_name],
-                [binary, "path", package_name],
-            ])
-
-    had_successful_query = False
-    for command in candidates:
+def remove_legacy_autostart():
+    """Remove configurações antigas de inicialização automática do BotHub."""
+    if TERMUX:
+        boot_script = Path.home() / ".termux" / "boot" / "00-bothub-start"
+        marker = ROOT / ".bothub_termux_boot_ready"
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=12)
-            output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
-            if result.returncode != 0:
-                continue
-            had_successful_query = True
-            if ("package:" + package_name) in output or ("package:" + package_name + "\\n") in output:
-                return True
-            # list packages retorna sucesso e lista vazia quando o pacote não existe.
-            if "list" in command and package_name not in output:
-                return False
-            if "path" in command and "package:" not in output:
-                return False
-        except (OSError, subprocess.TimeoutExpired):
+            boot_script.unlink(missing_ok=True)
+            marker.unlink(missing_ok=True)
+            print("[BotHub Installer] Configuração antiga do Termux:Boot removida.", flush=True)
+        except OSError as exc:
+            print("[BotHub Installer] Não consegui remover o script antigo do Termux:Boot:", str(exc)[:160], flush=True)
+    if os.name == "nt" or TERMUX or not sys.platform.startswith("linux"):
+        return
+    service_dirs = []
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        service_dirs.append(Path("/etc/systemd/system"))
+    service_dirs.append(Path.home() / ".config" / "systemd" / "user")
+    for unit_dir in service_dirs:
+        unit_file = unit_dir / "bothub-worker.service"
+        if not unit_file.exists():
             continue
-    return False if had_successful_query else None
-
-
-def latest_termux_boot_apk():
-    """Usa o APK oficial do GitHub indicado pelo usuário."""
-    return (
-        "https://github.com/termux/termux-boot/releases/download/v0.8.1/termux-boot-app_v0.8.1+github.debug.apk",
-        "termux-boot-app_v0.8.1+github.debug.apk",
-    )
-
-
-def download_termux_boot_apk(apk_path):
-    url, filename = latest_termux_boot_apk()
-    print("[BotHub Installer] Baixando APK oficial mais recente do Termux:Boot:", filename, flush=True)
-    request = urllib.request.Request(
-        url, headers={"User-Agent": "BotHub-TermuxBoot-Installer/1.0",
-                      "Cache-Control": "no-cache"}
-    )
-    with urllib.request.urlopen(request, timeout=90) as response:
-        data = response.read()
-    if len(data) < 10000:
-        raise RuntimeError("O APK baixado está vazio ou incompleto.")
-    try:
-        with zipfile.ZipFile(io.BytesIO(data)) as apk_zip:
-            if apk_zip.testzip() is not None:
-                raise RuntimeError("O arquivo APK está corrompido.")
-            names = apk_zip.namelist()
-            if "AndroidManifest.xml" not in names:
-                raise RuntimeError("O download não parece ser um APK Android válido.")
-    except zipfile.BadZipFile as exc:
-        raise RuntimeError("O arquivo recebido não é um APK válido (download HTML ou corrompido).") from exc
-    temporary = apk_path.with_suffix(".apk.tmp")
-    temporary.write_bytes(data)
-    temporary.replace(apk_path)
-    return apk_path
-
-
-def open_android_uninstall(package_name):
-    """Abre a tela oficial de desinstalação; o Android exige confirmação do usuário."""
-    am = shutil.which("am") or "/system/bin/am"
-    try:
-        result = subprocess.run(
-            [am, "start", "-a", "android.intent.action.DELETE",
-             "-d", "package:" + package_name],
-            capture_output=True, text=True, timeout=15
-        )
-        print("[BotHub Installer] Solicitação para abrir a desinstalação no Android enviada.",
-              flush=True)
-        if result.returncode != 0:
-            print("[BotHub Installer] O Android não abriu a tela automaticamente:",
-                  (result.stderr or result.stdout or "")[:180], flush=True)
-        return result.returncode == 0
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        print("[BotHub Installer] Não consegui abrir a desinstalação:", str(exc)[:160], flush=True)
-        return False
-
-
-def wait_for_termux_boot(expected, seconds=180):
-    deadline = time.time() + seconds
-    while time.time() < deadline:
-        if termux_package_installed("com.termux.boot") == expected:
-            return True
-        time.sleep(3)
-    return False
-
-def remove_termux_boot_script():
-    boot_script = Path.home() / ".termux" / "boot" / "00-bothub-start"
-    marker = ROOT / ".bothub_termux_boot_ready"
-    try:
-        boot_script.unlink(missing_ok=True)
-        marker.unlink(missing_ok=True)
-        print("[BotHub Installer] start.py não existe; configuração automática de boot removida.", flush=True)
-    except OSError as exc:
-        print("[BotHub Installer] Não foi possível remover a configuração antiga de boot:", str(exc)[:160], flush=True)
-
-
-def configure_termux_boot():
-    """Instala/repara Termux:Boot e configura start.py no boot do Android."""
-    if not TERMUX:
-        return False
-
-    boot_dir = Path.home() / ".termux" / "boot"
-    boot_script = boot_dir / "00-bothub-start"
-    marker = ROOT / ".bothub_termux_boot_ready"
-    if not START_SCRIPT.is_file():
-        remove_termux_boot_script()
-        return False
-
-    boot_status = termux_package_installed("com.termux.boot")
-    if boot_status is None:
-        raise RuntimeError(
-            "O Android bloqueou a consulta para saber se Termux:Boot está instalado. "
-            "Por segurança, não vou abrir outra instalação nem reinstalar por engano. "
-            "Verifique se Termux:Boot aparece na lista de aplicativos do Android e tente novamente."
-        )
-
-    if boot_status is False:
-        pkg = shutil.which("pkg")
-        if not pkg:
-            raise RuntimeError("Termux:Boot não está instalado e o comando pkg não está disponível.")
-
-        apk_dir = ROOT / "downloads"
-        apk_dir.mkdir(parents=True, exist_ok=True)
-        apk = apk_dir / "termux-boot.apk"
-        opener = shutil.which("termux-open")
-        if not opener:
-            raise RuntimeError("termux-open não está disponível para abrir o instalador Android.")
-
-        installed = False
-        for attempt in (1, 2):
-            try:
-                # Baixa sempre uma cópia nova e valida a estrutura ZIP do APK.
-                apk.unlink(missing_ok=True)
-                download_termux_boot_apk(apk)
-                # O Package Installer do Android pode não conseguir ler APKs
-                # dentro da pasta privada do Termux. Copiamos para Downloads,
-                # onde o Android consegue conceder acesso ao instalador.
-                shared_downloads = Path.home() / "storage" / "downloads"
-                if not shared_downloads.is_dir():
-                    raise RuntimeError(
-                        "A pasta compartilhada Downloads não está disponível. "
-                        "Execute 'termux-setup-storage', permita o acesso aos arquivos "
-                        "e rode start.py novamente."
-                    )
-                shared_apk = shared_downloads / "termux-boot.apk"
-                shutil.copy2(apk, shared_apk)
-                print("[BotHub Installer] APK copiado para Downloads compartilhados do Android.",
-                      flush=True)
-                print("[BotHub Installer] Abrindo o APK em Downloads. "
-                      "Se aparecer um seletor, escolha Instalador de pacote e confirme.",
-                      flush=True)
-                subprocess.Popen([opener, str(shared_apk)])
-                print("[BotHub Installer] O instalador vai verificar automaticamente "
-                      "se Termux:Boot foi instalado, sem precisar pressionar ENTER.",
-                      flush=True)
-                # start.py chama este instalador com stdin=DEVNULL; portanto não podemos
-                # usar input(). Aguardar a confirmação observando o Package Manager.
-                deadline = time.time() + 300
-                final_status = False
-                while time.time() < deadline:
-                    final_status = termux_package_installed("com.termux.boot")
-                    if final_status is True:
-                        break
-                    time.sleep(3)
-
-                if final_status is True:
-                    print("[BotHub Installer] Termux:Boot instalado e confirmado pelo Android.", flush=True)
-                    installed = True
-                    break
-
-                if final_status is None:
-                    raise RuntimeError(
-                        "O Android bloqueou a consulta do pacote durante a instalação. "
-                        "Não vou abrir outra instalação para evitar duplicidade. "
-                        "Confira se Termux:Boot aparece nos aplicativos do Android e execute start.py novamente."
-                    )
-
-                raise RuntimeError(
-                    "O Android ainda informa que Termux:Boot não está instalado após 5 minutos."
-                )
-            except Exception as exc:
-                print(f"[BotHub Installer] Tentativa {attempt}/2 falhou: {str(exc)[:220]}",
-                      flush=True)
-                if attempt == 1:
-                    # Se uma instalação parcial/antiga existir, abre a tela de remoção.
-                    if termux_package_installed("com.termux.boot"):
-                        open_android_uninstall("com.termux.boot")
-                        print("[BotHub Installer] Confirme a desinstalação do Termux:Boot, se solicitada.",
-                              flush=True)
-                        wait_for_termux_boot(False, 120)
-                    apk.unlink(missing_ok=True)
-                    print("[BotHub Installer] Limpando o APK anterior e tentando baixar novamente...",
-                          flush=True)
-                else:
-                    raise RuntimeError(
-                        "Não foi possível instalar Termux:Boot após baixar novamente. "
-                        "Confira a confirmação do Android e execute start.py outra vez."
-                    ) from exc
-
-        if not installed:
-            raise RuntimeError("Termux:Boot não foi instalado.")
-
-    # O primeiro lançamento habilita o receptor de boot do complemento.
-    if not marker.exists():
-        monkey = shutil.which("monkey") or "/system/bin/monkey"
         try:
-            subprocess.run([monkey, "-p", "com.termux.boot", "1"],
-                           capture_output=True, text=True, timeout=15)
-            time.sleep(2)
-        except (OSError, subprocess.TimeoutExpired):
-            print("[BotHub Installer] Abra Termux:Boot uma vez manualmente para ativar o boot.",
-                  flush=True)
-
-    boot_dir.mkdir(parents=True, exist_ok=True)
-    python_bin = shlex.quote(str(Path(sys.executable).resolve()))
-    root_dir = shlex.quote(str(ROOT.resolve()))
-    start_file = shlex.quote(str(START_SCRIPT.resolve()))
-    script = (
-        "#!/data/data/com.termux/files/usr/bin/sh\n"
-        "# BotHub autostart - gerado automaticamente pelo instalador\n"
-        "ROOT=" + root_dir + "\n"
-        "START=" + start_file + "\n"
-        "PYTHON=" + python_bin + "\n"
-        'if [ ! -f "$START" ]; then\n'
-        '  rm -f "$0"\n'
-        '  exit 0\n'
-        "fi\n"
-        'cd "$ROOT" || exit 1\n'
-        "termux-wake-lock >/dev/null 2>&1 || true\n"
-        'exec "$PYTHON" "$START" >> "$ROOT/start.log" 2>&1\n'
-    )
-    temporary = boot_script.with_suffix(".tmp")
-    temporary.write_text(script, encoding="utf-8")
-    temporary.replace(boot_script)
-    boot_script.chmod(0o700)
-    boot_dir.chmod(0o700)
-    marker.write_text(INSTALLER_VERSION, encoding="utf-8")
-    print("[BotHub Installer] Inicialização automática configurada: start.py será executado após o boot do Android.",
-          flush=True)
-    print("[BotHub Installer] Mantenha Termux e Termux:Boot liberados das restrições de bateria do Android.",
-          flush=True)
-    return True
+            if Path("/run/systemd/system").exists():
+                command = ["systemctl", "disable", "--now", "bothub-worker.service"]
+                if unit_dir != Path("/etc/systemd/system"):
+                    command.insert(1, "--user")
+                subprocess.run(command, capture_output=True, timeout=30)
+            unit_file.unlink(missing_ok=True)
+            print("[BotHub Installer] Serviço automático antigo do BotHub removido.", flush=True)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print("[BotHub Installer] Não consegui remover o serviço automático antigo:", str(exc)[:160], flush=True)
 
 
 def update_installer():
@@ -369,57 +144,6 @@ def download():
     except OSError:
         pass
 
-def configure_autostart():
-    """Instala um serviço systemd quando a máquina permite; assim o worker volta após reboot."""
-    if os.name == "nt" or TERMUX or not sys.platform.startswith("linux"):
-        print("[BotHub Installer] Inicialização automática do sistema não configurada nesta plataforma.")
-        return False
-    if not Path("/run/systemd/system").exists():
-        print("[BotHub Installer] systemd não está disponível. Configure o worker no gerenciador de processos do host.")
-        return False
-    try:
-        if os.geteuid() == 0:
-            unit_dir = Path("/etc/systemd/system")
-        else:
-            unit_dir = Path.home() / ".config" / "systemd" / "user"
-        unit_dir.mkdir(parents=True, exist_ok=True)
-        unit_file = unit_dir / "bothub-worker.service"
-        wanted_by = "multi-user.target" if os.geteuid() == 0 else "default.target"
-        unit_file.write_text(
-            "[Unit]\n"
-            "Description=BotHub persistent worker\n"
-            "After=network-online.target\n"
-            "Wants=network-online.target\n\n"
-            "[Service]\n"
-            "Type=simple\n"
-            "WorkingDirectory=\"" + str(ROOT).replace("\\\\", "\\\\\\\\").replace("\"", "\\\\\"") + "\"\n"
-            "ExecStart=\"" + str(PYTHON).replace("\\\\", "\\\\\\\\").replace("\"", "\\\\\"") + "\" \"" + str(WORKER).replace("\\\\", "\\\\\\\\").replace("\"", "\\\\\"") + "\"\n"
-            "Restart=always\n"
-            "RestartSec=5\n"
-            "KillMode=mixed\n"
-            "TimeoutStopSec=15\n\n"
-            "[Install]\n"
-            "WantedBy=" + wanted_by + "\n",
-            encoding="utf-8",
-        )
-        if os.geteuid() == 0:
-            subprocess.run(["systemctl", "daemon-reload"], check=True, timeout=30)
-            subprocess.run(["systemctl", "enable", "--now", "bothub-worker.service"], check=True, timeout=45)
-        else:
-            subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, timeout=30)
-            subprocess.run(["systemctl", "--user", "enable", "--now", "bothub-worker.service"], check=True, timeout=45)
-            try:
-                subprocess.run(["loginctl", "enable-linger", __import__("getpass").getuser()], check=True, timeout=15)
-            except Exception:
-                print("[BotHub Installer] Atenção: o host não permitiu habilitar linger; confirme com o administrador se o serviço inicia após reboot.")
-        print("[BotHub Installer] Inicialização automática configurada: bothub-worker.service", flush=True)
-        return True
-    except Exception as exc:
-        print("[BotHub Installer] Não consegui configurar o serviço automaticamente:", str(exc)[:180], flush=True)
-        print("[BotHub Installer] Inicie manualmente com:", str(PYTHON), str(WORKER), flush=True)
-        return False
-
-
 def main():
     if sys.version_info < (3, 10):
         print("ERRO: é necessário Python 3.10 ou superior.")
@@ -445,8 +169,7 @@ def main():
         print("[BotHub Installer] Termux detectado: não instala psutil; usa /proc como alternativa.")
     run([str(PYTHON), "-m", "pip", "install", "--upgrade", *packages])
     download()
-    if TERMUX:
-        configure_termux_boot()
+    remove_legacy_autostart()
     print("\n[BotHub Installer] Arquivos instalados em:", ROOT)
     print("[BotHub Installer] O worker vai gerar um ID e autenticar sem pedir e-mail/senha.")
     print("[BotHub Installer] Para iniciar novamente:")
@@ -458,10 +181,6 @@ def main():
         print("[BotHub Installer] Modo supervisionado: ambiente pronto; start.py iniciará o worker.", flush=True)
         return 0
 
-    service_started = configure_autostart()
-    if service_started:
-        print("[BotHub Installer] O serviço cuidará de manter o worker ligado após reinicializações.")
-        return 0
     os.execv(str(PYTHON), [str(PYTHON), str(WORKER)])
 
 if __name__ == "__main__":
