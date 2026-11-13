@@ -1448,7 +1448,7 @@ async function rebalance(){
       const assigned={};
       for(const [bid,b] of Object.entries(botData)){
         if(b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off'&&assignments[bid]===wid)
-          assigned[bid]={name:b.name,token:b.token,config:b.config||{},botType:b.botType||"ia_chat",ownerId:b.ownerId||null,enabled:true,desiredState:'on',updatedAt:b.updatedAt||now};
+          assigned[bid]={name:b.name,token:b.token,config:b.config||{},botType:b.botType||"ia_chat",ownerId:b.ownerId||null,allowPasswordSalt:b.allowPasswordSalt||'',allowPasswordHash:b.allowPasswordHash||'',allowUserIds:Array.isArray(b.allowUserIds)?b.allowUserIds:[],authorizedGuildIds:Array.isArray(b.authorizedGuildIds)?b.authorizedGuildIds:[],enabled:true,desiredState:'on',updatedAt:b.updatedAt||now};
       }
       await set(testRef('workerTasks/'+wid),assigned);
     }
