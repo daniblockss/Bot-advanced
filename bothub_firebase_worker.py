@@ -184,7 +184,7 @@ def stop_bot_processes(bot_id):
                     continue
                 for arg in (proc.info.get("cmdline") or [])[1:]:
                     try:
-                        if arg.endswith(".py") and Path(arg).resolve() == target:
+                        if arg.endswith(".py") and Path(arg).resolve() in targets:
                             found.append(pid)
                             break
                     except (OSError, ValueError, RuntimeError):
