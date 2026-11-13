@@ -47,6 +47,7 @@ def fb(method,path,value=None,_retried=False):
   raise RuntimeError("Firebase HTTP "+str(e.code))
 def get(path): return fb("GET",path)
 def put(path,value): return fb("PUT",path,value)
+def delete(path): return fb("DELETE",path)
 def is_admin(user): return user.id in ADMINS
 def points(uid):
  d=get("botHubPoints/"+str(uid)) or {}
@@ -161,7 +162,7 @@ class ApiView(discord.ui.View):
   await i.response.send_message("APIs globais "+("ativadas" if enabled else "desativadas")+". Cada resposta que usar uma API global custa 1 ponto.",ephemeral=True)
  @discord.ui.button(label="Remover API pessoal",style=discord.ButtonStyle.danger)
  async def remove(self,i,b):
-  put(f"botHubUserApis/{i.user.id}/{self.target_bot_id}",None);await i.response.send_message("API pessoal removida do bot selecionado.",ephemeral=True)
+  delete(f"botHubUserApis/{i.user.id}/{self.target_bot_id}");await i.response.send_message("API pessoal removida do bot selecionado.",ephemeral=True)
 class BotSelect(discord.ui.Select):
  def __init__(self,uid):
   opts=[]; data=get("bots") or {}
