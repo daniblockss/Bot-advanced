@@ -5639,10 +5639,11 @@ def _bothub_fb(method, path, value=None, etag=False, match=None, _retried=False)
             body = response.read()
             return (json.loads(body) if body else None, response.headers.get("ETag")) if etag else (json.loads(body) if body else None)
     except HTTPError as error:
-        if error.code == 401 and not _retried:
+        if error.code == 401:
             _BOTHUB_FIREBASE_TOKEN = None
-            time.sleep(0.4)
-            return _bothub_fb(method, path, value, etag, match, _retried=True)
+            if not _retried:
+                time.sleep(0.4)
+                return _bothub_fb(method, path, value, etag, match, _retried=True)
         if error.code == 412:
             return "CONFLICT", None
         raise
