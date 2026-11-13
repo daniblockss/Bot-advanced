@@ -939,41 +939,77 @@ def notify_update(bot_id, bot_cfg, update, notification_state):
 
 def process_release_updates(tok, queue):
     release=fb("GET","botHubUpdates/current",tok)
-    if not isinstance(release,dict) or not release.get("updateId") or release.get("clusterOnly"):return
+    if not isinstance(release,dict) or not release.get("updateId") or release.get("clusterOnly"):
+        return
     notification_file=ROOT/".bothub_update_notifications.json"
-    try:notification_state=json.loads(notification_file.read_text(encoding="utf-8")) if notification_file.exists() else {}
-    except Exception:notification_state={}
-    if not isinstance(notification_state,dict):notification_state={}
+    try:
+        notification_state=json.loads(notification_file.read_text(encoding="utf-8")) if notification_file.exists() else {}
+    except Exception:
+        notification_state={}
+    if not isinstance(notification_state,dict):
+        notification_state={}
+    update_id=str(release.get("updateId"))
     for raw_id,bot_cfg in list(queue.items()):
-        if not isinstance(bot_cfg,dict) or not bot_cfg.get("enabled",True):continue
+        if not isinstance(bot_cfg,dict) or not bot_cfg.get("enabled",True):
+            continue
         if str(bot_cfg.get("botType") or "ia_chat").lower() != "ia_chat":
             continue
-        bid=sid(raw_id);folder=ROOT/"bots"/bid
-        if not folder.exists():continue
+        bid=sid(raw_id)
+        folder=ROOT/"bots"/bid
+        if not folder.exists():
+            continue
         state_file=folder/".bothub_update_state.json"
-        try:state=json.loads(state_file.read_text(encoding="utf-8")) if state_file.exists() else {}
-        except Exception:state={}
-        update_id=str(release.get("updateId"))
-        if state.get("updateId")!=update_id or not state.get("announced"):
+        try:
+            state=json.loads(state_file.read_text(encoding="utf-8")) if state_file.exists() else {}
+        except Exception:
+            state={}
+        if not isinstance(state,dict):
+            state={}
+        if state.get("updateId")!=update_id:
+            state={"updateId":update_id,"announced":False,"updated":False,"attempts":0}
+        if not state.get("announced"):
             announced=notify_update(raw_id,bot_cfg,release,notification_state)
-            state={"updateId":update_id,"announced":bool(announced),"updated":False}
+            state["announced"]=bool(announced)
             save_json(state_file,state)
+
         request_file=folder/".bothub_update_request"
         mandatory=release.get("type")=="mandatory"
         accepted=request_file.exists()
-        if state.get("updateId")==update_id and state.get("updated"):continue
-        if not mandatory and not accepted:continue
+        if state.get("updated"):
+            continue
+        # Não repete download/restart a cada ciclo quando a atualização falhou.
+        # A tentativa seguinte só ocorre depois do backoff persistido em disco.
+        try:
+            retry_after=float(state.get("retryAfter") or 0)
+        except (TypeError,ValueError):
+            retry_after=0
+        if retry_after>time.time():
+            continue
+        if not mandatory and not accepted:
+            continue
         try:
             stop(bid)
             size=download_latest_main(folder)
             start(bid,bot_cfg)
-            state.update(updateId=update_id,announced=True,updated=True,updatedAt=int(time.time()*1000),bytes=size)
+            state.update(updateId=update_id,announced=True,updated=True,
+                         updatedAt=int(time.time()*1000),bytes=size,
+                         retryAfter=0,lastError="")
             save_json(state_file,state)
-            if request_file.exists():request_file.unlink()
+            if request_file.exists():
+                request_file.unlink()
             print("[BotHub] bot atualizado:",raw_id,"bytes:",size,flush=True)
         except Exception as e:
-            print("[BotHub] falha ao atualizar",raw_id,":",str(e)[:220],flush=True)
-            # Se a versão nova não iniciar, restaura a última versão válida e tenta recuperá-la.
+            attempts=int(state.get("attempts") or 0)+1
+            delay=min(900,30*(2**min(attempts-1,5)))
+            state.update(updateId=update_id,announced=True,updated=False,
+                         attempts=attempts,retryAfter=time.time()+delay,
+                         retryDelaySeconds=delay,lastAttemptAt=int(time.time()*1000),
+                         lastError=str(e)[:500])
+            save_json(state_file,state)
+            print("[BotHub] atualização falhou para",raw_id,
+                  "- código/erro:",str(e)[:180],
+                  "- próxima tentativa em",delay,"segundos.",flush=True)
+            # Restaura a versão anterior, mas não reinicia em ciclo apertado.
             try:
                 backup=folder/".main.py.last-good"
                 if backup.is_file():
@@ -981,10 +1017,11 @@ def process_release_updates(tok, queue):
                     restored.write_bytes(backup.read_bytes())
                     restored.replace(folder/"main.py")
                     print("[BotHub] versão anterior restaurada para",raw_id,flush=True)
-                if bid not in PROCS or PROCS[bid].poll() is not None:
-                    start(bid,bot_cfg)
+                    if bid not in PROCS or PROCS[bid].poll() is not None:
+                        start(bid,bot_cfg)
             except Exception as recovery_error:
-                print("[BotHub] recuperação após atualização falhou para",raw_id,":",str(recovery_error)[:220],flush=True)
+                print("[BotHub] recuperação da versão anterior falhou para",raw_id,
+                      ":",str(recovery_error)[:180],flush=True)
 
 
 CLUSTER_UPDATE_URLS={
