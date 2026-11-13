@@ -640,6 +640,7 @@ def start(k,b):
         try:
             child_env=os.environ.copy()
             child_env["BOTHUB_SHARED_STATE_DIR"]=str(ROOT/".bothub_shared")
+            child_env["BOTHUB_BOT_ID"]=str(k)
             p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
                 stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),env=child_env,**popen_kwargs)
         except Exception:
