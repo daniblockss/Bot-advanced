@@ -249,6 +249,9 @@ def main() -> int:
             if worker_process.poll() is not None:
                 exit_code = worker_process.returncode
                 runtime = time.monotonic() - worker_started_at
+                if exit_code == 73:
+                    log.info("Outra instância já possui o lock desta instalação. Encerrando este supervisor duplicado sem reiniciar o Worker.")
+                    break
                 if runtime >= WORKER_STABLE_SECONDS:
                     restart_delay = RESTART_DELAY
                 log.warning(
