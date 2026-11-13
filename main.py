@@ -9734,9 +9734,133 @@ async def solicitar_atualizacao_bot(ctx):
 # Evento Principal (On Message)
 # ==========================
 
+
+def _bot_auth_settings():
+    value = config.get("bot_authorization", {})
+    return value if isinstance(value, dict) else {}
+
+
+def _bot_auth_guild_ids():
+    values = _bot_auth_settings().get("authorized_guild_ids", [])
+    if not isinstance(values, list):
+        return set()
+    return {int(value) for value in values if str(value).isdigit()}
+
+
+def _bot_auth_user_ids():
+    values = _bot_auth_settings().get("allow_user_ids", [])
+    if not isinstance(values, list):
+        return set()
+    return {int(value) for value in values if str(value).isdigit()}
+
+
+def _bot_auth_can_allow(user_id):
+    # Somente criadores globais do BotHub ou IDs cadastrados no painel deste bot.
+    return int(user_id) in obter_ids_criadores() or int(user_id) in _bot_auth_user_ids()
+
+
+def _bot_auth_guild_allowed(guild_id):
+    return int(guild_id) in _bot_auth_guild_ids()
+
+
+@bot.command(name="allow")
+async def bot_allow_command(ctx, *, senha: str = ""):
+    if ctx.guild is not None:
+        try:
+            await ctx.message.delete()
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass
+        return
+
+    if not _bot_auth_can_allow(ctx.author.id):
+        await ctx.send("Você não tem autorização para liberar comunidades deste bot.")
+        return
+
+    auth = _bot_auth_settings()
+    salt = str(auth.get("password_salt") or "")
+    expected = str(auth.get("password_hash") or "")
+    if not salt or not expected:
+        await ctx.send("A senha deste bot ainda não foi configurada no painel. Peça ao responsável para defini-la.")
+        return
+    supplied = hashlib.sha256((salt + senha.strip()).encode("utf-8")).hexdigest()
+    if not senha or not __import__("hmac").compare_digest(supplied, expected):
+        await ctx.send("Senha incorreta.")
+        return
+
+    pending = [guild for guild in bot.guilds if guild.id not in _bot_auth_guild_ids()]
+    if not pending:
+        await ctx.send("Todas as comunidades em que estou já estão autorizadas.")
+        return
+
+    selected = None
+    if len(pending) == 1:
+        selected = pending[0]
+    else:
+        lines = ["Estou nestas comunidades. Qual devo selecionar como permitida?"]
+        lines.extend(f"{index}. {guild.name} — ID: {guild.id}" for index, guild in enumerate(pending, 1))
+        lines.append("Responda com o número da lista ou com o ID da comunidade. Esta escolha expira em 2 minutos.")
+        await ctx.send("\\n".join(lines))
+        try:
+            answer = await bot.wait_for(
+                "message",
+                timeout=120,
+                check=lambda message: message.author.id == ctx.author.id
+                and isinstance(message.channel, discord.DMChannel)
+                and message.guild is None,
+            )
+        except asyncio.TimeoutError:
+            await ctx.send("Seleção expirada. Envie !allow novamente no privado.")
+            return
+        choice = (answer.content or "").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(pending):
+            selected = pending[int(choice) - 1]
+        else:
+            selected = next((guild for guild in pending if str(guild.id) == choice), None)
+        if selected is None:
+            await ctx.send("Não reconheci essa comunidade. Envie !allow novamente e escolha um número ou ID válido.")
+            return
+
+    auth = _bot_auth_settings()
+    allowed = _bot_auth_guild_ids()
+    allowed.add(selected.id)
+    auth["authorized_guild_ids"] = sorted(allowed)
+    config["bot_authorization"] = auth
+    salvar_config(config)
+    await ctx.send(f"Comunidade **{selected.name}** autorizada com sucesso.")
+
+
+# Bloqueia também comandos de barra em comunidades que ainda não foram liberadas.
+_original_tree_interaction_check = bot.tree.interaction_check
+async def _bot_auth_tree_interaction_check(interaction):
+    if interaction.guild_id and not _bot_auth_guild_allowed(interaction.guild_id):
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "Esta comunidade ainda não foi autorizada. Use !allow no privado do bot.",
+                    ephemeral=True,
+                )
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass
+        return False
+    return await _original_tree_interaction_check(interaction)
+bot.tree.interaction_check = _bot_auth_tree_interaction_check
+
+
 @bot.event
 async def on_message(message):
     if message.author.bot:
+        return
+
+    # !allow nunca pode ser executado em canais de comunidade: apaga imediatamente.
+    if message.guild and (message.content or "").strip().lower().startswith("!allow"):
+        try:
+            await message.delete()
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass
+        return
+
+    # Comunidades pendentes não recebem respostas, comandos de texto nem processamento de IA.
+    if message.guild and not _bot_auth_guild_allowed(message.guild.id):
         return
 
     # Um lembrete vencido pode ser entregue no primeiro canal em que a pessoa falar.
