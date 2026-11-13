@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.8</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.9</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -622,8 +622,9 @@ python3 start.py</pre>
         <input id="modalProfileAvatarBase64" type="hidden">
         <div style="display:flex; align-items:center; gap:10px; margin-top:8px">
           <img id="modalAvatarPreview" src="" alt="" style="width:40px;height:40px;border-radius:10px;object-fit:cover;display:none">
-          <span class="small muted">Prévia da imagem compactada</span>
+          <span class="small muted">Prévia da imagem / avatar atual do Discord</span>
         </div>
+        <button class="secondary" onclick="fetchCurrentBotAvatar()" style="margin-top:9px">↻ Pegar imagem atual do bot</button>
         <button class="primary" onclick="saveBotProfileOnlySite()" style="margin-top:12px">💾 Salvar Perfil (Sincronizado)</button>
         <div id="modalProfileMsg" class="hint"></div>
       </div>
@@ -947,7 +948,7 @@ function workerBotListHtml(workerId,w){
  const ready=w.readyBotIds, confirmed=new Set(Array.isArray(ready)?ready.map(String):ready&&typeof ready==='object'?Object.keys(ready).map(String):[]);
  const items=Object.entries(botData).filter(([id,b])=>running.has(String(id))||((!running.size)&&String(b.workerId||'')===String(workerId)&&confirmed.has(String(id))));
  if(!items.length)return '<div class="hint" style="margin-top:7px">Nenhum bot em execução detectado.</div>';
- return '<details open style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Bots em execução ('+items.length+') · mostrar/ocultar</summary><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+items.map(([id,b])=>'<span title="'+esc(b.name||'Bot')+'" style="display:inline-flex;align-items:center;gap:5px;max-width:170px;padding:4px 7px;border:1px solid var(--line);border-radius:8px;font-size:11px"><img src="'+(b.avatarBase64||'')+'" onerror="this.style.display=\'none\'" style="width:19px;height:19px;border-radius:50%;object-fit:cover;'+(b.avatarBase64?'':'display:none;')+'"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||'Bot')+'</span></span>').join('')+'</div></details>';
+ return '<details open style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Bots em execução ('+items.length+') · mostrar/ocultar</summary><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+items.map(([id,b])=>'<span title="'+esc(b.name||'Bot')+'" style="display:inline-flex;align-items:center;gap:5px;max-width:170px;padding:4px 7px;border:1px solid var(--line);border-radius:8px;font-size:11px"><img src="'+(b.avatarBase64||b.avatarUrl||'')+'" onerror="this.style.display=\'none\'" style="width:19px;height:19px;border-radius:50%;object-fit:cover;'+(b.avatarBase64?'':'display:none;')+'"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||'Bot')+'</span></span>').join('')+'</div></details>';
 }
 function drawWorkers(){
  if(workersRenderAfter>Date.now()){
@@ -1060,14 +1061,15 @@ window.openBotModal = function(id) {
   $('modalBotTitle').textContent = `Painel: ${b.name || id}`;
   $('modalProfileName').value = b.name || '';
   $('modalProfileDesc').value = b.description || '';
-  if(b.avatarBase64) {
-    $('modalAvatarPreview').src = b.avatarBase64;
+  const currentAvatar = b.avatarBase64 || b.avatarUrl || '';
+  if(currentAvatar) {
+    $('modalAvatarPreview').src = currentAvatar;
     $('modalAvatarPreview').style.display = 'block';
-    $('modalProfileAvatarBase64').value = b.avatarBase64;
   } else {
+    $('modalAvatarPreview').removeAttribute('src');
     $('modalAvatarPreview').style.display = 'none';
-    $('modalProfileAvatarBase64').value = '';
   }
+  $('modalProfileAvatarBase64').value = b.avatarBase64 || '';
   $('botModal').classList.remove('hidden');
   switchBotTab('files');
   loadBotFiles();
@@ -1217,6 +1219,27 @@ window.fetchBotLogs = async function() {
     status.textContent = "Tamanho: " + bytes(data.size || 0);
   } catch(e) {
     status.className = "error"; status.textContent = e.message;
+  }
+};
+
+window.fetchCurrentBotAvatar = async function() {
+  const msg = $('modalProfileMsg');
+  msg.className = "hint";
+  msg.textContent = "Consultando o Discord pelo worker…";
+  try {
+    const { id, wid } = getSelectedBotAndWorker();
+    const result = await sendWorkerCommand(wid, { operation: "fetch_avatar", botId: id });
+    const avatarUrl = result.avatarUrl || '';
+    if(!avatarUrl) throw new Error("O Discord não retornou uma imagem para este bot.");
+    $('modalProfileAvatarBase64').value = '';
+    $('modalAvatarPreview').src = avatarUrl;
+    $('modalAvatarPreview').style.display = 'block';
+    msg.className = "ok";
+    msg.textContent = "Imagem atual obtida do Discord e salva no cadastro. Clique em Salvar Perfil para aplicar a seleção no painel.";
+    await refreshData();
+  } catch(e) {
+    msg.className = "error";
+    msg.textContent = e.message || String(e);
   }
 };
 
