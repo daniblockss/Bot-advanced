@@ -5747,8 +5747,8 @@ def _bothub_consume_global_point(user_id):
             updated = dict(data)
             updated.update(balance=balance - 1, updatedAt=int(time.time() * 1000),
                            lastReason="Uso de API global", lastActor=os.getenv("BOTHUB_BOT_ID", "bot"))
-            result, _ = _bothub_fb("PUT", path, updated, match=etag)
-            if result != "CONFLICT":
+            result = _bothub_fb("PUT", path, updated, match=etag)
+            if not (isinstance(result, tuple) and result and result[0] == "CONFLICT"):
                 return True
         except Exception as error:
             log_console(f"AVISO: falha ao debitar ponto de API global ({type(error).__name__}).")
