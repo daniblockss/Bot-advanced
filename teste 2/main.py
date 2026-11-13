@@ -1,4 +1,4 @@
-BOTHUB_MAIN_VERSION = "2026.11.12.1"
+BOTHUB_MAIN_VERSION = "2026.11.13.1"
 
 import discord
 from discord.ext import commands, tasks
@@ -883,17 +883,16 @@ class VoiceSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
-        # Entrar não autoriza automaticamente a comunidade. O criador principal
-        # precisa enviar !allow dentro deste servidor antes de liberar os recursos.
+        # O bot permanece no servidor, mas fica totalmente inativo até o ID
+        # ser incluído na lista de permitidos do painel ou liberado por !allow.
         if comunidade_autorizada(guild.id):
             owners = config.setdefault("criadores_supremos_guild", {})
             owners[str(guild.id)] = int(guild.owner_id)
             salvar_config(config)
             log_console(f"Comunidade autorizada {guild.id}; dono local: {guild.owner_id}")
+            await self.sync_commands(guild)
         else:
-            log_console(f"Comunidade {guild.id} pendente de autorização; aguardando !allow por até {COMMUNITY_AUTH_TIMEOUT_SECONDS}s.")
-            agendar_saida_se_nao_autorizada(guild.id)
-        await self.sync_commands(guild)
+            log_console(f"Comunidade {guild.id} não autorizada; permanecerei no servidor sem executar comandos ou responder mensagens.")
 
     @tasks.loop(minutes=5)
     async def maintenance(self):
@@ -6892,8 +6891,8 @@ class CreatorChannelsPanel(BoundView):
 class AllowlistCommandTree(app_commands.CommandTree):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         guild = interaction.guild
+        # Em servidores fora da allowlist, comandos slash são ignorados sem resposta.
         if guild is not None and not comunidade_autorizada(guild.id):
-            await private_reply(interaction, "⛔ Esta comunidade ainda não foi autorizada. O criador principal precisa usar `!allow` neste servidor.")
             return False
         return True
 
@@ -6925,15 +6924,11 @@ bot = BreezeBot(command_prefix="!", intents=intents, help_command=None)
 @bot.check
 async def somente_criadores_prefixo(ctx):
     comando = getattr(ctx, "command", None)
-    # Em comunidades não autorizadas, só o criador principal pode executar !allow.
+    # Fora da allowlist, somente !allow de um criador global é aceito.
+    # Nenhum outro comando (inclusive ping/info) gera resposta.
     if ctx.guild is not None and not comunidade_autorizada(ctx.guild.id):
-        if comando and comando.name == "allow" and ctx.author.id in obter_ids_criadores():
-            return True
-        if comando and comando.name in {"ping", "info"}:
-            return True
-        if ctx.author.id == int(config.get("criador_supremo", 1252679441629315144)):
-            await ctx.reply("⛔ Esta comunidade ainda não foi autorizada. Use `!allow` para liberar este servidor.")
-        return False
+        return bool(comando and comando.name == "allow"
+                    and ctx.author.id in obter_ids_criadores())
     if comando and comando.name in {"ping", "info"}:
         return True
     if comando and comando.name == "raiz":
@@ -10210,10 +10205,12 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Em comunidade pendente, não responda a menções, usuários ou IA. Só aceita !allow de um criador global cadastrado.
+    # Em servidor fora da allowlist, não responda, não processe IA,
+    # não registre mensagens e não execute comandos. Exceção: !allow do criador global.
     if message.guild is not None and not comunidade_autorizada(message.guild.id):
         comando_pendente = (message.content or "").strip().split(maxsplit=1)
-        if comando_pendente and comando_pendente[0].lower() == "!allow":
+        if (comando_pendente and comando_pendente[0].lower() == "!allow"
+                and message.author.id in obter_ids_criadores()):
             await bot.process_commands(message)
         return
 
