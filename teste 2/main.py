@@ -2754,7 +2754,7 @@ def comunidade_autorizada(guild_id):
         allowed = set()
         for value in list(configured) + list(legacy):
             # Aceita IDs isolados ou texto com IDs separados por espaço/vírgula.
-            for item in re.split(r"[\\s,;]+", str(value).strip()):
+            for item in re.split(r"[\s,;]+", str(value).strip()):
                 if item.isdigit() and int(item) > 0:
                     allowed.add(int(item))
         return int(guild_id) in allowed
