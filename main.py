@@ -9837,7 +9837,11 @@ def _bot_auth_can_allow(user_id):
 
 
 def _bot_auth_guild_allowed(guild_id):
-    allowed = _bot_auth_guild_ids()\n    if allowed:\n        config["botHubAllowedGuildIds"] = sorted(allowed)\n        salvar_comunidades_persistidas()\n    return int(guild_id) in allowed
+    allowed = _bot_auth_guild_ids()
+    if allowed:
+        config["botHubAllowedGuildIds"] = sorted(allowed)
+        salvar_comunidades_persistidas()
+    return int(guild_id) in allowed
 
 
 @bot.command(name="allow")
