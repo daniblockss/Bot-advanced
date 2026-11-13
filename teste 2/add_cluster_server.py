@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 """Instalador BotHub: instala e inicia o worker na pasta atual."""
 from __future__ import annotations
-import os, platform, shutil, subprocess, sys, urllib.request, shlex, time
+import os, platform, shutil, subprocess, sys, urllib.request, shlex, time, json, zipfile, io
 from pathlib import Path
 
-INSTALLER_VERSION = "2026.11.12.4"
+INSTALLER_VERSION = "2026.11.12.5"
 GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 INSTALLER_URL = GITHUB_RAW + "/add_cluster_server.py"
 WORKER_URL = GITHUB_RAW + "/bothub_firebase_worker.py"
@@ -69,21 +69,94 @@ def ensure_termux_api():
 
 
 def termux_package_installed(package_name):
-    """Consulta o gerenciador de pacotes Android sem depender de permissões root."""
-    commands = [
-        ["/system/bin/pm", "path", package_name],
-        ["pm", "path", package_name],
-        ["cmd", "package", "path", package_name],
-    ]
+    """Detecta o pacote usando os comandos Android disponíveis no Termux."""
+    commands = []
+    for binary in (shutil.which("cmd"), "/system/bin/cmd",
+                   shutil.which("pm"), "/system/bin/pm"):
+        if binary and Path(binary).exists():
+            commands.append([binary, "package", "path", package_name]
+                            if Path(binary).name == "cmd"
+                            else [binary, "path", package_name])
     for command in commands:
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=8)
-            if result.returncode == 0 and "package:" in (result.stdout or ""):
+            result = subprocess.run(command, capture_output=True, text=True, timeout=12)
+            output = (result.stdout or "") + "\\n" + (result.stderr or "")
+            if result.returncode == 0 and "package:" in output:
                 return True
         except (OSError, subprocess.TimeoutExpired):
             continue
     return False
 
+
+def latest_termux_boot_apk():
+    """Obtém o APK mais recente diretamente da página oficial de releases."""
+    api = "https://api.github.com/repos/termux/termux-boot/releases/latest"
+    request = urllib.request.Request(
+        api, headers={"User-Agent": "BotHub-TermuxBoot-Installer/1.0",
+                      "Accept": "application/vnd.github+json"}
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        release = json.loads(response.read().decode("utf-8"))
+    assets = release.get("assets") or []
+    apk_asset = next((a for a in assets if str(a.get("name", "")).lower().endswith(".apk")), None)
+    if not apk_asset or not apk_asset.get("browser_download_url"):
+        raise RuntimeError("A release oficial do Termux:Boot não contém APK disponível.")
+    return apk_asset["browser_download_url"], apk_asset.get("name", "termux-boot.apk")
+
+
+def download_termux_boot_apk(apk_path):
+    url, filename = latest_termux_boot_apk()
+    print("[BotHub Installer] Baixando APK oficial mais recente do Termux:Boot:", filename, flush=True)
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "BotHub-TermuxBoot-Installer/1.0",
+                      "Cache-Control": "no-cache"}
+    )
+    with urllib.request.urlopen(request, timeout=90) as response:
+        data = response.read()
+    if len(data) < 10000:
+        raise RuntimeError("O APK baixado está vazio ou incompleto.")
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as apk_zip:
+            if apk_zip.testzip() is not None:
+                raise RuntimeError("O arquivo APK está corrompido.")
+            names = apk_zip.namelist()
+            if "AndroidManifest.xml" not in names:
+                raise RuntimeError("O download não parece ser um APK Android válido.")
+    except zipfile.BadZipFile as exc:
+        raise RuntimeError("O arquivo recebido não é um APK válido (download HTML ou corrompido).") from exc
+    temporary = apk_path.with_suffix(".apk.tmp")
+    temporary.write_bytes(data)
+    temporary.replace(apk_path)
+    return apk_path
+
+
+def open_android_uninstall(package_name):
+    """Abre a tela oficial de desinstalação; o Android exige confirmação do usuário."""
+    am = shutil.which("am") or "/system/bin/am"
+    try:
+        result = subprocess.run(
+            [am, "start", "-a", "android.intent.action.DELETE",
+             "-d", "package:" + package_name],
+            capture_output=True, text=True, timeout=15
+        )
+        print("[BotHub Installer] Solicitação para abrir a desinstalação no Android enviada.",
+              flush=True)
+        if result.returncode != 0:
+            print("[BotHub Installer] O Android não abriu a tela automaticamente:",
+                  (result.stderr or result.stdout or "")[:180], flush=True)
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print("[BotHub Installer] Não consegui abrir a desinstalação:", str(exc)[:160], flush=True)
+        return False
+
+
+def wait_for_termux_boot(expected, seconds=180):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if termux_package_installed("com.termux.boot") == expected:
+            return True
+        time.sleep(3)
+    return False
 
 def remove_termux_boot_script():
     boot_script = Path.home() / ".termux" / "boot" / "00-bothub-start"
@@ -97,7 +170,7 @@ def remove_termux_boot_script():
 
 
 def configure_termux_boot():
-    """Instala Termux:Boot com confirmação humana e configura start.py no boot."""
+    """Instala/repara Termux:Boot e configura start.py no boot do Android."""
     if not TERMUX:
         return False
 
@@ -112,45 +185,53 @@ def configure_termux_boot():
         pkg = shutil.which("pkg")
         if not pkg:
             raise RuntimeError("Termux:Boot não está instalado e o comando pkg não está disponível.")
-        curl = shutil.which("curl")
-        if not curl:
-            print("[BotHub Installer] Instalando curl para baixar o Termux:Boot...", flush=True)
-            subprocess.check_call([pkg, "install", "-y", "curl"])
-            curl = shutil.which("curl")
-        if not curl:
-            raise RuntimeError("Não foi possível localizar curl após a instalação.")
 
         apk_dir = ROOT / "downloads"
         apk_dir.mkdir(parents=True, exist_ok=True)
         apk = apk_dir / "termux-boot.apk"
-        apk_url = "https://f-droid.org/repo/com.termux.boot_1000.apk"
-        print("[BotHub Installer] Baixando Termux:Boot oficial do F-Droid com curl...", flush=True)
-        subprocess.check_call([
-            curl, "-fL", "--retry", "3", "--connect-timeout", "20",
-            apk_url, "-o", str(apk)
-        ])
-        if not apk.is_file() or apk.stat().st_size < 10000 or apk.read_bytes()[:2] != b"PK":
-            raise RuntimeError("O APK baixado não passou na verificação básica; instalação cancelada.")
-
         opener = shutil.which("termux-open")
         if not opener:
             raise RuntimeError("termux-open não está disponível para abrir o instalador Android.")
-        print("[BotHub Installer] APK pronto. Confirme a instalação na tela do Android.", flush=True)
-        subprocess.Popen([opener, str(apk)])
 
-        print("[BotHub Installer] Aguardando você confirmar a instalação do Termux:Boot (até 10 minutos)...", flush=True)
-        deadline = time.time() + 600
-        while time.time() < deadline:
-            if termux_package_installed("com.termux.boot"):
-                print("[BotHub Installer] Termux:Boot instalado. Continuando a configuração...", flush=True)
-                break
-            time.sleep(3)
-        else:
-            raise RuntimeError(
-                "O Termux:Boot ainda não foi detectado. Confirme a instalação e execute start.py novamente."
-            )
+        installed = False
+        for attempt in (1, 2):
+            try:
+                # Baixa sempre uma cópia nova e valida a estrutura ZIP do APK.
+                apk.unlink(missing_ok=True)
+                download_termux_boot_apk(apk)
+                print("[BotHub Installer] Abra a instalação e confirme Termux:Boot no Android.",
+                      flush=True)
+                subprocess.Popen([opener, str(apk)])
+                print("[BotHub Installer] Aguardando o Android concluir a instalação (até 3 minutos)...",
+                      flush=True)
+                if wait_for_termux_boot(True, 180):
+                    installed = True
+                    print("[BotHub Installer] Termux:Boot instalado e detectado.", flush=True)
+                    break
+                raise RuntimeError("O Android não confirmou a instalação dentro do prazo.")
+            except Exception as exc:
+                print(f"[BotHub Installer] Tentativa {attempt}/2 falhou: {str(exc)[:220]}",
+                      flush=True)
+                if attempt == 1:
+                    # Se uma instalação parcial/antiga existir, abre a tela de remoção.
+                    if termux_package_installed("com.termux.boot"):
+                        open_android_uninstall("com.termux.boot")
+                        print("[BotHub Installer] Confirme a desinstalação do Termux:Boot, se solicitada.",
+                              flush=True)
+                        wait_for_termux_boot(False, 120)
+                    apk.unlink(missing_ok=True)
+                    print("[BotHub Installer] Limpando o APK anterior e tentando baixar novamente...",
+                          flush=True)
+                else:
+                    raise RuntimeError(
+                        "Não foi possível instalar Termux:Boot após baixar novamente. "
+                        "Confira a confirmação do Android e execute start.py outra vez."
+                    ) from exc
 
-    # O primeiro lançamento é necessário para habilitar o receptor de boot do complemento.
+        if not installed:
+            raise RuntimeError("Termux:Boot não foi instalado.")
+
+    # O primeiro lançamento habilita o receptor de boot do complemento.
     if not marker.exists():
         monkey = shutil.which("monkey") or "/system/bin/monkey"
         try:
@@ -158,7 +239,8 @@ def configure_termux_boot():
                            capture_output=True, text=True, timeout=15)
             time.sleep(2)
         except (OSError, subprocess.TimeoutExpired):
-            print("[BotHub Installer] Abra o aplicativo Termux:Boot uma vez manualmente para ativar o boot.", flush=True)
+            print("[BotHub Installer] Abra Termux:Boot uma vez manualmente para ativar o boot.",
+                  flush=True)
 
     boot_dir.mkdir(parents=True, exist_ok=True)
     python_bin = shlex.quote(str(Path(sys.executable).resolve()))
@@ -184,8 +266,10 @@ def configure_termux_boot():
     boot_script.chmod(0o700)
     boot_dir.chmod(0o700)
     marker.write_text(INSTALLER_VERSION, encoding="utf-8")
-    print("[BotHub Installer] Inicialização automática configurada: start.py será executado após o boot do Android.", flush=True)
-    print("[BotHub Installer] Termux:Boot precisa permanecer instalado; mantenha Termux e Termux:Boot liberados das restrições de bateria do Android.", flush=True)
+    print("[BotHub Installer] Inicialização automática configurada: start.py será executado após o boot do Android.",
+          flush=True)
+    print("[BotHub Installer] Mantenha Termux e Termux:Boot liberados das restrições de bateria do Android.",
+          flush=True)
     return True
 
 
