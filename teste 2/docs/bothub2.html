@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.14</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.15</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -965,7 +965,7 @@ function workerBotListHtml(workerId,w){
  const ready=w.readyBotIds, confirmed=new Set(Array.isArray(ready)?ready.map(String):ready&&typeof ready==='object'?Object.keys(ready).map(String):[]);
  const items=Object.entries(botData).filter(([id,b])=>running.has(String(id))||((!running.size)&&String(b.workerId||'')===String(workerId)&&confirmed.has(String(id))));
  if(!items.length)return '<div class="hint" style="margin-top:7px">Nenhum bot em execução detectado.</div>';
- return '<details open style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Bots em execução ('+items.length+') · mostrar/ocultar</summary><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+items.map(([id,b])=>'<span title="'+esc(b.name||'Bot')+'" style="display:inline-flex;align-items:center;gap:5px;max-width:170px;padding:4px 7px;border:1px solid var(--line);border-radius:8px;font-size:11px"><img src="'+(b.avatarBase64||b.avatarUrl||'')+'" onerror="this.style.display=\'none\'" style="width:19px;height:19px;border-radius:50%;object-fit:cover;'+''+'"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||'Bot')+'</span></span>').join('')+'</div></details>';
+ return '<details open style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Bots em execução ('+items.length+') · mostrar/ocultar</summary><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+items.map(([id,b])=>'<span title="'+esc(b.name||'Bot')+'" style="display:inline-flex;align-items:center;gap:5px;max-width:170px;padding:4px 7px;border:1px solid var(--line);border-radius:8px;font-size:11px"><img src="'+(b.avatarBase64||b.avatarUrl||'')+'" onerror="this.style.display=\'none\'" style="width:19px;height:19px;border-radius:50%;object-fit:cover;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||'Bot')+'</span></span>').join('')+'</div></details>';
 }
 function clusterProgressHtml(id){
  const p=clusterUpdateProgress[id];if(!p||!p.status)return '';
