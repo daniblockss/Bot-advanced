@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.9"
+WORKER_VERSION="2026.11.12.10"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -1033,6 +1033,9 @@ def sync_missing_bot_avatars(queue,tok):
     now=time.time()
     for bid,bot_cfg in (queue.items() if isinstance(queue,dict) else []):
         if not isinstance(bot_cfg,dict) or not bot_cfg.get("token"):
+            continue
+        # O usuário pode desativar a sincronização automática no perfil.
+        if bot_cfg.get("avatarAutoUpdate") is False:
             continue
         # Uma imagem enviada manualmente pelo usuário tem prioridade e não deve ser sobrescrita.
         if bot_cfg.get("avatarBase64"):
