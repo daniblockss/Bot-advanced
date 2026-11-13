@@ -1,4 +1,4 @@
-BOTHUB_MAIN_VERSION = "2026.11.13.1"
+BOTHUB_MAIN_VERSION = "2026.11.13.2"
 
 import discord
 from discord.ext import commands, tasks
@@ -2740,17 +2740,23 @@ def tem_perm(message):
 # Servidores não autorizados permanecem conectados, porém inativos.
 
 def comunidade_autorizada(guild_id):
-    """Aplica a política de servidores definida no BotHub e as autorizações feitas no Discord."""
+    """Aplica a política do BotHub, aceitando IDs numéricos e strings."""
     try:
-        mode = str(config.get("botHubGuildAccessMode", "required")).lower()
+        mode = str(config.get("botHubGuildAccessMode", "required")).strip().lower()
         if mode == "optional":
             return True
         configured = config.get("botHubAllowedGuildIds", [])
         legacy = config.get("comunidades_autorizadas", [])
+        if not isinstance(configured, (list, tuple, set)):
+            configured = [configured]
+        if not isinstance(legacy, (list, tuple, set)):
+            legacy = [legacy]
         allowed = set()
-        for value in (configured if isinstance(configured, list) else []) + (legacy if isinstance(legacy, list) else []):
-            if str(value).isdigit() and int(value) > 0:
-                allowed.add(int(value))
+        for value in list(configured) + list(legacy):
+            # Aceita IDs isolados ou texto com IDs separados por espaço/vírgula.
+            for item in re.split(r"[\\s,;]+", str(value).strip()):
+                if item.isdigit() and int(item) > 0:
+                    allowed.add(int(item))
         return int(guild_id) in allowed
     except (TypeError, ValueError):
         return False
@@ -6896,8 +6902,7 @@ async def somente_criadores_prefixo(ctx):
     # Fora da allowlist, somente !allow de um criador global é aceito.
     # Nenhum outro comando (inclusive ping/info) gera resposta.
     if ctx.guild is not None and not comunidade_autorizada(ctx.guild.id):
-        return bool(comando and comando.name == "allow"
-                    and ctx.author.id in obter_ids_criadores())
+        return bool(comando and comando.name == "allow" and is_creator(ctx))
     if comando and comando.name in {"ping", "info"}:
         return True
     if comando and comando.name == "raiz":
@@ -7038,10 +7043,9 @@ async def resolver_usuario_criador(ctx, alvo: str):
 @bot.command(name="allow")
 @commands.guild_only()
 async def prefix_allow_comunidade(ctx):
-    # Apenas criadores globais cadastrados podem autorizar o uso do bot numa comunidade.
-    # Ser dono local do servidor, por si só, não concede autorização global.
-    if ctx.author.id not in obter_ids_criadores():
-        return await ctx.reply("⛔ Só um criador global cadastrado pode autorizar comunidades com `!allow`.")
+    # O criador global ou o dono deste servidor pode autorizar somente a própria comunidade.
+    if not is_creator(ctx):
+        return await ctx.reply("⛔ Somente o dono deste servidor ou um criador global pode usar `!allow`.")
     guild_id = int(ctx.guild.id)
     autorizadas = config.setdefault("comunidades_autorizadas", [])
     if guild_id not in {int(value) for value in autorizadas if str(value).isdigit()}:
@@ -10176,7 +10180,7 @@ async def on_message(message):
     if message.guild is not None and not comunidade_autorizada(message.guild.id):
         comando_pendente = (message.content or "").strip().split(maxsplit=1)
         if (comando_pendente and comando_pendente[0].lower() == "!allow"
-                and message.author.id in obter_ids_criadores()):
+                and is_creator(message)):
             await bot.process_commands(message)
         return
 
