@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.1"
+WORKER_VERSION="2026.11.12.2"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -13,6 +13,43 @@ API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 PROCS={};LOGS={};LOG_OFFSETS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
+
+TERMUX_CONSOLE = "com.termux" in str(Path.home()).lower() or "ANDROID_ROOT" in os.environ
+
+class TimestampedConsole:
+    def __init__(self, stream):
+        self.stream = stream
+        self.pending = ""
+
+    def write(self, value):
+        if not isinstance(value, str):
+            value = str(value)
+        self.pending += value
+        while "\\n" in self.pending:
+            line, self.pending = self.pending.split("\\n", 1)
+            if line:
+                self.stream.write("[" + time.strftime("%H:%M:%S") + "] " + line + "\\n")
+            else:
+                self.stream.write("\\n")
+        return len(value)
+
+    def flush(self):
+        if self.pending:
+            self.stream.write("[" + time.strftime("%H:%M:%S") + "] " + self.pending)
+            self.pending = ""
+        self.stream.flush()
+
+    def isatty(self):
+        return self.stream.isatty() if hasattr(self.stream, "isatty") else False
+
+    def fileno(self):
+        return self.stream.fileno()
+
+def enable_termux_console_timestamps():
+    if TERMUX_CONSOLE and not isinstance(sys.stdout, TimestampedConsole):
+        sys.stdout = TimestampedConsole(sys.stdout)
+        sys.stderr = TimestampedConsole(sys.stderr)
+
 
 def save_json(path,data):
     tmp=path.with_suffix(path.suffix+".tmp")
@@ -665,44 +702,47 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
 
 
 def start(k,b):
-    folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main.py"
-    if k in PROCS and PROCS[k].poll() is None:
+    """Inicia no máximo um processo por bot nesta instalação."""
+    folder=ROOT/"bots"/sid(k)
+    folder.mkdir(parents=True,exist_ok=True)
+    script=folder/"main.py"
+
+    current=PROCS.get(k)
+    if current is not None and current.poll() is None:
+        print("[BotHub] já está em execução; início duplicado ignorado:",k,"PID",current.pid,flush=True)
         return
-    # Restore Firebase memory before main.py opens local databases.
+
     sync_bot_state(k, 'pull')
-    # Sincroniza a versão do GitHub sem perder a cópia local se a rede falhar.
     try:
-        size = download_latest_main(folder)
-        print("[BotHub] main.py sincronizado com teste 2/main.py do GitHub:", k, "bytes:", size, flush=True)
-    except Exception as e:
+        size=download_latest_main(folder)
+        print("[BotHub] main.py sincronizado com o GitHub:",k,"bytes:",size,flush=True)
+    except Exception as exc:
         if not script.exists():
             raise
-        print("[BotHub] AVISO: não consegui atualizar main.py; usando a cópia local existente para",
-              k, "-", str(e)[:180], flush=True)
+        print("[BotHub] AVISO: atualização de main.py indisponível; usando cópia local:",
+              k,str(exc)[:180],flush=True)
+
     try:
         compile(script.read_text(encoding="utf-8"),str(script),"exec")
     except Exception as exc:
         raise RuntimeError("main.py não passou na validação de sintaxe: "+str(exc)[:180])
-    duplicate_pid = script_already_running(script, b.get("token"))
+
+    duplicate_pid=script_already_running(script,b.get("token"))
     if duplicate_pid is not None:
-        print("[BotHub] Duplicata de main.py/token detectada (PID",duplicate_pid,"). Encerrando a cópia antiga antes de iniciar a instância correta para",k,flush=True)
+        print("[BotHub] processo duplicado antigo detectado (PID",duplicate_pid,"); encerrando antes do início:",k,flush=True)
         try:
-            os.kill(duplicate_pid, signal.SIGTERM)
-            deadline = time.time() + 5
-            while time.time() < deadline:
-                try:
-                    os.kill(duplicate_pid, 0)
-                except OSError:
-                    break
+            os.kill(duplicate_pid,signal.SIGTERM)
+            deadline=time.time()+5
+            while time.time()<deadline:
+                try: os.kill(duplicate_pid,0)
+                except OSError: break
                 time.sleep(0.2)
             else:
-                os.kill(duplicate_pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+                os.kill(duplicate_pid,getattr(signal,"SIGKILL",signal.SIGTERM))
         except OSError:
             pass
-    # Mescla a configuração recebida do Firebase com a configuração local
-    # ANTES de gravar/iniciar main.py. As chaves de API são segredos locais e
-    # não são sincronizadas pelo Firebase; portanto, devem sobreviver a reinícios.
-    def merge_cfg(base, overlay):
+
+    def merge_cfg(base,overlay):
         result=dict(base) if isinstance(base,dict) else {}
         if isinstance(overlay,dict):
             for key,value in overlay.items():
@@ -719,97 +759,63 @@ def start(k,b):
             local_cfg=json.loads(cp.read_text(encoding="utf-8"))
             if isinstance(local_cfg,dict):
                 cfg=merge_cfg(cfg,local_cfg)
-        except Exception as e:
-            print("[BotHub] configuração local não pôde ser preservada antes da inicialização:",str(e)[:160],flush=True)
-    cfg["discord_token"]=b["token"]
-    save_json(cp,cfg)
-    if k in PROCS and PROCS[k].poll() is None:return
-    log=open(folder/"bot.log","ab",buffering=0)
-    try:log_start_offset=log.tell()
-    except Exception:log_start_offset=0
-    popen_kwargs = {}
-    if sys.platform.startswith("linux"):
-        popen_kwargs["preexec_fn"] = child_parent_death_signal
-    p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
-        stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),**popen_kwargs)
-    PROCS[k]=p;LOGS[k]=log;LOG_OFFSETS[k]=log_start_offset
-    # Detecta falhas imediatas no main.py para que o loop possa tentar novamente.
-    time.sleep(1.5)
-    if p.poll() is not None:
-        PROCS.pop(k, None);LOGS.pop(k, None)
-        try:
-            log.flush()
-            log.close()
-        except Exception:
-            pass
-        detail=""
-        try:
-            with (folder/"bot.log").open("rb") as handle:
-                handle.seek(0, os.SEEK_END)
-                size=handle.tell()
-                handle.seek(max(0,size-1800), os.SEEK_SET)
-                detail=handle.read().decode("utf-8",errors="replace")[-1200:]
-        except Exception:
-            pass
-        raise RuntimeError("main.py encerrou durante a inicialização." + ((" Log: "+detail) if detail else ""))
-    print("[BotHub] iniciado",b.get("name",k),"PID",p.pid,flush=True)
-    # Aplica novamente as configurações persistidas sem substituir segredos locais.
-    cfg=dict(b.get("config") or {})
-    cp=folder/"config.json"
-    if cp.is_file():
-        try:
-            local_cfg=json.loads(cp.read_text(encoding="utf-8"))
-            if isinstance(local_cfg,dict):
-                cfg=merge_cfg(cfg,local_cfg)
-        except Exception as e:
-            print("[BotHub] configuração local não pôde ser mesclada:",str(e)[:120],flush=True)
-    safe_state=folder/"bot_settings.json"
-    if safe_state.is_file():
-        try:
-            persisted=json.loads(safe_state.read_text(encoding="utf-8"))
-            if isinstance(persisted,dict):
-                cfg=merge_cfg(cfg,persisted)
-        except Exception as e:
-            print("[BotHub] estado persistido de configurações não pôde ser carregado:",str(e)[:120],flush=True)
+        except Exception as exc:
+            print("[BotHub] configuração local não pôde ser preservada:",str(exc)[:140],flush=True)
     cfg["discord_token"]=b["token"]
     save_json(cp,cfg)
 
     last_error=""
     for attempt in range(1,4):
-        if k in PROCS:
-            stop(k)
         log=open(folder/"bot.log","ab",buffering=0)
-        popen_kwargs = {}
+        kwargs={}
         if sys.platform.startswith("linux"):
-            popen_kwargs["preexec_fn"] = child_parent_death_signal
+            kwargs["preexec_fn"]=child_parent_death_signal
         try:
-            p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
-                stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),**popen_kwargs)
+            process=subprocess.Popen(
+                [sys.executable,"-u",str(script)],
+                cwd=str(folder),
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=(os.name!="nt"),
+                **kwargs
+            )
         except Exception:
             log.close()
             raise
-        PROCS[k]=p;LOGS[k]=log
-        print("[BotHub] iniciando",b.get("name",k),"PID",p.pid,"tentativa",attempt,"/3",flush=True)
+
+        PROCS[k]=process
+        LOGS[k]=log
+        try: LOG_OFFSETS[k]=log.tell()
+        except Exception: LOG_OFFSETS[k]=0
+        print("[BotHub] iniciando",b.get("name",k),"PID",process.pid,
+              "tentativa",attempt,"/3",flush=True)
+
         deadline=time.time()+3
-        while time.time()<deadline and p.poll() is None:
+        while time.time()<deadline and process.poll() is None:
             time.sleep(0.25)
-        if p.poll() is None:
-            print("[BotHub] processo permaneceu ativo após a verificação inicial:",b.get("name",k),flush=True)
+
+        if process.poll() is None:
+            print("[BotHub] iniciado com sucesso:",b.get("name",k),"PID",process.pid,flush=True)
             return
+
         try:
             log.flush()
-            with open(folder/"bot.log","r",encoding="utf-8",errors="replace") as handle:
-                last_error="\n".join(handle.readlines()[-18:])[-1800:]
+            with (folder/"bot.log").open("r",encoding="utf-8",errors="replace") as handle:
+                last_error="\\n".join(handle.readlines()[-18:])[-1800:]
         except Exception:
             last_error="sem detalhes adicionais no log"
-        print("[BotHub] processo encerrou durante a inicialização (código",p.returncode,"):",last_error[-700:],flush=True)
-        PROCS.pop(k,None);LOGS.pop(k,None)
+
+        PROCS.pop(k,None)
+        LOGS.pop(k,None)
         try: log.close()
         except Exception: pass
+        print("[BotHub] processo encerrou durante a inicialização (código",
+              process.returncode,"):",last_error[-700:],flush=True)
         if attempt<3:
             time.sleep(attempt)
-    raise RuntimeError("main.py encerrou nas 3 tentativas. Últimas linhas do log: "+last_error[-900:])
 
+    raise RuntimeError("main.py encerrou nas 3 tentativas. Últimas linhas do log: "+last_error[-900:])
 
 # File manager seguro: somente a pasta do bot selecionado; sem shell arbitrário.
 EDITABLE_EXTS={".py",".txt",".md",".json",".html",".css",".js",".yaml",".yml",".toml",".ini",".sh"}
@@ -1014,7 +1020,7 @@ def load_worker_queue(tok, device_id):
         workers = {}
 
     now_ms = int(time.time() * 1000)
-    stale_ms = max(12000, int(os.getenv("BOTHUB_WORKER_STALE_MS", "20000")))
+    stale_ms = max(60000, int(os.getenv("BOTHUB_WORKER_STALE_MS", "60000")))
     local_stats = stats(CURRENT_CFG or {})
     ram_free = int(local_stats.get("ramFreeBytes") or 0)
     disk_free = int(local_stats.get("diskFreeBytes") or 0)
@@ -1045,8 +1051,26 @@ def load_worker_queue(tok, device_id):
             continue
         owner_info = workers.get(assigned_worker) if assigned_worker else None
         last_seen = int((owner_info or {}).get("lastSeen") or 0) if isinstance(owner_info, dict) else 0
-        owner_is_live = bool(last_seen and now_ms - last_seen < stale_ms)
+        owner_status = str((owner_info or {}).get("status") or "").lower() if isinstance(owner_info, dict) else ""
+        owner_online_flag = isinstance(owner_info, dict) and owner_info.get("online") is True
+        owner_is_live = owner_online_flag or owner_status == "online" or bool(last_seen and now_ms - last_seen < stale_ms)
         if owner_is_live or not can_take_over:
+            continue
+
+        # Em caso de heartbeat atrasado, um Lease válido ainda bloqueia a transferência.
+        try:
+            lease_response = S.get(_lease_url(raw_id), params={"auth": tok},
+                headers={"User-Agent": "BotHub-Cluster/4.0"}, timeout=10)
+            if lease_response.status_code < 300 and lease_response.text:
+                active_lease = lease_response.json()
+                if isinstance(active_lease, dict):
+                    lease_owner = str(active_lease.get("owner") or "")
+                    lease_until = int(active_lease.get("leaseUntil") or 0)
+                    if lease_owner and lease_owner != str(device_id) and lease_until > now_ms:
+                        continue
+        except Exception as lease_check_error:
+            print("[BotHub] Lease não pôde ser confirmado; transferência bloqueada:",
+                  sid(raw_id), str(lease_check_error)[:100], flush=True)
             continue
 
         # Compare-and-swap: só assume se o registro não mudou desde a leitura.
@@ -1065,8 +1089,19 @@ def load_worker_queue(tok, device_id):
                 continue
             current_owner = workers.get(current_worker) if current_worker else None
             current_seen = int((current_owner or {}).get("lastSeen") or 0) if isinstance(current_owner, dict) else 0
-            if current_seen and now_ms - current_seen < stale_ms:
+            current_status = str((current_owner or {}).get("status") or "").lower() if isinstance(current_owner, dict) else ""
+            current_online = isinstance(current_owner, dict) and current_owner.get("online") is True
+            if current_online or current_status == "online" or (current_seen and now_ms - current_seen < stale_ms):
                 continue
+            lease_check = S.get(_lease_url(raw_id), params={"auth": tok},
+                headers={"User-Agent": "BotHub-Cluster/4.0"}, timeout=10)
+            if lease_check.status_code < 300 and lease_check.text:
+                lease_data = lease_check.json()
+                if isinstance(lease_data, dict):
+                    lease_owner = str(lease_data.get("owner") or "")
+                    lease_until = int(lease_data.get("leaseUntil") or 0)
+                    if lease_owner and lease_owner != str(device_id) and lease_until > now_ms:
+                        continue
             current["lastWorkerId"] = current_worker or current.get("lastWorkerId")
             current["workerId"] = str(device_id)
             current["updatedAt"] = now_ms
@@ -1423,6 +1458,7 @@ def acquire_worker_lock():
 
 def main():
     global CURRENT_CFG, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN, LEASE_MISSES
+    enable_termux_console_timestamps()
     cfg=setup()
     CURRENT_CFG=cfg
     CURRENT_DEVICE_ID=cfg['device_id']
