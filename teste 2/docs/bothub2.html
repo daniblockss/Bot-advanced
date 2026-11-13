@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.10</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.11</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -618,6 +618,11 @@ python3 start.py</pre>
         <label>Descrição</label>
         <textarea id="modalProfileDesc" rows="2" maxlength="400" placeholder="Descrição"></textarea>
         <label>Foto de Perfil (Salva no Firebase e sincronizada)</label>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px">
+          <input id="modalAvatarAutoUpdate" type="checkbox" style="width:auto">
+          Foto de perfil automática (atualizar ao entrar no painel)
+        </label>
+        <div class="small muted">Quando ativada, o painel consulta o Discord usando o token do bot sempre que você fizer login.</div>
         <input id="modalProfileAvatarFile" type="file" accept="image/png,image/jpeg" onchange="handleAvatarCompress(event)">
         <input id="modalProfileAvatarBase64" type="hidden">
         <div style="display:flex; align-items:center; gap:10px; margin-top:8px">
@@ -1071,6 +1076,7 @@ window.openBotModal = function(id) {
     $('modalAvatarPreview').style.display = 'none';
   }
   $('modalProfileAvatarBase64').value = b.avatarBase64 || '';
+  $('modalAvatarAutoUpdate').checked = b.avatarAutoUpdate !== false;
   $('botModal').classList.remove('hidden');
   switchBotTab('files');
   loadBotFiles();
@@ -1256,6 +1262,7 @@ window.saveBotProfileOnlySite = async function() {
     if(name) updates['bots/' + id + '/name'] = name;
     updates['bots/' + id + '/description'] = description;
     updates['bots/' + id + '/avatarBase64'] = avatarBase64;
+    updates['bots/' + id + '/avatarAutoUpdate'] = $('modalAvatarAutoUpdate').checked;
 
     await update(ref(db), updates);
     msg.className = "ok"; msg.textContent = "Perfil salvo e sincronizado com sucesso!";
@@ -1362,6 +1369,19 @@ async function removeWorker(id){
   try{await remove(testRef('workers/'+id));delete workerData[id];drawWorkers();}catch(e){alert(e.message)}
 }
 
+async function refreshAutomaticAvatarsOnLogin(){
+  const tasks=[];
+  for(const [botId,bot] of Object.entries(botData)){
+    if(bot.avatarAutoUpdate===false || bot.avatarBase64) continue;
+    const wid=bot.workerId||bot.lastWorkerId;
+    if(!wid || !online(workerData[wid])) continue;
+    tasks.push(sendWorkerCommand(wid,{operation:"fetch_avatar",botId}).catch(err=>{
+      console.warn('[BotHub] Não foi possível atualizar avatar no login:',botId,err.message||err);
+    }));
+  }
+  await Promise.allSettled(tasks);
+}
+
 async function sendWorkerCommand(wid,command,timeoutMs=50000){
   const id=crypto.randomUUID().replaceAll("-","");
   const label=String(command.operation||"ação")+" "+String(command.botId||"");
@@ -1462,6 +1482,7 @@ onAuthStateChanged(auth,async user=>{
       else{$('loginMsg').textContent='UID não autorizado.';await signOut(auth);return;}
     }
     start();
+    refreshData().then(()=>refreshAutomaticAvatarsOnLogin()).catch(e=>console.warn('[BotHub] Falha ao atualizar avatares no login:',e));
   }catch(e){
     $('loginMsg').textContent='Erro: '+e.message;
     await signOut(auth);
