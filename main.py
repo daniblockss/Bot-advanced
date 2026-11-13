@@ -847,10 +847,14 @@ class VoiceSystem(commands.Cog):
         async with self.lock(guild.id):
             try:
                 canais_servidor = await asyncio.wait_for(guild.fetch_channels(), timeout=15)
-            except (asyncio.TimeoutError, discord.HTTPException, OSError) as error:
+            except (asyncio.TimeoutError, discord.HTTPException, discord.InvalidData, OSError) as error:
+                # Algumas versões do discord.py ainda não reconhecem novos tipos de canal
+                # retornados pela API (por exemplo, type=20). Não deixe isso derrubar
+                # a recuperação de voz nem afetar o restante do bot.
                 log.warning(
-                    "Não foi possível sincronizar canais de voz do servidor %s (%s); "
-                    "o bot continuará funcionando e tentará novamente depois.",
+                    "Não foi possível sincronizar canais de voz do servidor %s (%s). "
+                    "Um tipo de canal pode não ser reconhecido; o bot continuará funcionando "
+                    "e tentará novamente na próxima manutenção.",
                     guild.id,
                     type(error).__name__,
                 )
@@ -892,7 +896,8 @@ class VoiceSystem(commands.Cog):
             log_console(f"Criador supremo do servidor {guild.id} registrado: {guild.owner_id}")
         except Exception as error:
             log_console(f"Não foi possível registrar o dono do servidor {guild.id}: {type(error).__name__}")
-        await self.sync_commands(guild)
+        if _bot_auth_guild_allowed(guild.id):
+            await self.sync_commands(guild)
 
     @tasks.loop(minutes=5)
     async def maintenance(self):
