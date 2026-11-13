@@ -1549,7 +1549,7 @@ function start(){
   $('login').classList.add('hidden');
   $('dashboard').classList.remove('hidden');
   $('connection').textContent='Conectando…';$('connection').className='badge';
-  watch('workers',v=>{workerData=v;cleanupStaleWorkers();drawWorkers();rebalance().then(drawBots)});
+  watch('workers',v=>{workerData=v;cleanupStaleWorkers();drawWorkers();drawClusterProgress();rebalance().then(drawBots)});
   watch('botHubClusterUpdates/progress',v=>{clusterUpdateProgress=v||{};drawClusterProgress();drawWorkers()});watch('botHubBotVersions',v=>{botVersionData=v||{};drawBotUpdateProgress();drawBots()});
   watch('bots',v=>{botData=v;drawBots();rebalance()});
   $('connection').textContent='Conectado';$('connection').className='badge';
