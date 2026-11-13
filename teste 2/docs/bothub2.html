@@ -1193,7 +1193,7 @@ window.loadBotFiles = async function() {
   const status = $('modalFileStatus'), list = $('modalFileList');
   status.className = "hint"; status.textContent = "Carregando…"; list.innerHTML = "";
   try {
-    const { id, wid } = getSelectedBotAndWorker();
+    const { id, b, wid } = getSelectedBotAndWorker();
     const result = await sendWorkerCommand(wid, { operation: "list", botId: id, path: "" });
     let items = (result.result && result.result.items) || [];
     
