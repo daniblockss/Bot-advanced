@@ -12769,9 +12769,14 @@ async def requisitar_provedor_monitorado(provedor, chave, mensagens, img_url=Non
     credential = hashlib.sha256((chave or "").encode()).hexdigest()
     key = (provedor, credential)
     shared_key = hashlib.sha256((provedor + ":" + credential).encode()).hexdigest()
+    ip_limited_mode = provedor == "blockrun" or (provedor == "llm7" and chave in (None, "auto-generated"))
+    provider_shared_key = hashlib.sha256(("ip-limited:" + provedor).encode()).hexdigest() if ip_limited_mode else shared_key
     async with PROVIDER_LOCKS.setdefault(key, asyncio.Lock()):
-        cluster_wait = _bothub_cluster_cooldown_get(shared_key)
-        shared_wait = cluster_wait or _shared_provider_cooldown_get(shared_key)
+        cluster_wait = _bothub_cluster_cooldown_get(provider_shared_key)
+        shared_wait = cluster_wait or _shared_provider_cooldown_get(provider_shared_key)
+        if not shared_wait and provider_shared_key != shared_key:
+            cluster_wait = _bothub_cluster_cooldown_get(shared_key)
+            shared_wait = cluster_wait or _shared_provider_cooldown_get(shared_key)
         if shared_wait:
             delay, category = shared_wait
             PROVIDER_UNAVAILABLE[key] = (time.monotonic() + delay, category)
@@ -12791,6 +12796,9 @@ async def requisitar_provedor_monitorado(provedor, chave, mensagens, img_url=Non
             PROVIDER_UNAVAILABLE[key] = (time.monotonic() + delay, category)
             _shared_provider_cooldown_set(shared_key, category, delay)
             _bothub_cluster_cooldown_set(shared_key, category, delay)
+            if category == "quota_diaria" and ip_limited_mode and provider_shared_key != shared_key:
+                _shared_provider_cooldown_set(provider_shared_key, category, delay)
+                _bothub_cluster_cooldown_set(provider_shared_key, category, delay)
             if _bothub_is_global_key(provedor, chave):
                 _bothub_update_global_api_status(provedor, chave, False, category, delay)
             error.retry_after = delay
