@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.3"
+WORKER_VERSION="2026.11.12.4"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -12,6 +12,14 @@ TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 PROCS={};LOGS={};LOG_OFFSETS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
+LOG_THROTTLE={}
+
+def log_throttled(key, interval, *parts):
+    now=time.monotonic()
+    if now-LOG_THROTTLE.get(str(key),0)>=interval:
+        LOG_THROTTLE[str(key)]=now
+        print(*parts,flush=True)
+
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 HEARTBEAT_STOP=threading.Event();HEARTBEAT_THREAD=None
 
@@ -1483,7 +1491,7 @@ def worker_presence_heartbeat():
 
 
 def main():
-    global CURRENT_CFG, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN, LEASE_MISSES
+    global CURRENT_CFG, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN, LEASE_MISSES, LAST_TOKEN, LAST_DID, LAST_QUEUE
     enable_termux_console_timestamps()
     cfg=setup()
     CURRENT_CFG=cfg
@@ -1513,7 +1521,7 @@ def main():
         try:
             t=token(cfg);did=urllib.parse.quote(cfg["device_id"],safe="")
             LAST_TOKEN=t;LAST_DID=did;CURRENT_FIREBASE_TOKEN=t
-            fb("PUT","workers/"+did,t,stats(cfg))
+            fb("PATCH","workers/"+did,t,stats(cfg))
             process_bot_deletions(t, cfg["device_id"])
             queue=load_worker_queue(t, cfg["device_id"]) or {}
             LAST_QUEUE=queue if isinstance(queue,dict) else {}
@@ -1529,12 +1537,12 @@ def main():
                 k=sid(raw_id)
                 secret=str(b.get("token") or "").strip()
                 if not secret:
-                    print("[BotHub] bot sem token ignorado:",k,flush=True)
+                    log_throttled("missing-token:"+k,300,"[BotHub] bot sem token ignorado:",k)
                     continue
                 if secret in token_owner:
                     duplicate_ids.add(k)
-                    print("[BotHub] token duplicado detectado; não inicia a segunda pasta:",k,
-                          "(a conta já está atribuída a",token_owner[secret]+")",flush=True)
+                    log_throttled("duplicate-token:"+k,60,"[BotHub] token duplicado detectado; não inicia a segunda pasta:",k,
+                          "(a conta já está atribuída a",token_owner[secret]+")")
                     continue
                 token_owner[secret]=k
                 desired[k]=b
@@ -1544,9 +1552,9 @@ def main():
                     if claim_bot_lease(k,cfg['device_id'],t):
                         leased[k]=bot_cfg
                     else:
-                        print("[BotHub] bot pertence a outro worker; aguardando:",k,flush=True)
+                        log_throttled("lease-owned:"+k,60,"[BotHub] bot pertence a outro worker; aguardando:",k)
                 except Exception as lease_error:
-                    print("[BotHub] lease indisponível para",k,str(lease_error)[:140],flush=True)
+                    log_throttled("lease-error:"+k,30,"[BotHub] lease indisponível para",k,str(lease_error)[:140])
             for k in list(PROCS):
                 if k not in leased or k in duplicate_ids:
                     stop(k)
@@ -1575,7 +1583,7 @@ def main():
                         if bot_cfg.get("enabled", True) is False or desired_state == "off":
                             continue
                         start(k,bot_cfg)
-                except Exception as e: print("[BotHub] falha no bot",k,str(e)[:220],flush=True)
+                except Exception as e: log_throttled("bot-failure:"+k,30,"[BotHub] falha no bot",k,str(e)[:220])
             try:
                 if process_cluster_update(t):
                     break
