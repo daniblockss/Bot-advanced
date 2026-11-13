@@ -21,6 +21,7 @@ async def help_cmd(ctx):
 @bot.event
 async def on_message(message):
  if message.author.bot:return
+ if message.guild and str(getattr(message.channel,'topic','') or '').startswith('bothub-ticket:'):return
  if message.content.startswith(PREFIX):
   name=message.content[len(PREFIX):].split(maxsplit=1)[0].lower() if message.content[len(PREFIX):].strip() else ""
   item=COMMANDS.get(name)
