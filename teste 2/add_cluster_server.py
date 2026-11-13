@@ -5,7 +5,7 @@ from __future__ import annotations
 import os, platform, shutil, subprocess, sys, urllib.request, shlex, time, json, zipfile, io
 from pathlib import Path
 
-INSTALLER_VERSION = "2026.11.12.8"
+INSTALLER_VERSION = "2026.11.12.9"
 GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 INSTALLER_URL = GITHUB_RAW + "/add_cluster_server.py"
 WORKER_URL = GITHUB_RAW + "/bothub_firebase_worker.py"
@@ -105,19 +105,11 @@ def termux_package_installed(package_name):
 
 
 def latest_termux_boot_apk():
-    """Obtém o APK mais recente diretamente da página oficial de releases."""
-    api = "https://api.github.com/repos/termux/termux-boot/releases/latest"
-    request = urllib.request.Request(
-        api, headers={"User-Agent": "BotHub-TermuxBoot-Installer/1.0",
-                      "Accept": "application/vnd.github+json"}
+    """Usa o APK oficial do F-Droid indicado para o Termux:Boot."""
+    return (
+        "https://f-droid.org/repo/com.termux.boot_1000.apk",
+        "com.termux.boot_1000.apk",
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        release = json.loads(response.read().decode("utf-8"))
-    assets = release.get("assets") or []
-    apk_asset = next((a for a in assets if str(a.get("name", "")).lower().endswith(".apk")), None)
-    if not apk_asset or not apk_asset.get("browser_download_url"):
-        raise RuntimeError("A release oficial do Termux:Boot não contém APK disponível.")
-    return apk_asset["browser_download_url"], apk_asset.get("name", "termux-boot.apk")
 
 
 def download_termux_boot_apk(apk_path):
