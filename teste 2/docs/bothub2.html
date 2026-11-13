@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.15</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.16</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -1413,7 +1413,7 @@ async function removeWorker(id){
 async function refreshAutomaticAvatarsOnLogin(){
   const tasks=[];
   for(const [botId,bot] of Object.entries(botData)){
-    if(bot.avatarAutoUpdate===false || bot.avatarBase64) continue;
+    if(bot.avatarAutoUpdate===false) continue;
     const wid=bot.workerId||bot.lastWorkerId;
     if(!wid || !online(workerData[wid])) continue;
     tasks.push(sendWorkerCommand(wid,{operation:"fetch_avatar",botId}).catch(err=>{
