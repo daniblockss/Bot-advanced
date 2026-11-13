@@ -1,4 +1,4 @@
-BOTHUB_MAIN_VERSION = "2026.11.13.6"
+BOTHUB_MAIN_VERSION = "2026.11.13.7"
 
 import discord
 from discord.ext import commands, tasks
@@ -13520,32 +13520,35 @@ def registrar_raiz(app):
             chaves = list(app["obter_chaves_provedor"](provedor))
             if not chaves:
                 continue
-            chave = chaves[0]
-            await log(f"🌐 Consultando provedor: {provedor}...")
-            try:
-                resposta = await app["requisitar_provedor"](provedor, chave, mensagens)
-                await log(f"📩 Resposta recebida de {provedor}; validando o plano...")
-                plano = raiz_validar_plano(extrair_json_plano(resposta), estado)
-                conclusoes = plano.get("conclusoes")
-                if not isinstance(conclusoes, dict) or any(
-                    not isinstance(conclusoes.get(c["id"]), str) or not conclusoes[c["id"]].strip()
-                    for c in estado if c["tipo"] != "category"
-                ):
-                    raise ValueError("Faltaram conclusões sobre canais da comunidade.")
-                if any(op["acao"] == "excluir" for op in plano["operacoes"]) and not any(t in app["normalizar"](pedido) for t in ("exclu", "delet", "apag", "remov")):
-                    raise ValueError("A IA sugeriu exclusão sem solicitação; reformule o pedido.")
-                await log(f"🧾 Plano validado: {len(plano['operacoes'])} operações. Aguardando sua revisão...")
-                view = Proposta(ctx, pedido, estado, plano, logs_msg, log_linhas)
-                await enviar(ctx.channel, view.detalhes(), "proposta-raiz.txt")
-                await ctx.send("Revise a proposta acima. Nenhuma alteração foi aplicada.", view=view)
-                await log("✅ Proposta pronta. Revise e aprove; nada foi alterado ainda.")
-                if status_msg is not None and logs_msg is None:
-                    await status_msg.edit(content="✅ Proposta pronta. Revise a proposta enviada; nenhuma alteração foi aplicada ainda.")
-                return
-            except (app["FalhaProvedor"], ValueError, TypeError, KeyError) as error:
-                detalhe = re.sub(r"(?i)(bearer\s+|(?:sk|gsk|AIza)[-_])[A-Za-z0-9._-]{8,}", "[credencial ocultada]", str(error))
-                falhas.append(f"{provedor}: {type(error).__name__}" + (f" ({detalhe[:100]})" if detalhe else ""))
-                await log(f"⚠️ {provedor} falhou: {str(error)[:140]}. Tentando o próximo provedor.")
+            for indice_chave, chave in enumerate(chaves, 1):
+                rotulo = app["rotulo_chave_provedor"](provedor, chave, indice_chave)
+                await log(f"🌐 Consultando {provedor} ({rotulo})...")
+                try:
+                    resposta = await app["requisitar_provedor"](provedor, chave, mensagens)
+                    await log(f"📩 Resposta recebida de {provedor} ({rotulo}); validando o plano...")
+                    plano = raiz_validar_plano(extrair_json_plano(resposta), estado)
+                    conclusoes = plano.get("conclusoes")
+                    if not isinstance(conclusoes, dict) or any(
+                        not isinstance(conclusoes.get(c["id"]), str) or not conclusoes[c["id"]].strip()
+                        for c in estado if c["tipo"] != "category"
+                    ):
+                        raise ValueError("Faltaram conclusões sobre canais da comunidade.")
+                    if any(op["acao"] == "excluir" for op in plano["operacoes"]) and not any(t in app["normalizar"](pedido) for t in ("exclu", "delet", "apag", "remov")):
+                        raise ValueError("A IA sugeriu exclusão sem solicitação; reformule o pedido.")
+                    await log(f"🧾 Plano validado: {len(plano['operacoes'])} operações. Aguardando sua revisão...")
+                    view = Proposta(ctx, pedido, estado, plano, logs_msg, log_linhas)
+                    await enviar(ctx.channel, view.detalhes(), "proposta-raiz.txt")
+                    await ctx.send("Revise a proposta acima. Nenhuma alteração foi aplicada.", view=view)
+                    await log("✅ Proposta pronta. Revise e aprove; nada foi alterado ainda.")
+                    if status_msg is not None and logs_msg is None:
+                        await status_msg.edit(content="✅ Proposta pronta. Revise a proposta enviada; nenhuma alteração foi aplicada ainda.")
+                    return
+                except (app["FalhaProvedor"], ValueError, TypeError, KeyError) as error:
+                    detalhe = re.sub(r"(?i)(bearer\s+|(?:sk|gsk|AIza)[-_])[A-Za-z0-9._-]{8,}", "[credencial ocultada]", str(error))
+                    falhas.append(f"{provedor}/{rotulo}: {type(error).__name__}" + (f" ({detalhe[:100]})" if detalhe else ""))
+                    await log(f"⚠️ {provedor} ({rotulo}) falhou: {str(error)[:140]}.")
+            if chaves:
+                await log(f"↪️ Todas as opções de acesso de {provedor} falharam; tentando o próximo provedor.")
         resumo_falhas = "; ".join(falhas[-3:])
         resumo = ("Não consegui obter uma proposta válida. Nenhuma alteração foi aplicada. "
                   "Tente novamente ou simplifique o pedido. " +
