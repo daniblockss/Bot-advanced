@@ -1,4 +1,4 @@
-BOTHUB_MAIN_VERSION = "2026.11.13.5"
+BOTHUB_MAIN_VERSION = "2026.11.13.6"
 
 import discord
 from discord.ext import commands, tasks
