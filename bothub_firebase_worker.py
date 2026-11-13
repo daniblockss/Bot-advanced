@@ -244,7 +244,7 @@ def cleanup_children():
     kill_bot_processes_under_root()
 
 def publish_shutdown_status(reason="Servidor desligado"):
-    """Publica o desligamento no Firebase e avisa por DM os donos dos bots."""
+    """Publica o desligamento no Firebase sem enviar mensagens privadas aos donos dos bots."""
     global LAST_TOKEN, LAST_DID, LAST_QUEUE
     now = int(time.time() * 1000)
     stopped_ids = list(LAST_QUEUE.keys()) if isinstance(LAST_QUEUE, dict) else []
@@ -262,31 +262,6 @@ def publish_shutdown_status(reason="Servidor desligado"):
             print("[BotHub] Desligamento publicado no Firebase.", flush=True)
         except Exception as e:
             print("[BotHub] Não foi possível publicar o desligamento no Firebase:", str(e)[:180], flush=True)
-    seen_owners = set()
-    for bot_id, bot_cfg in (LAST_QUEUE.items() if isinstance(LAST_QUEUE, dict) else []):
-        if not isinstance(bot_cfg, dict) or not bot_cfg.get("token"):
-            continue
-        token_value = bot_cfg.get("token")
-        try:
-            info = discord_api(token_value, "GET", "/applications/@me", None)
-            owner = (info.get("owner") or {}).get("id")
-            if not owner or str(owner) in seen_owners:
-                continue
-            seen_owners.add(str(owner))
-            channel = discord_api(token_value, "POST", "/users/@me/channels", {"recipient_id": str(owner)})
-            msg = (
-                "⚠️ **O bot foi desligado porque o servidor/controlador ficou offline.**\\n\\n"
-                "Isso pode acontecer por alguns motivos:\\n"
-                "1. O servidor está sendo atualizado ou reiniciado.\\n"
-                "2. Ocorreu um erro ou o processo foi encerrado. Não se preocupe: "
-                "se o servidor voltar a funcionar, os bots atribuídos serão iniciados novamente.\\n\\n"
-                "Motivo informado: " + str(reason)[:250] +
-                "\\nBots desta instalação que estavam atribuídos: " + str(len(stopped_ids)) + "."
-            )
-            discord_api(token_value, "POST", "/channels/" + str(channel["id"]) + "/messages",
-                        {"content": msg, "allowed_mentions": {"parse": []}})
-        except Exception as e:
-            print("[BotHub] Falha ao avisar o criador do bot", bot_id, ":", str(e)[:160], flush=True)
 
 def handle_shutdown_signal(signum, frame):
     global SHUTDOWN_IN_PROGRESS
