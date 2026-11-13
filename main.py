@@ -9752,8 +9752,10 @@ def _bot_auth_settings():
 
 
 def _bot_auth_guild_ids():
-    values = _bot_auth_settings().get("authorized_guild_ids", [])
-    if not isinstance(values, list):
+    values = config.get("botHubAllowedGuildIds")
+    if values is None:
+        values = _bot_auth_settings().get("authorized_guild_ids", [])
+    if not isinstance(values, (list, tuple, set)):
         return set()
     return {int(value) for value in values if str(value).isdigit()}
 
@@ -9782,110 +9784,7 @@ async def bot_allow_command(ctx, *, senha: str = ""):
         except (discord.Forbidden, discord.NotFound, discord.HTTPException):
             pass
         return
-
-    if not _bot_auth_can_allow(ctx.author.id):
-        await ctx.send("Você não tem autorização para liberar comunidades deste bot.")
-        return
-
-    auth = _bot_auth_settings()
-    salt = str(auth.get("password_salt") or "")
-    expected = str(auth.get("password_hash") or "")
-    if not salt or not expected:
-        await ctx.send("A senha deste bot ainda não foi configurada no painel. Peça ao responsável para defini-la.")
-        return
-    supplied = hashlib.sha256((salt + senha.strip()).encode("utf-8")).hexdigest()
-    if not senha or not __import__("hmac").compare_digest(supplied, expected):
-        await ctx.send("Senha incorreta.")
-        return
-
-    pending = [guild for guild in bot.guilds if guild.id not in _bot_auth_guild_ids()]
-    if not pending:
-        await ctx.send("Todas as comunidades em que estou já estão autorizadas.")
-        return
-
-    class SeletorComunidade(discord.ui.View):
-        def __init__(self, comunidades, autor_id):
-            super().__init__(timeout=120)
-            self.comunidades = comunidades
-            self.autor_id = autor_id
-            self.pagina = 0
-            self.seletor = discord.ui.Select(
-                placeholder="Escolha a comunidade que deseja autorizar",
-                min_values=1,
-                max_values=1,
-                options=[],
-            )
-            self.seletor.callback = self.selecionar
-            self.add_item(self.seletor)
-            self.atualizar_opcoes()
-
-        def atualizar_opcoes(self):
-            inicio = self.pagina * 25
-            pagina = self.comunidades[inicio:inicio + 25]
-            self.seletor.options = [
-                discord.SelectOption(
-                    label=(guild.name or f"Comunidade {guild.id}")[:100],
-                    description=f"ID: {guild.id}",
-                    value=str(guild.id),
-                )
-                for guild in pagina
-            ]
-            self.anterior.disabled = self.pagina <= 0
-            self.proxima.disabled = (self.pagina + 1) * 25 >= len(self.comunidades)
-
-        async def interaction_check(self, interaction):
-            if interaction.user.id != self.autor_id:
-                await interaction.response.send_message(
-                    "Somente quem iniciou a autorização pode escolher a comunidade.",
-                    ephemeral=True,
-                )
-                return False
-            return True
-
-        async def selecionar(self, interaction):
-            guild_id = int(self.seletor.values[0])
-            selecionada = next((g for g in self.comunidades if g.id == guild_id), None)
-            if selecionada is None:
-                return await interaction.response.send_message(
-                    "Essa comunidade não está mais disponível. Envie !allow novamente.",
-                    ephemeral=True,
-                )
-            auth_atual = _bot_auth_settings()
-            permitidas = _bot_auth_guild_ids()
-            permitidas.add(selecionada.id)
-            auth_atual["authorized_guild_ids"] = sorted(permitidas)
-            config["bot_authorization"] = auth_atual
-            salvar_config(config)
-            for item in self.children:
-                item.disabled = True
-            await interaction.response.edit_message(
-                content=f"✅ Comunidade **{selecionada.name}** autorizada com sucesso!",
-                view=self,
-            )
-            self.stop()
-
-        @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
-        async def anterior(self, interaction, button):
-            self.pagina = max(0, self.pagina - 1)
-            self.atualizar_opcoes()
-            await interaction.response.edit_message(view=self)
-
-        @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
-        async def proxima(self, interaction, button):
-            self.pagina = min((len(self.comunidades) - 1) // 25, self.pagina + 1)
-            self.atualizar_opcoes()
-            await interaction.response.edit_message(view=self)
-
-    seletor = SeletorComunidade(pending, ctx.author.id)
-    total_paginas = (len(pending) + 24) // 25
-    await ctx.send(
-        f"🔐 **Senha confirmada!**\n"
-        f"Selecione abaixo a comunidade que deseja autorizar.\n"
-        f"Página 1/{total_paginas} • {len(pending)} comunidade(s) pendente(s). "
-        f"A seleção expira em 2 minutos.",
-        view=seletor,
-    )
-
+    await ctx.send("A autorização deste bot é gerenciada exclusivamente pelo painel BotHub. O comando !allow foi desativado.")
 
 
 # Bloqueia também comandos de barra em comunidades que ainda não foram liberadas.
@@ -9895,7 +9794,7 @@ async def _bot_auth_tree_interaction_check(interaction):
         try:
             if not interaction.response.is_done():
                 await interaction.response.send_message(
-                    "Esta comunidade ainda não foi autorizada. Use !allow no privado do bot.",
+                    "Esta comunidade ainda não foi autorizada. Solicite a liberação ao administrador do BotHub pelo painel.",
                     ephemeral=True,
                 )
         except (discord.Forbidden, discord.NotFound, discord.HTTPException):
