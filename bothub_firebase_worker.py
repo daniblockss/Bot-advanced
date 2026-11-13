@@ -134,6 +134,28 @@ def stats(cfg):
 def sid(v):
     return "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or "bot"
 
+def clean_exit_state(k, requested_at=None):
+    path=ROOT/"bots"/sid(k)/".bothub_clean_exit.json"
+    try:
+        data=json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        saved=float(data.get("startRequestedAt") or 0)
+        if requested_at is None or float(requested_at or 0) <= saved:
+            return saved
+        path.unlink(missing_ok=True)
+    except Exception:
+        pass
+    return None
+
+def mark_clean_exit(k, requested_at, code=0):
+    folder=ROOT/"bots"/sid(k)
+    folder.mkdir(parents=True,exist_ok=True)
+    save_json(folder/".bothub_clean_exit.json",{
+        "startRequestedAt":float(requested_at or 0),
+        "exitCode":int(code),
+        "exitedAt":int(time.time()*1000)
+    })
+    CLEAN_EXITED[k]=float(requested_at or 0)
+
 def stop(k):
     p=PROCS.pop(k,None);l=LOGS.pop(k,None)
     if p and p.poll() is None:
@@ -578,6 +600,11 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
 
 def start(k,b):
     folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True)
+    requested_at=float(b.get("startRequestedAt") or 0)
+    if clean_exit_state(k,requested_at) is not None:
+        CLEAN_EXITED[k]=requested_at
+        print("[BotHub] início pausado: última execução terminou com código 0; aguardando novo pedido do painel:",k,flush=True)
+        return
     bot_type=str(b.get("botType") or (b.get("config") or {}).get("botType") or "ia_chat").lower()
     if bot_type not in {"ia_chat","standard","bot_admin"}: bot_type="ia_chat"
     script_name={"ia_chat":"main.py","standard":"standard_main.py","bot_admin":"bot_admin.py"}[bot_type]
@@ -664,7 +691,7 @@ def start(k,b):
         print("[BotHub] o processo encerrou durante a inicialização (código",p.returncode,"):",last_error[-700:],flush=True)
         if p.returncode == 0:
             # Saída limpa não deve provocar um ciclo infinito de reinicializações.
-            CLEAN_EXITED[k] = float(b.get("startRequestedAt") or 0)
+            mark_clean_exit(k, b.get("startRequestedAt"), p.returncode)
             PROCS.pop(k,None)
             LOGS.pop(k,None)
             try: log.close()
@@ -1276,17 +1303,18 @@ def main():
             for k,bot_cfg in leased.items():
                 try:
                     requested_at=float(bot_cfg.get("startRequestedAt") or 0)
-                    if k in CLEAN_EXITED:
-                        if requested_at <= CLEAN_EXITED[k]:
-                            continue
-                        CLEAN_EXITED.pop(k,None)
+                    saved_exit=clean_exit_state(k,requested_at)
+                    if saved_exit is not None:
+                        CLEAN_EXITED[k]=saved_exit
+                        continue
+                    CLEAN_EXITED.pop(k,None)
                     if k not in PROCS or PROCS[k].poll() is not None:
                         # Se terminou normalmente depois de iniciar, pausa novas tentativas
                         # até o painel registrar um novo pedido explícito de inicialização.
                         previous=PROCS.get(k)
                         if previous is not None and previous.poll() is not None and previous.returncode == 0:
-                            CLEAN_EXITED[k]=requested_at
-                            print("[BotHub] bot encerrou com código 0; reinício automático pausado até novo pedido:",k,flush=True)
+                            mark_clean_exit(k,requested_at,previous.returncode)
+                            print("[BotHub] bot encerrou com código 0; pausa persistida até novo pedido:",k,flush=True)
                             stop(k)
                             continue
                         sync_bot_state(k,'pull',t,cfg['device_id'])
