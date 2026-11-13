@@ -1105,100 +1105,33 @@ def _pid_is_this_worker(pid):
         return False
 
 def acquire_worker_lock():
-    """Um controlador por instalação; workers de outros servidores não se encerram entre si."""
-    # O lock fica dentro da pasta desta instalação. Path.home() era compartilhado
-    # por instalações diferentes e fazia um worker bloquear/encerrar os demais.
+    """Garante exclusividade pelo lock do sistema operacional, sem matar outros workers."""
     lock_path = ROOT / ".bothub_worker.lock"
-    old_pid = None
-    try:
-        raw = lock_path.read_text(encoding="utf-8").strip()
-        if raw.isdigit():
-            old_pid = int(raw)
-    except Exception:
-        pass
-
-    other_pids = set()
-    if os.name != "nt":
-        try:
-            for entry in Path("/proc").iterdir():
-                if entry.name.isdigit():
-                    pid = int(entry.name)
-                    if pid != os.getpid() and _pid_is_this_worker(pid):
-                        other_pids.add(pid)
-        except Exception:
-            pass
-    elif old_pid and old_pid != os.getpid() and _pid_is_this_worker(old_pid):
-        other_pids.add(old_pid)
-
-    if old_pid and old_pid != os.getpid() and _pid_is_this_worker(old_pid):
-        other_pids.add(old_pid)
-
-    for pid in sorted(other_pids):
-        print("[BotHub] Controlador duplicado desta instalação detectado (PID", pid,
-              "). Encerrando a cópia antiga.", flush=True)
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            pass
-
-    deadline = time.time() + 10
-    while other_pids and time.time() < deadline:
-        alive = set()
-        for pid in other_pids:
-            try:
-                os.kill(pid, 0)
-                alive.add(pid)
-            except OSError:
-                pass
-        other_pids = alive
-        if other_pids:
-            time.sleep(0.25)
-    for pid in other_pids:
-        try:
-            os.kill(pid, signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM)
-        except OSError:
-            pass
-
     handle = open(lock_path, "a+", encoding="utf-8")
-    try:
-        if os.name == "nt":
-            import msvcrt
+    warned = False
+    while True:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                handle.seek(0)
+                if lock_path.stat().st_size == 0:
+                    handle.write(" ")
+                    handle.flush()
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             handle.seek(0)
-            if lock_path.stat().st_size == 0:
-                handle.write(" ")
-                handle.flush()
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except (OSError, BlockingIOError):
-        handle.close()
-        deadline = time.time() + 8
-        while time.time() < deadline:
-            time.sleep(0.25)
-            handle = open(lock_path, "a+", encoding="utf-8")
-            try:
-                if os.name == "nt":
-                    import msvcrt
-                    handle.seek(0)
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    import fcntl
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except (OSError, BlockingIOError):
-                handle.close()
-                handle = None
-        if handle is None:
-            print("[BotHub] Já existe um controlador ativo nesta instalação; esta cópia será encerrada.", flush=True)
-            return None
-
-    handle.seek(0)
-    handle.truncate()
-    handle.write(str(os.getpid()))
-    handle.flush()
-    return handle
+            handle.truncate()
+            handle.write(str(os.getpid()))
+            handle.flush()
+            return handle
+        except (OSError, BlockingIOError):
+            if not warned:
+                print("[BotHub] Outra instância desta instalação já está ativa; aguardando o lock sem encerrar nenhum processo.", flush=True)
+                warned = True
+            time.sleep(2)
 
 def main():
     global CURRENT_CFG, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN, LEASE_MISSES
