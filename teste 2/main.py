@@ -1,4 +1,4 @@
-BOTHUB_MAIN_VERSION = "2026.11.13.3"
+BOTHUB_MAIN_VERSION = "2026.11.13.4"
 
 import discord
 from discord.ext import commands, tasks
@@ -883,6 +883,49 @@ class VoiceSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
+        # Notifica o dono da aplicação e os criadores cadastrados.
+        try:
+            recipients = {}
+            try:
+                app_info = await self.bot.application_info()
+                app_owner = getattr(app_info, "owner", None)
+                if app_owner is not None and getattr(app_owner, "id", None) and hasattr(app_owner, "send"):
+                    recipients[int(app_owner.id)] = app_owner
+            except Exception:
+                pass
+            for creator_id in obter_ids_criadores():
+                try:
+                    creator = await self.bot.fetch_user(int(creator_id))
+                    recipients[int(creator.id)] = creator
+                except Exception:
+                    continue
+            me = guild.get_member(self.bot.user.id) if self.bot.user else None
+            available = []
+            for channel in guild.text_channels:
+                if me is None:
+                    continue
+                perms = channel.permissions_for(me)
+                if perms.view_channel and perms.send_messages:
+                    available.append(channel)
+            preferred = next((c for c in available if any(k in c.name.lower() for k in ("chat", "geral", "general", "bate-papo"))), None)
+            channel_lines = [f"• #{c.name} — ID: {c.id}" for c in available[:8]]
+            suggestion = f"Canal sugerido: #{preferred.name} (ID: {preferred.id})" if preferred else "Não encontrei um canal de texto com permissão de envio para o bot."
+            message = (
+                "🤖 **Seu bot entrou em um novo servidor!**\n"
+                f"Servidor: **{guild.name}**\n"
+                f"ID da comunidade: **{guild.id}**\n"
+                f"Dono do servidor: <@{guild.owner_id}>\n"
+                f"{suggestion}\n"
+                "Canais de texto disponíveis:\n" + ("\n".join(channel_lines) if channel_lines else "• Nenhum canal acessível encontrado.")
+                + "\n\nCopie o ID da comunidade e adicione-o à lista de servidores autorizados no painel BotHub."
+            )
+            for recipient in recipients.values():
+                try:
+                    await recipient.send(message)
+                except Exception:
+                    log_console(f"Não foi possível enviar DM de entrada ao criador {getattr(recipient, 'id', '?')}.")
+        except Exception as notify_error:
+            log_console(f"Falha ao notificar criadores sobre entrada no servidor {guild.id}: {type(notify_error).__name__}")
         # O bot permanece no servidor, mas fica totalmente inativo até o ID
         # ser incluído na lista de permitidos do painel ou liberado por !allow.
         if comunidade_autorizada(guild.id):
