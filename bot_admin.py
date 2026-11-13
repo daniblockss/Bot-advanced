@@ -66,9 +66,9 @@ def call_ai(uid,text):
  global_opt=get(f"botHubGlobalOptIn/{uid}/{BOT_ID}") or {}
  pool=[]
  if isinstance(personal,dict) and personal.get("enabled") and personal.get("key"):pool.append((personal,False))
- if global_opt.get("enabled"):
+ if global_opt.get("enabled") and points(uid)>0:
   gl=get("botHubGlobalApis") or {}
-  if isinstance(gl,dict):pool.extend((v,True) for v in gl.values() if isinstance(v,dict) and v.get("enabled") and v.get("key"))
+  if isinstance(gl,dict):pool.extend((v,True) for v in gl.values() if isinstance(v,dict) and v.get("enabled") and v.get("key") and v.get("available") is not False)
  if not pool:return "Nenhuma API habilitada. Use !api para adicionar sua chave ou ativar APIs globais."
  if global_opt.get("enabled") and points(uid)<1 and not any(not g for _,g in pool):return "Você está sem pontos para usar APIs globais. Use !comprar-pontos para solicitar pontos à equipe."
  last="Sem provedor disponível."
