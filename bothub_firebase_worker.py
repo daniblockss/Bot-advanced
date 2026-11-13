@@ -245,7 +245,7 @@ def kill_bot_processes_under_root():
                     if not arg.endswith(".py"):
                         continue
                     script = Path(arg).resolve()
-                    if script.name == "main.py" and bots_root in script.parents:
+                    if script.name in {"main.py","standard_main.py","bot_admin.py"} and bots_root in script.parents:
                         candidates.append(pid)
                         break
             except (OSError, ValueError, RuntimeError):
@@ -864,6 +864,8 @@ def process_release_updates(tok, queue):
     if not isinstance(release,dict) or not release.get("updateId") or release.get("clusterOnly"):return
     for raw_id,bot_cfg in list(queue.items()):
         if not isinstance(bot_cfg,dict) or not bot_cfg.get("enabled",True):continue
+        if str(bot_cfg.get("botType") or "ia_chat").lower() != "ia_chat":
+            continue
         bid=sid(raw_id);folder=ROOT/"bots"/bid
         if not folder.exists():continue
         state_file=folder/".bothub_update_state.json"
