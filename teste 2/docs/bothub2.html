@@ -518,6 +518,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
         <h2>Cadastrar bot Discord</h2>
         <label>Tipo de bot</label>
         <select id="botType"><option value="ia_chat">IA CHAT — main.py completo</option><option value="standard">STANDARD — comandos configuráveis</option><option value="bot_admin">BOT ADMIN — tickets, pontos e APIs</option></select>
+        <div id="standardBotFields" class="hidden" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0"><b>Comandos STANDARD</b><label>Comandos em JSON (nome, descrição e resposta)</label><textarea id="standardCommands" rows="5" placeholder='{"ping":{"description":"Verificar bot","response":"Pong!"}}'></textarea><p class="hint">Cada chave vira um comando com o prefixo !.</p></div>
         <div id="adminBotFields" class="hidden" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0">
           <b>Configuração do BOT ADMIN</b>
           <label>IDs dos administradores (separados por vírgula)</label><input id="adminBotAdmins" placeholder="123456789012345678">
@@ -1569,7 +1570,7 @@ $('loginBtn').onclick=async()=>{
 
 $('logout').onclick=()=>signOut(auth);
 
-$('botType').onchange=()=> $('adminBotFields').classList.toggle('hidden',$('botType').value!=='bot_admin');
+$('botType').onchange=()=>{ $('adminBotFields').classList.toggle('hidden',$('botType').value!=='bot_admin'); $('standardBotFields').classList.toggle('hidden',$('botType').value!=='standard'); };
 $('createBot').onclick=async()=>{
   const name=$('botName').value.trim(),token=$('botToken').value.trim(),botType=$('botType').value;
   if(!name||token.length<30){$('createMsg').textContent='Informe nome e token válido.';return}
@@ -1577,7 +1578,7 @@ $('createBot').onclick=async()=>{
     if(Object.values(botData).some(b=>String(b.token||'').trim()===token))throw new Error('Token já cadastrado.');
     const id=crypto.randomUUID().replaceAll('-','');
     const csv=v=>v.split(',').map(x=>x.trim()).filter(x=>/^\d{15,22}$/.test(x));
-    const config=botType==='bot_admin'?{bot_id:id,admin_ids:csv($('adminBotAdmins').value),staff_ids:csv($('adminBotStaff').value),ticket_category_id:Number($('adminBotCategory').value)||0,ticket_entry_channel_id:Number($('adminBotEntry').value)||0}: {};
+    let config={}; if(botType==='bot_admin')config={bot_id:id,admin_ids:csv($('adminBotAdmins').value),staff_ids:csv($('adminBotStaff').value),ticket_category_id:Number($('adminBotCategory').value)||0,ticket_entry_channel_id:Number($('adminBotEntry').value)||0}; if(botType==='standard'){try{config.standard_commands=JSON.parse($('standardCommands').value||'{}');if(!config.standard_commands||Array.isArray(config.standard_commands)||typeof config.standard_commands!=='object')throw new Error('JSON deve ser um objeto.');}catch(err){throw new Error('Comandos STANDARD inválidos: '+err.message)}}
     await set(testRef('bots/'+id),{name,token,botType,ownerId:auth.currentUser?.uid||'admin',config,enabled:true,desiredState:'on',workerId:null,createdAt:Date.now(),updatedAt:Date.now()});
     $('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado como '+botType+'!';
     lastAssignment='';await refreshData();
