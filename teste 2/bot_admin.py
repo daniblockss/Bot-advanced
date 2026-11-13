@@ -99,68 +99,97 @@ def request_provider(item,text):
  provider=str(item.get("provider","")).lower()
  endpoint=api_endpoint(provider,str(item.get("endpoint") or ""))
  if not endpoint:raise RuntimeError("provedor não suportado: "+provider)
+ ai_cfg=CFG.get("ai") if isinstance(CFG.get("ai"),dict) else {}
  defaults={"chatgpt":"gpt-6-luna","openrouter":"openai/gpt-4o-mini","groq":"llama-3.3-70b-versatile","llm7":"fast","blockrun":"nvidia/nemotron-3.5-lightning"}
- model=str(item.get("model") or defaults.get(provider,"")).strip()
- messages=[{"role":"system","content":"Você é o assistente oficial do BotHub. Responda em português, com clareza e concisão. Ajude com tickets, pontos, bots e APIs."},{"role":"user","content":text[:4000]}]
+ models=ai_cfg.get("models") if isinstance(ai_cfg.get("models"),dict) else {}
+ model=str(item.get("model") or models.get(provider) or defaults.get(provider,"")).strip()
+ settings=ai_cfg.get("model_settings") if isinstance(ai_cfg.get("model_settings"),dict) else {}
+ provider_settings=settings.get(provider) if isinstance(settings.get(provider),dict) else {}
+ model_settings=provider_settings.get(model) if isinstance(provider_settings.get(model),dict) else provider_settings
+ system="Você é o assistente oficial do BotHub. Responda em português, com clareza e concisão. Ajude com tickets, pontos, bots e APIs."
+ messages=[{"role":"system","content":system},{"role":"user","content":text[:4000]}]
  headers={"Content-Type":"application/json"}
  key=str(item.get("key") or "").strip()
  if key:headers["Authorization"]="Bearer "+key
- if provider=="openrouter":headers.update({"HTTP-Referer":"https://discord.com","X-Title":"BotHub Admin"})
+ if provider=="openrouter":headers.update({"HTTP-Referer":"https://discord.com","X-Title":"Discord Bot"})
  if provider=="chatgpt":
-  payload={"model":model,"instructions":messages[0]["content"],"input":[{"role":"user","content":messages[1]["content"]}],"max_output_tokens":500,"store":True}
+  payload={"model":model,"instructions":system,"input":[{"role":"user","content":messages[1]["content"]}],
+           "reasoning":{"effort":str(model_settings.get("reasoning_effort","none"))},
+           "max_output_tokens":int(model_settings.get("max_output_tokens",500)),"store":True}
  else:
   payload={"model":model,"messages":messages,"stream":False}
-  if provider!="blockrun":payload["max_tokens"]=500
+  if provider!="blockrun":
+   payload["temperature"]=float(model_settings.get("temperature",0.6))
+   payload["max_tokens"]=min(8000,max(1,int(model_settings.get("max_tokens",700))))
  req=Request(endpoint,data=json.dumps(payload,ensure_ascii=False).encode(),headers=headers,method="POST")
  try:
-  with urlopen(req,timeout=40) as response:data=json.loads(response.read())
+  with urlopen(req,timeout=60) as response:data=json.loads(response.read())
  except HTTPError as error:
-  detail=error.read().decode("utf-8","replace")[:350]
+  detail=error.read().decode("utf-8","replace")[:400]
   raise RuntimeError(provider+" HTTP "+str(error.code)+((": "+detail) if detail else "")) from error
  if provider=="chatgpt":
   answer=data.get("output_text")
   if not answer:
-   answer="".join(part.get("text","") for item_out in data.get("output",[]) if isinstance(item_out,dict) for part in item_out.get("content",[]) if isinstance(part,dict) and part.get("type") in {"output_text","text"})
+   answer="".join(part.get("text","") for output in data.get("output",[]) if isinstance(output,dict)
+                  for part in output.get("content",[]) if isinstance(part,dict)
+                  and part.get("type") in {"output_text","text"})
  else:
   answer=data.get("choices",[{}])[0].get("message",{}).get("content","")
+ if isinstance(answer,list):
+  answer="".join(str(part.get("text","")) for part in answer if isinstance(part,dict))
  if not isinstance(answer,str) or not answer.strip():raise RuntimeError(provider+" retornou resposta vazia")
  return answer.strip()[:3800]
 def call_ai(uid,text):
- # Ordem compatível com o IA CHAT: LLM7 sem chave, API pessoal, APIs globais habilitadas e BlockRun.
- pool=[({"provider":"llm7","model":"fast","key":""},False),
-       ({"provider":"llm7","model":"fast","key":"auto-generated"},False)]
- # APIs configuradas diretamente no bot, usando a mesma estrutura do IA CHAT.
  ai_cfg=CFG.get("ai") if isinstance(CFG.get("ai"),dict) else {}
  configured=ai_cfg.get("api_keys") if isinstance(ai_cfg.get("api_keys"),dict) else {}
- fallback=ai_cfg.get("fallback_order") if isinstance(ai_cfg.get("fallback_order"),list) else ["chatgpt","openrouter","groq","llm7"]
- for provider in fallback:
+ order=ai_cfg.get("fallback_order") if isinstance(ai_cfg.get("fallback_order"),list) else ["chatgpt","openrouter","groq","llm7","blockrun"]
+ pool=[]
+ personal=get(f"botHubUserApis/{uid}/{BOT_ID}") or {}
+ # Mantém a ordem de provedores configurada no IA CHAT.
+ for provider in order:
   provider=str(provider).lower()
+  if provider not in {"chatgpt","openrouter","groq","llm7","blockrun"}:continue
+  if provider=="llm7":
+   pool.append(({"provider":"llm7","model":"fast","key":""},False))
+   pool.append(({"provider":"llm7","model":"fast","key":"auto-generated"},False))
   keys=configured.get(provider,[]) if provider!="blockrun" else []
   if isinstance(keys,str):keys=[keys]
+  env_names={"chatgpt":("CHATGPT_API_KEYS","CHATGPT_API_KEY","OPENAI_API_KEY"),
+             "openrouter":("OPENROUTER_API_KEYS","OPENROUTER_API_KEY"),
+             "groq":("GROQ_API_KEYS","GROQ_API_KEY"),
+             "llm7":("LLM7_API_KEYS","LLM7_API_KEY")}.get(provider,())
+  for env_name in env_names:
+   keys.extend([part.strip() for part in os.getenv(env_name,"").replace("\n",",").replace(";",",").split(",") if part.strip()])
   if isinstance(keys,list):
    for key in keys:
-    if isinstance(key,str) and key.strip():pool.append(({"provider":provider,"key":key.strip()},False))
- legacy=CFG.get("apis",[])
- if isinstance(legacy,list):
-  for key in legacy:
-   if isinstance(key,str) and key.strip():pool.append(({"provider":"groq","key":key.strip()},False))
- personal=get(f"botHubUserApis/{uid}/{BOT_ID}") or {}
- if isinstance(personal,dict) and personal.get("enabled") and personal.get("key"):
-  pool.append((personal,False))
- # BOT ADMIN usa o pool global automaticamente; cada resposta global custa 1 ponto.
+    if isinstance(key,str) and key.strip() and key.strip()!="auto-generated":
+     pool.append(({"provider":provider,"key":key.strip()},False))
+  if isinstance(personal,dict) and personal.get("enabled") and personal.get("key") and str(personal.get("provider","")).lower()==provider:
+   pool.append((personal,False))
+ # APIs globais seguem exatamente a ativação por usuário/bot e o saldo do IA CHAT.
+ opt=get(f"botHubGlobalOptIn/{uid}/{BOT_ID}") or {}
  points_data=get("botHubPoints/"+str(uid)) or {}
  has_points=isinstance(points_data,dict) and int(points_data.get("balance",0))>0
  global_items=get("botHubGlobalApis") or {}
- if has_points and isinstance(global_items,dict):
-  for item in global_items.values():
-   if not isinstance(item,dict) or not item.get("enabled",True) or not item.get("key"):continue
-   if item.get("available") is False:
-    until=int(item.get("availableUntil") or 0)
-    if not until or until>int(time.time()*1000):continue
-   pool.append((item,True))
- pool.append(({"provider":"blockrun","model":"nvidia/nemotron-3.5-lightning","key":""},False))
+ if isinstance(opt,dict) and opt.get("enabled") and has_points and isinstance(global_items,dict):
+  for provider in order:
+   provider=str(provider).lower()
+   for item in global_items.values():
+    if not isinstance(item,dict) or str(item.get("provider","")).lower()!=provider:continue
+    if not item.get("enabled",True) or not item.get("key"):continue
+    if item.get("available") is False:
+     until=int(item.get("availableUntil") or 0)
+     if not until or until>int(time.time()*1000):continue
+    pool.append((item,True))
+ # BlockRun público continua como último fallback, sem consumir ponto global.
+ if not any(isinstance(item,dict) and item.get("provider")=="blockrun" for item,_ in pool):
+  pool.append(({"provider":"blockrun","model":(ai_cfg.get("models") or {}).get("blockrun","nvidia/nemotron-3.5-lightning"),"key":""},False))
  errors=[]
+ seen=set()
  for item,is_global in pool:
+  signature=(str(item.get("provider")),str(item.get("key") or ""),str(item.get("model") or ""))
+  if signature in seen:continue
+  seen.add(signature)
   try:
    answer=request_provider(item,text)
    if is_global and not consume_global_point(uid):
@@ -169,7 +198,7 @@ def call_ai(uid,text):
    return answer
   except Exception as error:
    errors.append(str(error)[:240])
- return "As APIs configuradas não responderam: "+(" | ".join(errors[-5:]) or "nenhum provedor disponível.")
+ return "As APIs configuradas não responderam: "+(" | ".join(errors[-6:]) or "nenhum provedor disponível.")
 def validate_api_key(provider,key,model):
  defaults={"chatgpt":"gpt-6-luna","openrouter":"openai/gpt-4o-mini","groq":"llama-3.3-70b-versatile","llm7":"fast","blockrun":"nvidia/nemotron-3.5-lightning"}
  chosen=model or defaults.get(provider,"")
@@ -228,7 +257,6 @@ class ApiView(discord.ui.View):
  async def add(self,i,b):await i.response.send_modal(ApiModal(self.target_bot_id))
  @discord.ui.button(label="Ativar/desativar APIs globais",style=discord.ButtonStyle.success)
  async def toggle(self,i,b):
-  if self.target_bot_id==BOT_ID:return await i.response.send_message("O BOT ADMIN usa APIs globais automaticamente quando você tem pontos. Selecione outro bot para alterar essa opção.",ephemeral=True)
   path=f"botHubGlobalOptIn/{i.user.id}/{self.target_bot_id}";old=get(path) or {};enabled=not bool(old.get("enabled"))
   put(path,{"enabled":enabled,"updatedAt":int(time.time()*1000)})
   await i.response.send_message("APIs globais "+("ativadas" if enabled else "desativadas")+". Cada resposta que usar uma API global custa 1 ponto.",ephemeral=True)
@@ -364,7 +392,7 @@ async def config_cmd(ctx):
  e.add_field(name="Equipe",value=", ".join(f"<@{x}>" for x in cfg.get("staffIds",[])) or "Somente o criador",inline=False)
  await ctx.send(embed=e,view=AdminConfigView())
 @bot.command(name="api")
-async def api(ctx):await ctx.send(embed=emb("Gerenciamento de APIs","Adicione uma API pessoal ou ative as APIs globais. O BOT ADMIN usa APIs pessoais e globais gratuitamente; nos outros bots, o uso de API global pode consumir pontos."),view=ApiView(ctx.author.id))
+async def api(ctx):await ctx.send(embed=emb("Gerenciamento de APIs","Adicione APIs pessoais ou ative as APIs globais. Cada resposta que usar uma API global custa 1 ponto."),view=ApiView(ctx.author.id))
 @bot.command(name="configs")
 async def configs(ctx):await ctx.send(embed=emb("Seus bots","Selecione um bot para consultar seu estado."),view=ConfigView(ctx.author.id))
 @bot.command(name="help")
