@@ -5639,6 +5639,7 @@ def _bothub_fb(method, path, value=None, etag=False, match=None):
 
 
 def _bothub_global_api_keys(provedor, user_id):
+    import hashlib
     if not user_id:
         return []
     now = time.monotonic()
