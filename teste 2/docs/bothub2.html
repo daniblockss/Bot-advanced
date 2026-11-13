@@ -937,7 +937,9 @@ function watch(path,cb){
 function runningSet(){
   const s=new Set();
   for(const w of Object.values(workerData)){
-    const ids=w.readyBotIds;
+    // O Worker publica runningBotIds a partir dos processos que continuam vivos.
+    // readyBotIds não é publicado pelo worker atual e deixava todos como "Ligando".
+    const ids=w.runningBotIds;
     if(Array.isArray(ids))ids.forEach(id=>s.add(String(id)));
     else if(ids&&typeof ids==='object')Object.keys(ids).forEach(id=>s.add(String(id)));
   }
