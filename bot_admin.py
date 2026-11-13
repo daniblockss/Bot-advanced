@@ -77,7 +77,7 @@ def call_ai(uid,text):
  global_opt=get(f"botHubGlobalOptIn/{uid}/{BOT_ID}") or {}
  pool=[]
  if isinstance(personal,dict) and personal.get("enabled") and personal.get("key"):pool.append((personal,False))
- if global_opt.get("enabled") and points(uid)>0:
+ if points(uid)>0:
   gl=get("botHubGlobalApis") or {}
   if isinstance(gl,dict):pool.extend((v,True) for v in gl.values() if isinstance(v,dict) and v.get("enabled") and v.get("key") and v.get("available") is not False)
  if not pool:return "Nenhuma API habilitada. Use !api para adicionar sua chave ou ativar APIs globais."
@@ -157,6 +157,7 @@ class ApiView(discord.ui.View):
  async def add(self,i,b):await i.response.send_modal(ApiModal(self.target_bot_id))
  @discord.ui.button(label="Ativar/desativar APIs globais",style=discord.ButtonStyle.success)
  async def toggle(self,i,b):
+  if self.target_bot_id==BOT_ID:return await i.response.send_message("O BOT ADMIN usa APIs globais automaticamente quando você tem pontos. Selecione outro bot para alterar essa opção.",ephemeral=True)
   path=f"botHubGlobalOptIn/{i.user.id}/{self.target_bot_id}";old=get(path) or {};enabled=not bool(old.get("enabled"))
   put(path,{"enabled":enabled,"updatedAt":int(time.time()*1000)})
   await i.response.send_message("APIs globais "+("ativadas" if enabled else "desativadas")+". Cada resposta que usar uma API global custa 1 ponto.",ephemeral=True)
