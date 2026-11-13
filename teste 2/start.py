@@ -26,6 +26,8 @@ VENV = ROOT / "venv"
 WORKER_PYTHON = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 SUPERVISOR_POLL_INTERVAL = max(2, int(os.getenv("BOTHUB_SUPERVISOR_POLL_SECONDS", "3")))
 RESTART_DELAY = 5
+MAX_RESTART_DELAY = 300
+WORKER_STABLE_SECONDS = 60
 STOP_TIMEOUT = 20
 
 COMPONENTS = (
@@ -237,16 +239,26 @@ def main() -> int:
         prepare_initial_files()
         setup_environment()
         worker_process = start_worker()
+        worker_started_at = time.monotonic()
+        restart_delay = RESTART_DELAY
         log.info("Worker iniciado. start.py supervisiona a execução e reinicia o worker após atualizações solicitadas no painel.")
 
         while True:
             # Este monitor só recupera uma queda do processo. Não consulta o GitHub.
             time.sleep(SUPERVISOR_POLL_INTERVAL)
             if worker_process.poll() is not None:
-                log.warning("Worker encerrou com código %s. Supervisor reiniciando em %ss.",
-                            worker_process.returncode, RESTART_DELAY)
-                time.sleep(RESTART_DELAY)
+                exit_code = worker_process.returncode
+                runtime = time.monotonic() - worker_started_at
+                if runtime >= WORKER_STABLE_SECONDS:
+                    restart_delay = RESTART_DELAY
+                log.warning(
+                    "Worker encerrou com código %s após %.1fs. Nova tentativa em %ss.",
+                    exit_code, runtime, restart_delay
+                )
+                time.sleep(restart_delay)
                 worker_process = start_worker()
+                worker_started_at = time.monotonic()
+                restart_delay = min(MAX_RESTART_DELAY, restart_delay * 2)
     except KeyboardInterrupt:
         log.info("Encerramento solicitado; finalizando apenas o worker.")
     except Exception:
