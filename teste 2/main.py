@@ -10213,10 +10213,11 @@ async def solicitar_atualizacao_bot(ctx):
 PENDING_GUILD_APPROVALS = {}
 
 class GuildApprovalView(discord.ui.View):
-    def __init__(self, guild_id, guild_name, allowed_user_ids):
+    def __init__(self, guild_id, guild_name, guild_owner_id, allowed_user_ids):
         super().__init__(timeout=600)
         self.guild_id = int(guild_id)
         self.guild_name = str(guild_name)
+        self.guild_owner_id = int(guild_owner_id)
         self.allowed_user_ids = {int(value) for value in allowed_user_ids}
 
     async def interaction_check(self, interaction):
@@ -10241,7 +10242,7 @@ class GuildApprovalView(discord.ui.View):
             legacy = config["comunidades_autorizadas"] = []
         if guild_id not in {int(value) for value in legacy if str(value).isdigit()}:
             legacy.append(guild_id)
-        config.setdefault("criadores_supremos_guild", {})[str(guild_id)] = 0
+        config.setdefault("criadores_supremos_guild", {})[str(guild_id)] = self.guild_owner_id
         salvar_config(config)
         PENDING_GUILD_APPROVALS.pop(guild_id, None)
         for child in self.children:
@@ -10296,7 +10297,7 @@ async def notificar_solicitacao_comunidade(message):
     embed.add_field(name="Comunidade", value=f"{guild.name} (ID: {guild.id})", inline=False)
     embed.add_field(name="Canal", value=f"#{getattr(message.channel, 'name', 'desconhecido')}", inline=False)
     embed.set_footer(text="A solicitação expira em 10 minutos. O conteúdo da mensagem não é compartilhado.")
-    view = GuildApprovalView(guild.id, guild.name, set(obter_ids_criadores()) | set(recipients))
+    view = GuildApprovalView(guild.id, guild.name, guild.owner_id, set(obter_ids_criadores()) | set(recipients))
     delivered = False
     for recipient in recipients.values():
         try:
