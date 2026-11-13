@@ -85,27 +85,70 @@ def call_ai(uid,text):
    return str(answer)[:3800]
   except Exception as e:last=str(e)[:160]
  return "As APIs configuradas não responderam: "+last
-class ApiModal(discord.ui.Modal,title="Adicionar API pessoal"):
+def validate_api_key(provider,key,model):
+ endpoint=api_endpoint(provider)
+ chosen=model or ("llama-3.3-70b-versatile" if provider=="groq" else "openai/gpt-4o-mini")
+ payload={"model":chosen,"messages":[{"role":"user","content":"Responda apenas OK."}],"max_tokens":5}
+ req=Request(endpoint,data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"})
+ with urlopen(req,timeout=20) as response:
+  json.loads(response.read())
+ return chosen
+class ApiModal(discord.ui.Modal,title="Cadastrar API"):
+ scope=discord.ui.TextInput(label="Destino: pessoal ou global",default="pessoal",max_length=15)
  provider=discord.ui.TextInput(label="Provedor: openrouter, groq, llm7 ou chatgpt",default="openrouter",max_length=30)
  key=discord.ui.TextInput(label="Chave da API",max_length=500)
  model=discord.ui.TextInput(label="Modelo (opcional)",required=False,max_length=120)
+ target=discord.ui.TextInput(label="ID do seu bot (para API pessoal)",required=False,max_length=40)
  async def on_submit(self,interaction):
-  p=str(self.provider.value).strip().lower()
+  scope=str(self.scope.value).strip().lower(); p=str(self.provider.value).strip().lower(); key=str(self.key.value).strip(); model=str(self.model.value).strip()
   if p not in {"openrouter","groq","llm7","chatgpt"}:return await interaction.response.send_message("Provedor não suportado.",ephemeral=True)
-  put(f"botHubUserApis/{interaction.user.id}/{BOT_ID}",{"provider":p,"key":str(self.key.value).strip(),"model":str(self.model.value).strip(),"enabled":True,"updatedAt":int(time.time()*1000)})
-  await interaction.response.send_message("API pessoal salva.",ephemeral=True)
+  if scope not in {"pessoal","global"}:return await interaction.response.send_message("Destino deve ser pessoal ou global.",ephemeral=True)
+  if scope=="pessoal":
+   bid=str(self.target.value).strip() or BOT_ID
+   item=get("bots/"+bid) or {}
+   if bid!=BOT_ID and str(item.get("ownerId"))!=str(interaction.user.id):return await interaction.response.send_message("Esse bot não pertence à sua conta.",ephemeral=True)
+   put(f"botHubUserApis/{interaction.user.id}/{bid}",{"provider":p,"key":key,"model":model,"enabled":True,"updatedAt":int(time.time()*1000)})
+   return await interaction.response.send_message("API pessoal validada e salva no bot selecionado.",ephemeral=True)
+  await interaction.response.defer(ephemeral=True)
+  try:
+   chosen=await __import__("asyncio").to_thread(validate_api_key,p,key,model)
+   import hashlib
+   digest=hashlib.sha256((p+":"+key).encode()).hexdigest()
+   api_id=uuid.uuid4().hex
+   put("botHubGlobalApis/"+api_id,{"provider":p,"key":key,"model":chosen,"enabled":True,"available":True,"status":"Disponível","addedBy":str(interaction.user.id),"addedByName":str(interaction.user),"createdAt":int(time.time()*1000),"updatedAt":int(time.time()*1000)})
+   contribution=f"botHubApiContributions/{interaction.user.id}/{digest}"
+   if not get(contribution):
+    put(contribution,{"apiId":api_id,"provider":p,"createdAt":int(time.time()*1000)})
+    balance=change_points(interaction.user.id,1,BOT_ID,"Contribuição de API global válida")
+    await interaction.followup.send(f"API global validada e cadastrada. Você recebeu 1 ponto de contribuição. Saldo: {balance}.",ephemeral=True)
+   else:
+    await interaction.followup.send("API global validada e cadastrada. Esta chave já recebeu o ponto de contribuição anteriormente.",ephemeral=True)
+  except Exception as e:
+   await interaction.followup.send("A chave não passou na validação: "+str(e)[:180],ephemeral=True)
+class ApiTargetSelect(discord.ui.Select):
+ def __init__(self,view,uid):
+  self.parent=view; options=[discord.SelectOption(label="BOT ADMIN",value=BOT_ID,description="Configuração do próprio painel Discord")]
+  data=get("bots") or {}
+  for bid,item in list(data.items())[:24]:
+   if str(item.get("ownerId"))==str(uid):
+    options.append(discord.SelectOption(label=str(item.get("name","Bot"))[:100],value=bid,description=str(item.get("botType","ia_chat"))[:100]))
+  super().__init__(placeholder="Escolha em qual bot configurar a API",options=options[:25])
+ async def callback(self,interaction):
+  self.parent.target_bot_id=self.values[0]
+  await interaction.response.send_message("Bot selecionado para as próximas ações: "+self.values[0],ephemeral=True)
 class ApiView(discord.ui.View):
- def __init__(self):super().__init__(timeout=180)
- @discord.ui.button(label="Adicionar API pessoal",style=discord.ButtonStyle.primary)
+ def __init__(self,uid):
+  super().__init__(timeout=180);self.target_bot_id=BOT_ID;self.add_item(ApiTargetSelect(self,uid))
+ @discord.ui.button(label="Adicionar API",style=discord.ButtonStyle.primary)
  async def add(self,i,b):await i.response.send_modal(ApiModal())
  @discord.ui.button(label="Ativar/desativar APIs globais",style=discord.ButtonStyle.success)
  async def toggle(self,i,b):
-  path=f"botHubGlobalOptIn/{i.user.id}/{BOT_ID}"; old=get(path) or {}; enabled=not bool(old.get("enabled"))
+  path=f"botHubGlobalOptIn/{i.user.id}/{self.target_bot_id}";old=get(path) or {};enabled=not bool(old.get("enabled"))
   put(path,{"enabled":enabled,"updatedAt":int(time.time()*1000)})
-  await i.response.send_message("APIs globais "+("ativadas" if enabled else "desativadas")+". Cada resposta que usar API global custa 1 ponto.",ephemeral=True)
+  await i.response.send_message("APIs globais "+("ativadas" if enabled else "desativadas")+". Cada resposta que usar uma API global custa 1 ponto.",ephemeral=True)
  @discord.ui.button(label="Remover API pessoal",style=discord.ButtonStyle.danger)
  async def remove(self,i,b):
-  put(f"botHubUserApis/{i.user.id}/{BOT_ID}",None);await i.response.send_message("API pessoal removida.",ephemeral=True)
+  put(f"botHubUserApis/{i.user.id}/{self.target_bot_id}",None);await i.response.send_message("API pessoal removida do bot selecionado.",ephemeral=True)
 class BotSelect(discord.ui.Select):
  def __init__(self,uid):
   opts=[]; data=get("bots") or {}
@@ -117,7 +160,7 @@ class BotSelect(discord.ui.Select):
   bid=self.values[0]
   if bid=="none":return await i.response.send_message("Você ainda não cadastrou bots.",ephemeral=True)
   item=get("bots/"+bid) or {}
-  await i.response.send_message(f"**{item.get('name','Bot')}** | tipo: {item.get('botType','ia_chat')} | estado: {'ON' if item.get('enabled') else 'OFF'}. Use o painel para convite e permissões.",ephemeral=True)
+  await i.response.send_message(f"**{item.get('name','Bot')}** | tipo: {item.get('botType','ia_chat')} | estado: {'ON' if item.get('enabled') else 'OFF'}. ID: `{bid}`. Use o painel para convite e permissões.",ephemeral=True)
 class ConfigView(discord.ui.View):
  def __init__(self,uid):super().__init__(timeout=180);self.add_item(BotSelect(uid))
 @bot.event
@@ -158,7 +201,7 @@ async def add_bot(ctx,*,args=""):
  put("bots/"+bid,{"name":name[:100],"token":token,"botType":"ia_chat","ownerId":str(ctx.author.id),"enabled":True,"desiredState":"on","workerId":None,"createdAt":int(time.time()*1000),"config":{"bot_authorization":{"allow_user_ids":[str(ctx.author.id)]}}})
  await ctx.reply(f"Bot {discord.utils.escape_markdown(name)} validado ({profile.get('username','bot')}) e cadastrado. O cluster fará a distribuição quando houver worker.")
 @bot.command(name="api")
-async def api(ctx):await ctx.send(embed=emb("Gerenciamento de APIs","Adicione uma API pessoal ou ative as APIs globais. O uso de API global consome pontos."),view=ApiView())
+async def api(ctx):await ctx.send(embed=emb("Gerenciamento de APIs","Adicione uma API pessoal ou ative as APIs globais. O uso de API global consome pontos."),view=ApiView(ctx.author.id))
 @bot.command(name="configs")
 async def configs(ctx):await ctx.send(embed=emb("Seus bots","Selecione um bot para consultar seu estado."),view=ConfigView(ctx.author.id))
 @bot.command(name="help")
