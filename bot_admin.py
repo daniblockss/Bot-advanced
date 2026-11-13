@@ -39,7 +39,11 @@ def fb(method,path,value=None,_retried=False):
  try:
   with urlopen(Request(url,data=data,headers={"Content-Type":"application/json"},method=method),timeout=20) as r: return json.loads(r.read() or b"null")
  except HTTPError as e:
-  if e.code==401: AUTH=None; return fb(method,path,value)
+  if e.code==401:
+   AUTH=None
+   if not _retried:
+    __import__("time").sleep(0.4)
+    return fb(method,path,value,_retried=True)
   raise RuntimeError("Firebase HTTP "+str(e.code))
 def get(path): return fb("GET",path)
 def put(path,value): return fb("PUT",path,value)
