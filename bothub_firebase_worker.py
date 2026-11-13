@@ -240,7 +240,7 @@ def kill_bot_processes_under_root():
                 continue
             try:
                 raw = (entry / "cmdline").read_bytes()
-                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\0") if part]
                 for arg in args[1:]:
                     if not arg.endswith(".py"):
                         continue
@@ -260,7 +260,7 @@ def kill_bot_processes_under_root():
                 for arg in (proc.info.get("cmdline") or [])[1:]:
                     try:
                         script = Path(arg).resolve()
-                        if script.name == "main.py" and bots_root in script.parents:
+                        if script.name in {"main.py","standard_main.py","bot_admin.py"} and bots_root in script.parents:
                             candidates.append(pid)
                             break
                     except (OSError, ValueError, RuntimeError):
