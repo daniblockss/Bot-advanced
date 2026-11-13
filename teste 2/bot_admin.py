@@ -147,11 +147,11 @@ def call_ai(uid,text):
  personal=get(f"botHubUserApis/{uid}/{BOT_ID}") or {}
  if isinstance(personal,dict) and personal.get("enabled") and personal.get("key"):
   pool.append((personal,False))
- opt=get(f"botHubGlobalOptIn/{uid}/{BOT_ID}") or {}
+ # BOT ADMIN usa o pool global automaticamente; cada resposta global custa 1 ponto.
  points_data=get("botHubPoints/"+str(uid)) or {}
  has_points=isinstance(points_data,dict) and int(points_data.get("balance",0))>0
  global_items=get("botHubGlobalApis") or {}
- if isinstance(opt,dict) and opt.get("enabled") and has_points and isinstance(global_items,dict):
+ if has_points and isinstance(global_items,dict):
   for item in global_items.values():
    if not isinstance(item,dict) or not item.get("enabled",True) or not item.get("key"):continue
    if item.get("available") is False:
