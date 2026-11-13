@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import requests
 
-WORKER_VERSION="2026.11.13.8"
+WORKER_VERSION="2026.11.13.9"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -135,7 +135,7 @@ def fb(method,path,tok,data=None,_retried=False):
             except Exception as e:
                 raise RuntimeError("Firebase recusou a sessão (401) e a renovação falhou: "+str(e)[:180])
         raise RuntimeError("Firebase HTTP 401: "+detail+" | Confira Authentication > Anonymous e as regras de leitura/gravação do Realtime Database para usuários autenticados.")
-    if r.status_code>=300:raise RuntimeError("Firebase "+str(r.status_code)+": "+r.text[:220])
+    if r.status_code>=300:raise RuntimeError("Firebase "+str(r.status_code)+" em "+method+" "+path+": "+r.text[:220])
     return r.json() if r.text else None
 
 TERMUX_DIAGNOSTICS_CACHE={"at":0,"data":{}}
@@ -1789,6 +1789,13 @@ def main():
         try:
             t=token(cfg);did=urllib.parse.quote(cfg["device_id"],safe="")
             LAST_TOKEN=t;LAST_DID=did;CURRENT_FIREBASE_TOKEN=t
+            # Checa a atualização antes do primeiro PATCH do heartbeat.
+            # Assim um erro no status não impede a correção do próprio worker.
+            try:
+                if process_cluster_update(t,cfg):
+                    break
+            except Exception as update_error:
+                print("[BotHub] falha ao verificar atualização do cluster:",str(update_error)[:220],flush=True)
             fb("PATCH","workers/"+did,t,stats(cfg))
             publish_applied_cluster_update(t,cfg)
             process_bot_deletions(t, cfg["device_id"])
@@ -1854,15 +1861,6 @@ def main():
                             continue
                         start(k,bot_cfg)
                 except Exception as e: log_throttled("bot-failure:"+k,30,"[BotHub] falha no bot",k,str(e)[:220])
-            try:
-                if process_cluster_update(t,cfg):
-                    break
-            except Exception as e:
-                try:
-                    rel=fb("GET","botHubClusterUpdates/current",t) or {}
-                    if rel.get("updateId"):publish_cluster_progress(t,cfg,rel.get("updateId"),"failed","Falha na atualização: "+str(e)[:180])
-                except Exception:pass
-                print("[BotHub] falha ao atualizar arquivos de cluster:",str(e)[:220],flush=True)
             try: process_release_updates(t,queue)
             except Exception as e: print("[BotHub] falha ao verificar atualização:",str(e)[:220],flush=True)
         except KeyboardInterrupt: break
