@@ -12543,11 +12543,63 @@ PROVIDER_LOCKS = {}
 PROVIDER_UNAVAILABLE = {}
 
 
+def _shared_provider_cooldown_path():
+    shared_dir = os.getenv("BOTHUB_SHARED_STATE_DIR", "").strip()
+    if not shared_dir:
+        return None
+    try:
+        path = Path(shared_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        return path / "provider_cooldowns.sqlite3"
+    except OSError:
+        return None
+
+
+def _shared_provider_cooldown_get(provider_key):
+    path = _shared_provider_cooldown_path()
+    if path is None:
+        return None
+    try:
+        with sqlite3.connect(path, timeout=3) as db:
+            db.execute("CREATE TABLE IF NOT EXISTS cooldowns (provider_key TEXT PRIMARY KEY, until_epoch REAL NOT NULL, category TEXT NOT NULL, updated REAL NOT NULL)")
+            row = db.execute("SELECT until_epoch, category FROM cooldowns WHERE provider_key=?", (provider_key,)).fetchone()
+        if not row:
+            return None
+        remaining = int(float(row[0]) - time.time() + 0.999)
+        if remaining <= 0:
+            with sqlite3.connect(path, timeout=3) as db:
+                db.execute("DELETE FROM cooldowns WHERE provider_key=?", (provider_key,))
+            return None
+        return remaining, str(row[1])
+    except sqlite3.Error:
+        return None
+
+
+def _shared_provider_cooldown_set(provider_key, category, delay):
+    path = _shared_provider_cooldown_path()
+    if path is None:
+        return
+    try:
+        expires = time.time() + max(1, int(delay))
+        with sqlite3.connect(path, timeout=3) as db:
+            db.execute("CREATE TABLE IF NOT EXISTS cooldowns (provider_key TEXT PRIMARY KEY, until_epoch REAL NOT NULL, category TEXT NOT NULL, updated REAL NOT NULL)")
+            db.execute("INSERT INTO cooldowns(provider_key,until_epoch,category,updated) VALUES(?,?,?,?) ON CONFLICT(provider_key) DO UPDATE SET until_epoch=MAX(until_epoch,excluded.until_epoch), category=excluded.category, updated=excluded.updated",
+                       (provider_key, expires, category, time.time()))
+    except sqlite3.Error:
+        logging.getLogger("breeze.ia").debug("Cooldown compartilhado indisponível", exc_info=True)
+
+
 async def requisitar_provedor_monitorado(provedor, chave, mensagens, img_url=None, modelo_override=None):
     import hashlib
     credential = hashlib.sha256((chave or "").encode()).hexdigest()
     key = (provedor, credential)
+    shared_key = hashlib.sha256((provedor + ":" + credential).encode()).hexdigest()
     async with PROVIDER_LOCKS.setdefault(key, asyncio.Lock()):
+        shared_wait = _shared_provider_cooldown_get(shared_key)
+        if shared_wait:
+            delay, category = shared_wait
+            PROVIDER_UNAVAILABLE[key] = (time.monotonic() + delay, category)
+            raise FalhaProvedor("Provedor em espera compartilhada: " + category, retry_after=delay)
         until, category = PROVIDER_UNAVAILABLE.get(key, (0, ""))
         if until > time.monotonic():
             raise FalhaProvedor("Provedor em espera: " + category, retry_after=max(1, int(until - time.monotonic())))
@@ -12559,8 +12611,9 @@ async def requisitar_provedor_monitorado(provedor, chave, mensagens, img_url=Non
         except FalhaProvedor as error:
             category, delay = classify_provider_failure(error)
             PROVIDER_UNAVAILABLE[key] = (time.monotonic() + delay, category)
+            _shared_provider_cooldown_set(shared_key, category, delay)
             error.retry_after = delay
-            safe_event("ia", f"Provedor {provedor}: {category}; espera {delay}s; tentando próximo fallback elegível.", logging.WARNING)
+            safe_event("ia", f"Provedor {provedor}: {category}; espera compartilhada de {delay}s; tentando próximo fallback elegível.", logging.WARNING)
             raise
 
 
