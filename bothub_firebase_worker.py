@@ -566,8 +566,8 @@ def start(k,b):
     auth.update({
         "password_salt": str(b.get("allowPasswordSalt") or auth.get("password_salt") or ""),
         "password_hash": str(b.get("allowPasswordHash") or auth.get("password_hash") or ""),
-        "allow_user_ids": [str(x) for x in (b.get("allowUserIds") or auth.get("allow_user_ids") or []) if str(x).isdigit()],
-        "authorized_guild_ids": [str(x) for x in (b.get("authorizedGuildIds") or auth.get("authorized_guild_ids") or []) if str(x).isdigit()],
+        "allow_user_ids": [str(x) for x in (b.get("allowUserIds") if b.get("allowUserIds") is not None else auth.get("allow_user_ids", [])) if str(x).isdigit()],
+        "authorized_guild_ids": [str(x) for x in (b.get("authorizedGuildIds") if b.get("authorizedGuildIds") is not None else auth.get("authorized_guild_ids", [])) if str(x).isdigit()],
     })
     cfg["bot_authorization"]=auth
     cp=folder/"config.json";save_json(cp,cfg)
