@@ -638,8 +638,10 @@ def start(k,b):
         if sys.platform.startswith("linux"):
             popen_kwargs["preexec_fn"] = child_parent_death_signal
         try:
+            child_env=os.environ.copy()
+            child_env["BOTHUB_SHARED_STATE_DIR"]=str(ROOT/".bothub_shared")
             p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
-                stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),**popen_kwargs)
+                stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),env=child_env,**popen_kwargs)
         except Exception:
             log.close()
             raise
