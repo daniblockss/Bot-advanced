@@ -5606,8 +5606,17 @@ _BOTHUB_FIREBASE_TOKEN = None
 _BOTHUB_GLOBAL_API_CACHE = {"at": 0.0, "items": {}}
 
 
-def _bothub_fb(method, path, value=None, etag=False, match=None):
+def _bothub_fb(method, path, value=None, etag=False, match=None, _retried=False):
     global _BOTHUB_FIREBASE_TOKEN
+    if not _BOTHUB_FIREBASE_TOKEN:
+        shared_dir = os.getenv("BOTHUB_SHARED_STATE_DIR", "").strip()
+        token_file = Path(shared_dir) / "firebase-worker-token.json" if shared_dir else None
+        if token_file and token_file.is_file():
+            try:
+                token_data = json.loads(token_file.read_text(encoding="utf-8"))
+                _BOTHUB_FIREBASE_TOKEN = str(token_data.get("idToken") or "") or None
+            except (OSError, ValueError, TypeError):
+                _BOTHUB_FIREBASE_TOKEN = None
     if not _BOTHUB_FIREBASE_TOKEN:
         request = Request(
             "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=" + BOTHUB_FIREBASE_API_KEY,
@@ -5632,7 +5641,9 @@ def _bothub_fb(method, path, value=None, etag=False, match=None):
     except HTTPError as error:
         if error.code == 401:
             _BOTHUB_FIREBASE_TOKEN = None
-            return _bothub_fb(method, path, value, etag, match)
+            if not _retried:
+                time.sleep(0.4)
+                return _bothub_fb(method, path, value, etag, match, _retried=True)
         if error.code == 412:
             return "CONFLICT", None
         raise
