@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import requests
 
-WORKER_VERSION="2026.11.13.4"
+WORKER_VERSION="2026.11.13.5"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -1082,7 +1082,18 @@ def process_worker_commands(cfg,tok,did,queue):
             fb("PATCH",command_path,tok,{"status":"received","receivedAt":int(time.time()*1000),"workerId":cfg.get("device_id")})
             fb("PATCH",command_path,tok,{"status":"running","startedAt":int(time.time()*1000)})
             op=cmd.get("operation")
-            if op=="fetch_avatar":
+            if op=="create_invite":
+                bid=str(cmd.get("botId",""))
+                bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
+                secret=bot_cfg.get("token") if isinstance(bot_cfg,dict) else None
+                if not secret: raise ValueError("O bot não está atribuído a este worker ou não tem token.")
+                app=discord_api(secret,"GET","/applications/@me",None)
+                app_id=str(app.get("id") or "")
+                if not re.fullmatch(r"\d{15,22}",app_id):
+                    raise ValueError("O Discord não retornou um ID válido para a aplicação.")
+                invite_url="https://discord.com/oauth2/authorize?client_id="+app_id+"&scope=bot%20applications.commands&permissions=0"
+                result.update(status="ok",message="Convite oficial do Discord gerado.",applicationId=app_id,inviteUrl=invite_url)
+            elif op=="fetch_avatar":
                 bid=str(cmd.get("botId",""))
                 bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
                 secret=bot_cfg.get("token") if isinstance(bot_cfg,dict) else None
