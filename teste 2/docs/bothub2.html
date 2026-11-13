@@ -1443,14 +1443,17 @@ async function rebalance(){
 
 async function toggleBot(id,enabled){
   try{
-    const bot=botData[id]||{};
+    const bot=botData[id]||{},workerId=bot.workerId||bot.lastWorkerId||null;
     const changes={enabled,desiredState:enabled?'on':'off',updatedAt:Date.now()};
-    if(!enabled){changes.lastWorkerId=bot.workerId||bot.lastWorkerId||null;changes.workerId=null;}
-    else{changes.workerId=bot.lastWorkerId||bot.workerId||null;}
+    if(!enabled){changes.lastWorkerId=workerId;changes.workerId=null;}
+    else{changes.workerId=workerId;}
     await update(testRef('bots/'+id),changes);
+    if(!enabled&&workerId&&online(workerData[workerId])){
+      await sendWorkerCommand(workerId,{operation:"stop",botId:id});
+    }
     lastAssignment='';
     await refreshData();
-  }catch(e){alert('Erro: '+e.message)}
+  }catch(e){alert('Erro ao alterar/parar bot: '+e.message)}
 }
 
 async function deleteBot(id){
