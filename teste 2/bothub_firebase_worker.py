@@ -25,12 +25,12 @@ class TimestampedConsole:
         if not isinstance(value, str):
             value = str(value)
         self.pending += value
-        while "\\n" in self.pending:
-            line, self.pending = self.pending.split("\\n", 1)
+        while "\n" in self.pending:
+            line, self.pending = self.pending.split("\n", 1)
             if line:
-                self.stream.write("[" + time.strftime("%H:%M:%S") + "] " + line + "\\n")
+                self.stream.write("[" + time.strftime("%H:%M:%S") + "] " + line + "\n")
             else:
-                self.stream.write("\\n")
+                self.stream.write("\n")
         return len(value)
 
     def flush(self):
@@ -415,13 +415,13 @@ def publish_shutdown_status(reason="Servidor desligado"):
             seen_owners.add(str(owner))
             channel = discord_api(token_value, "POST", "/users/@me/channels", {"recipient_id": str(owner)})
             msg = (
-                "⚠️ **O bot foi desligado porque o servidor/controlador ficou offline.**\\n\\n"
-                "Isso pode acontecer por alguns motivos:\\n"
-                "1. O servidor está sendo atualizado ou reiniciado.\\n"
+                "⚠️ **O bot foi desligado porque o servidor/controlador ficou offline.**\n\n"
+                "Isso pode acontecer por alguns motivos:\n"
+                "1. O servidor está sendo atualizado ou reiniciado.\n"
                 "2. Ocorreu um erro ou o processo foi encerrado. Não se preocupe: "
-                "se o servidor voltar a funcionar, os bots atribuídos serão iniciados novamente.\\n\\n"
+                "se o servidor voltar a funcionar, os bots atribuídos serão iniciados novamente.\n\n"
                 "Motivo informado: " + str(reason)[:250] +
-                "\\nBots desta instalação que estavam atribuídos: " + str(len(stopped_ids)) + "."
+                "\nBots desta instalação que estavam atribuídos: " + str(len(stopped_ids)) + "."
             )
             discord_api(token_value, "POST", "/channels/" + str(channel["id"]) + "/messages",
                         {"content": msg, "allowed_mentions": {"parse": []}})
@@ -802,7 +802,7 @@ def start(k,b):
         try:
             log.flush()
             with (folder/"bot.log").open("r",encoding="utf-8",errors="replace") as handle:
-                last_error="\\n".join(handle.readlines()[-18:])[-1800:]
+                last_error="\n".join(handle.readlines()[-18:])[-1800:]
         except Exception:
             last_error="sem detalhes adicionais no log"
 
@@ -1182,8 +1182,8 @@ def notify_update(bot_id, bot_cfg, update):
         if not owner:return
         channel=discord_api(token_value,"POST","/users/@me/channels",{"recipient_id":str(owner)})
         mode="OBRIGATÓRIA" if update.get("type")=="mandatory" else "OPCIONAL"
-        description=("Versão instalada: **"+str(update.get("currentVersion") or "desconhecida")+"**\\n"+
-                     "Versão mais recente: **"+str(update.get("latestVersion") or "desconhecida")+"**\\n"+
+        description=("Versão instalada: **"+str(update.get("currentVersion") or "desconhecida")+"**\n"+
+                     "Versão mais recente: **"+str(update.get("latestVersion") or "desconhecida")+"**\n"+
                      str(update.get("description") or "Melhorias e correções.")[:1400])
         content=("📦 **Atualização BotHub disponível — "+mode+"**\n"+description+
                  ("\n\nEsta atualização será instalada automaticamente." if mode=="OBRIGATÓRIA"
