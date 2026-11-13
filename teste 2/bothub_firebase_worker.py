@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import requests
 
-WORKER_VERSION="2026.11.13.10"
+WORKER_VERSION="2026.11.13.11"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -177,6 +177,21 @@ def read_component_version(filename, variable):
     except Exception:
         pass
     return "desconhecida"
+
+
+def firebase_safe_value(value):
+    """Remove caracteres proibidos de chaves JSON antes de gravar no Realtime Database."""
+    if isinstance(value, dict):
+        cleaned = {}
+        for key, item in value.items():
+            safe_key = re.sub(r'[.#$\\[\\]/\\x00-\\x1f\\x7f]', '_', str(key))
+            if not safe_key:
+                safe_key = "_"
+            cleaned[safe_key] = firebase_safe_value(item)
+        return cleaned
+    if isinstance(value, (list, tuple)):
+        return [firebase_safe_value(item) for item in value]
+    return value
 
 
 def stats(cfg):
@@ -1796,7 +1811,7 @@ def main():
                     break
             except Exception as update_error:
                 print("[BotHub] falha ao verificar atualização do cluster:",str(update_error)[:220],flush=True)
-            fb("PATCH","workers/"+did,t,stats(cfg))
+            fb("PATCH","workers/"+did,t,firebase_safe_value(stats(cfg)))
             publish_applied_cluster_update(t,cfg)
             process_bot_deletions(t, cfg["device_id"])
             queue=load_worker_queue(t, cfg["device_id"]) or {}
