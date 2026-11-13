@@ -127,7 +127,23 @@ def request_provider(item,text):
  return answer.strip()[:3800]
 def call_ai(uid,text):
  # Ordem compatível com o IA CHAT: LLM7 sem chave, API pessoal, APIs globais habilitadas e BlockRun.
- pool=[({"provider":"llm7","model":"fast","key":""},False)]
+ pool=[({"provider":"llm7","model":"fast","key":""},False),
+       ({"provider":"llm7","model":"fast","key":"auto-generated"},False)]
+ # APIs configuradas diretamente no bot, usando a mesma estrutura do IA CHAT.
+ ai_cfg=CFG.get("ai") if isinstance(CFG.get("ai"),dict) else {}
+ configured=ai_cfg.get("api_keys") if isinstance(ai_cfg.get("api_keys"),dict) else {}
+ fallback=ai_cfg.get("fallback_order") if isinstance(ai_cfg.get("fallback_order"),list) else ["chatgpt","openrouter","groq","llm7"]
+ for provider in fallback:
+  provider=str(provider).lower()
+  keys=configured.get(provider,[]) if provider!="blockrun" else []
+  if isinstance(keys,str):keys=[keys]
+  if isinstance(keys,list):
+   for key in keys:
+    if isinstance(key,str) and key.strip():pool.append(({"provider":provider,"key":key.strip()},False))
+ legacy=CFG.get("apis",[])
+ if isinstance(legacy,list):
+  for key in legacy:
+   if isinstance(key,str) and key.strip():pool.append(({"provider":"groq","key":key.strip()},False))
  personal=get(f"botHubUserApis/{uid}/{BOT_ID}") or {}
  if isinstance(personal,dict) and personal.get("enabled") and personal.get("key"):
   pool.append((personal,False))
@@ -138,7 +154,9 @@ def call_ai(uid,text):
  if isinstance(opt,dict) and opt.get("enabled") and has_points and isinstance(global_items,dict):
   for item in global_items.values():
    if not isinstance(item,dict) or not item.get("enabled",True) or not item.get("key"):continue
-   if item.get("available") is False and int(item.get("availableUntil") or 0)>int(time.time()*1000):continue
+   if item.get("available") is False:
+    until=int(item.get("availableUntil") or 0)
+    if not until or until>int(time.time()*1000):continue
    pool.append((item,True))
  pool.append(({"provider":"blockrun","model":"nvidia/nemotron-3.5-lightning","key":""},False))
  errors=[]
