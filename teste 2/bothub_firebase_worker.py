@@ -102,10 +102,11 @@ def fb(method,path,tok,data=None,_retried=False):
 def stats(cfg):
     d=shutil.disk_usage(str(ROOT))
     running=[k for k,p in PROCS.items() if p.poll() is None]
+    ready=[k for k in running if (ROOT/"bots"/sid(k)/".bothub_discord_ready").is_file()]
     x={"deviceId":cfg["device_id"],"uid":cfg.get("uid",""),"hostname":socket.gethostname(),
        "label":socket.gethostname(),"platform":platform.platform(),"diskFreeBytes":d.free,
        "diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"runningBots":len(running),
-       "runningBotIds":running,"lastSeen":int(time.time()*1000),
+       "runningBotIds":running,"readyBotIds":ready,"lastSeen":int(time.time()*1000),
        "uptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerUptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerStartedAt":int(WORKER_STARTED*1000)}
@@ -177,6 +178,8 @@ def mark_clean_exit(k, requested_at, code=0):
 
 def stop(k):
     p=PROCS.pop(k,None);l=LOGS.pop(k,None)
+    try:(ROOT/"bots"/sid(k)/".bothub_discord_ready").unlink(missing_ok=True)
+    except OSError:pass
     if p and p.poll() is None:
         try:
             if os.name != "nt" and p.pid:
@@ -633,7 +636,7 @@ def start(k,b):
     sync_bot_state(k, 'pull')
     if not script.exists():
         default_urls={
-            "ia_chat":os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py"),
+            "ia_chat":os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"),
             "standard":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/standard_main.py",
             "bot_admin":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bot_admin.py",
         }
@@ -684,6 +687,9 @@ def start(k,b):
         if sys.platform.startswith("linux"):
             popen_kwargs["preexec_fn"] = child_parent_death_signal
         try:
+            # Remove o sinal antigo antes de cada inicialização; só on_ready do Discord recria.
+            try:(folder/".bothub_discord_ready").unlink(missing_ok=True)
+            except OSError:pass
             child_env=os.environ.copy()
             child_env["BOTHUB_SHARED_STATE_DIR"]=str(ROOT/".bothub_shared")
             child_env["BOTHUB_BOT_ID"]=str(k)
