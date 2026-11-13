@@ -816,7 +816,7 @@ def start(k,b):
         merged_ids=[]
         for value in list(panel_ids)+list(local_ids):
             value=str(value).strip()
-            if re.fullmatch(r"\\d{15,22}",value) and value not in merged_ids:
+            if re.fullmatch(r"\d{15,22}",value) and value not in merged_ids:
                 merged_ids.append(value)
         cfg["botHubAllowedGuildIds"]=merged_ids
     save_json(cp,cfg)
