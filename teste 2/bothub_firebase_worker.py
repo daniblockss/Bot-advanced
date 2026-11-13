@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # BotHub Firebase worker: auto-registers this device using Firebase Anonymous Auth.
-import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,signal,atexit,base64,hashlib,sqlite3
+import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,signal,atexit,base64,hashlib,sqlite3,threading
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.2"
+WORKER_VERSION="2026.11.12.3"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -13,6 +13,7 @@ API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 PROCS={};LOGS={};LOG_OFFSETS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
+HEARTBEAT_STOP=threading.Event();HEARTBEAT_THREAD=None
 
 TERMUX_CONSOLE = "com.termux" in str(Path.home()).lower() or "ANDROID_ROOT" in os.environ
 
@@ -143,7 +144,7 @@ def stats(cfg):
        "label":socket.gethostname(),"platform":platform.platform(),"diskFreeBytes":d.free,
        "diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"workerVersion":WORKER_VERSION,
        "runningBots":len(running),"runningBotIds":running,"readyBotIds":ready,
-       "lastSeen":int(time.time()*1000),
+       "lastSeen":int(time.time()*1000),"online":True,"status":"online",
        "uptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerUptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerStartedAt":int(WORKER_STARTED*1000)}
@@ -1456,6 +1457,31 @@ def acquire_worker_lock():
     handle.flush()
     return handle
 
+def worker_presence_heartbeat():
+    """Atualiza somente a presença em paralelo ao processamento dos bots."""
+    last_error_log = 0
+    while not HEARTBEAT_STOP.is_set():
+        tok = LAST_TOKEN
+        did = LAST_DID
+        if tok and did:
+            now = int(time.time() * 1000)
+            try:
+                response = requests.patch(
+                    DB + "/workers/" + did + ".json",
+                    params={"auth": tok},
+                    json={"lastSeen": now, "online": True, "status": "online"},
+                    headers={"User-Agent": "BotHub-Cluster/4.0"},
+                    timeout=8,
+                )
+                if response.status_code >= 300:
+                    raise RuntimeError("Firebase HTTP " + str(response.status_code))
+            except Exception as exc:
+                if time.time() - last_error_log >= 30:
+                    print("[BotHub] heartbeat de presença temporariamente indisponível:", str(exc)[:140], flush=True)
+                    last_error_log = time.time()
+        HEARTBEAT_STOP.wait(5)
+
+
 def main():
     global CURRENT_CFG, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN, LEASE_MISSES
     enable_termux_console_timestamps()
@@ -1475,6 +1501,9 @@ def main():
     signal.signal(signal.SIGTERM, handle_shutdown_signal)
     signal.signal(signal.SIGINT, handle_shutdown_signal)
     atexit.register(cleanup_children)
+    global HEARTBEAT_THREAD
+    HEARTBEAT_THREAD = threading.Thread(target=worker_presence_heartbeat, name="BotHubPresence", daemon=True)
+    HEARTBEAT_THREAD.start()
     kill_existing_bothub_bots()
     kill_bot_processes_under_root()
     print("[BotHub] Todos os main.py antigos desta instalação foram encerrados; iniciando os bots atribuídos.", flush=True)
