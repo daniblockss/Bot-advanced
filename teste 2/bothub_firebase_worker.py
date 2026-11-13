@@ -892,12 +892,17 @@ def process_worker_commands(cfg,tok,did,queue):
         except Exception as e:
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
-def download_latest_main(folder):
-    url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py")
+def latest_main_bytes():
+    # A atualização dos bots IA CHAT usa a versão publicada dentro de teste 2/.
+    url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py")
     response=S.get(url,timeout=45);response.raise_for_status()
     data=response.content
     if len(data)<10000: raise RuntimeError("main.py baixado está incompleto.")
-    compile(data.decode("utf-8"),"main.py","exec")
+    compile(data.decode("utf-8"),"main.py (versão publicada)","exec")
+    return data
+
+def download_latest_main(folder):
+    data=latest_main_bytes()
     target=folder/"main.py";tmp=folder/"main.py.update.tmp"
     backup=folder/".main.py.last-good"
     if target.exists():
@@ -967,6 +972,23 @@ def process_release_updates(tok, queue):
             state={}
         if state.get("updateId")!=update_id:
             state={"updateId":update_id,"announced":False,"updated":False,"attempts":0}
+        # Uma publicação nova pode apontar para o mesmo main.py já instalado.
+        # Nesse caso, confirma a versão sem mandar DM nem reiniciar o bot.
+        if not state.get("updated"):
+            try:
+                installed=folder/"main.py"
+                published=latest_main_bytes()
+                if installed.is_file() and installed.read_bytes()==published:
+                    state.update(updateId=update_id,announced=True,updated=True,
+                                 updatedAt=int(time.time()*1000),bytes=len(published),
+                                 retryAfter=0,lastError="",alreadyCurrent=True)
+                    save_json(state_file,state)
+                    print("[BotHub] bot já está na versão publicada; atualização ignorada sem reiniciar:",raw_id,flush=True)
+                    continue
+            except Exception as compare_error:
+                print("[BotHub] não foi possível comparar a versão instalada de",raw_id,":",str(compare_error)[:160],flush=True)
+        if state.get("updated"):
+            continue
         if not state.get("announced"):
             announced=notify_update(raw_id,bot_cfg,release,notification_state)
             state["announced"]=bool(announced)
@@ -975,8 +997,6 @@ def process_release_updates(tok, queue):
         request_file=folder/".bothub_update_request"
         mandatory=release.get("type")=="mandatory"
         accepted=request_file.exists()
-        if state.get("updated"):
-            continue
         # Não repete download/restart a cada ciclo quando a atualização falhou.
         # A tentativa seguinte só ocorre depois do backoff persistido em disco.
         try:
