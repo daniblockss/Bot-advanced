@@ -7202,7 +7202,7 @@ async def garantir_personalidade_inicial():
             foto_path = os.path.join(BASE_DIR, "foto de perfil.txt")
             if os.path.isfile(foto_path):
                 foto_txt = ler_txt(foto_path)
-                if foto_txt.startswith("AVATAR_URL: " + str(bot.user.display_avatar.with_size(1024).url) + "\\n"):
+                if foto_txt.startswith("AVATAR_URL: " + str(bot.user.display_avatar.with_size(1024).url) + "\n"):
                     marcador_visual = "DESCRICAO_VISUAL_PARA_IA:"
                     if marcador_visual in foto_txt:
                         perfil["visual_description"] = foto_txt.split(marcador_visual, 1)[1].strip()[:1600]
@@ -9759,6 +9759,51 @@ async def solicitar_atualizacao_bot(ctx):
 # ==========================
 
 
+COMUNIDADES_AUTORIZADAS_FILE = os.path.join(BASE_DIR, "comunidades_autorizadas.txt")
+
+def carregar_comunidades_persistidas():
+    """Recupera a allowlist compartilhada pelo worker via Firebase."""
+    ids = set()
+    try:
+        with open(COMUNIDADES_AUTORIZADAS_FILE, "r", encoding="utf-8") as arquivo:
+            for linha in arquivo:
+                valor = linha.strip()
+                if valor.isdigit() and int(valor) > 0:
+                    ids.add(int(valor))
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        log_console(f"Não foi possível ler comunidades_autorizadas.txt ({type(error).__name__}).")
+    for chave in ("comunidades_autorizadas", "botHubAllowedGuildIds"):
+        valores = config.get(chave, [])
+        if isinstance(valores, (list, tuple, set)):
+            ids.update(int(v) for v in valores if str(v).isdigit() and int(v) > 0)
+    config["botHubAllowedGuildIds"] = sorted(ids)
+    config["botHubAllowedGuildIds"] = sorted(ids)
+    salvar_comunidades_persistidas()
+
+def salvar_comunidades_persistidas():
+    ids = set()
+    for chave in ("comunidades_autorizadas", "botHubAllowedGuildIds"):
+        valores = config.get(chave, [])
+        if isinstance(valores, (list, tuple, set)):
+            ids.update(int(v) for v in valores if str(v).isdigit() and int(v) > 0)
+    conteudo = "".join(str(gid) + "\n" for gid in sorted(ids))
+    atual = ""
+    try:
+        with open(COMUNIDADES_AUTORIZADAS_FILE, "r", encoding="utf-8") as arquivo:
+            atual = arquivo.read()
+    except OSError:
+        pass
+    if atual == conteudo:
+        return False
+    tmp = COMUNIDADES_AUTORIZADAS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as arquivo:
+        arquivo.write(conteudo)
+    os.replace(tmp, COMUNIDADES_AUTORIZADAS_FILE)
+    return True
+
+
 def _bot_auth_settings():
     value = config.get("bot_authorization", {})
     return value if isinstance(value, dict) else {}
@@ -9770,7 +9815,7 @@ def _bot_auth_guild_ids():
         values = _bot_auth_settings().get("authorized_guild_ids", [])
     if not isinstance(values, (list, tuple, set)):
         return set()
-    return {int(value) for value in values if str(value).isdigit()}
+    allowed = {int(value) for value in values if str(value).isdigit()}\n    try:\n        with open(COMUNIDADES_AUTORIZADAS_FILE, "r", encoding="utf-8") as arquivo:\n            allowed.update(int(line.strip()) for line in arquivo if line.strip().isdigit())\n    except OSError:\n        pass\n    return allowed
 
 
 def _bot_auth_user_ids():
@@ -9786,7 +9831,7 @@ def _bot_auth_can_allow(user_id):
 
 
 def _bot_auth_guild_allowed(guild_id):
-    return int(guild_id) in _bot_auth_guild_ids()
+    allowed = _bot_auth_guild_ids()\n    if allowed:\n        config["botHubAllowedGuildIds"] = sorted(allowed)\n        salvar_comunidades_persistidas()\n    return int(guild_id) in allowed
 
 
 @bot.command(name="allow")
