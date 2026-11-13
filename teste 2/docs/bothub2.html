@@ -1433,7 +1433,7 @@ async function rebalance(){
       assignments[bid]=target.id;
     }
 
-    const signature=JSON.stringify(assignments);
+    const signature=JSON.stringify({assignments,bots:Object.fromEntries(enabled.map(([id,b])=>[id,[b.name,b.token,b.config||{},b.botType||"ia_chat",b.ownerId||null,b.updatedAt||0]]))});
     if(signature===lastAssignment)return;
     lastAssignment=signature;
     const updates={};
