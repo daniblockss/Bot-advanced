@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.13"
+WORKER_VERSION="2026.11.12.14"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -1145,8 +1145,8 @@ def process_worker_commands(cfg,tok,did,queue):
                 fb("PATCH","bots/"+urllib.parse.quote(bid,safe=""),tok,updates)
                 bot_cfg.update(updates)
                 bot_cfg["config"]=config
-                if candidate:
-                    stop(bid)
+                # Reinicia para carregar token e política de servidores atualizados no config.json.
+                stop(bid)
                 result.update(status="ok",message="Perfil atualizado no Discord e no Firebase. Token validado para a mesma conta; permissões de servidores salvas.",nameChanged=True,avatarChanged=bool(avatar),descriptionChanged=True,tokenChanged=bool(candidate),guildAccessMode=mode,guildIds=guild_ids,**fresh)
             else:
                 result.update(status="ok",result=file_command(cmd))
