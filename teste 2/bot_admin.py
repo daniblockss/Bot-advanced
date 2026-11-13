@@ -153,25 +153,22 @@ def call_ai(uid,text):
    errors.append(str(error)[:240])
  return "As APIs configuradas não responderam: "+(" | ".join(errors[-5:]) or "nenhum provedor disponível.")
 def validate_api_key(provider,key,model):
- endpoint=api_endpoint(provider)
- chosen=model or ({"groq":"llama-3.3-70b-versatile","openrouter":"openai/gpt-4o-mini","chatgpt":"gpt-4o-mini","llm7":"gpt-4o-mini"}.get(provider,"gpt-4o-mini"))
- payload={"model":chosen,"messages":[{"role":"user","content":"Responda apenas OK."}],"max_tokens":5}
- req=Request(endpoint,data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"})
- with urlopen(req,timeout=20) as response:
-  json.loads(response.read())
+ defaults={"chatgpt":"gpt-6-luna","openrouter":"openai/gpt-4o-mini","groq":"llama-3.3-70b-versatile","llm7":"fast","blockrun":"nvidia/nemotron-3.5-lightning"}
+ chosen=model or defaults.get(provider,"")
+ request_provider({"provider":provider,"key":key,"model":chosen}, "Responda apenas OK.")
  return chosen
 class ApiModal(discord.ui.Modal,title="Cadastrar API"):
  def __init__(self,target_bot_id):
   super().__init__()
   self.target.default=str(target_bot_id)
  scope=discord.ui.TextInput(label="Destino: pessoal ou global",default="pessoal",max_length=15)
- provider=discord.ui.TextInput(label="Provedor: openrouter, groq, llm7 ou chatgpt",default="openrouter",max_length=30)
+ provider=discord.ui.TextInput(label="Provedor: chatgpt, openrouter, groq, llm7 ou blockrun",default="openrouter",max_length=30)
  key=discord.ui.TextInput(label="Chave da API",max_length=500)
  model=discord.ui.TextInput(label="Modelo (opcional)",required=False,max_length=120)
  target=discord.ui.TextInput(label="ID do seu bot (para API pessoal)",required=False,max_length=40)
  async def on_submit(self,interaction):
   scope=str(self.scope.value).strip().lower(); p=str(self.provider.value).strip().lower(); key=str(self.key.value).strip(); model=str(self.model.value).strip()
-  if p not in {"openrouter","groq","llm7","chatgpt"}:return await interaction.response.send_message("Provedor não suportado.",ephemeral=True)
+  if p not in {"openrouter","groq","llm7","chatgpt","blockrun"}:return await interaction.response.send_message("Provedor não suportado.",ephemeral=True)
   if scope not in {"pessoal","global"}:return await interaction.response.send_message("Destino deve ser pessoal ou global.",ephemeral=True)
   if scope=="pessoal":
    bid=str(self.target.value).strip() or BOT_ID
