@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import requests
 
-WORKER_VERSION="2026.11.13.3"
+WORKER_VERSION="2026.11.13.4"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -1406,6 +1406,7 @@ def process_release_updates(tok, queue):
         if state.get("updateId")!=update_id:
             publish_bot_update(bid,"received","Atualização recebida pelo worker.",None,update_id)
             try:
+                installed_data=(folder/"main.py").read_bytes() if (folder/"main.py").is_file() else b""
                 latest_data=fetch_latest_main()
                 latest_version=main_file_version(latest_data)
                 latest_display_version=main_display_version(latest_data)
