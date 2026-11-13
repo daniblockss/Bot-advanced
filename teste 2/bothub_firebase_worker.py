@@ -798,6 +798,17 @@ def process_worker_commands(cfg,tok,did,queue):
                 stopped = tracked or orphan_stopped
                 print("[BotHub] parada explícita confirmada:",bid,"processo encerrado:",stopped,flush=True)
                 result.update(status="ok",message="main.py do bot encerrado neste worker.",stopped=stopped)
+            elif op=="create_invite":
+                bid=sid(cmd.get("botId",""))
+                bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
+                secret=bot_cfg.get("token") if isinstance(bot_cfg,dict) else None
+                if not secret: raise ValueError("O bot não está atribuído a este worker ou não tem token.")
+                profile=discord_api(secret,"GET","/users/@me",None)
+                application_id=str(profile.get("id") or "")
+                if not application_id: raise RuntimeError("Discord não retornou o ID da aplicação.")
+                permissions=117840 if str(bot_cfg.get("botType") or "ia_chat").lower()=="bot_admin" else 0
+                invite_url=f"https://discord.com/oauth2/authorize?client_id={application_id}&scope=bot%20applications.commands&permissions={permissions}"
+                result.update(status="ok",inviteUrl=invite_url,applicationId=application_id,cached=False)
             elif op=="profile":
                 bid=str(cmd.get("botId",""))
                 bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
