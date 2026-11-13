@@ -907,6 +907,15 @@ const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getDatabase(app);
 const testRef=path=>ref(db,path);
 
 let workerData={},botData={},clusterUpdateProgress={},botVersionData={},stopListeners=[],busy=false,lastAssignment='';
+let trustedWorkerUids=new Set();
+async function syncTrustedWorkers(){
+  for(const w of Object.values(workerData)){
+    const uid=String(w.uid||'').trim();
+    if(!uid||trustedWorkerUids.has(uid))continue;
+    try{await set(testRef('botHubTrustedWorkers/'+uid),true);trustedWorkerUids.add(uid);}
+    catch(e){console.warn('[BotHub] Não foi possível autorizar worker Firebase:',e.message||e);}
+  }
+}
 let currentModalBotId = null;
 
 const bytes=n=>{let v=Number(n)||0,u=['B','KB','MB','GB','TB'],i=0;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i?1:0)+' '+u[i]};
@@ -1591,7 +1600,7 @@ function start(){
   $('login').classList.add('hidden');
   $('dashboard').classList.remove('hidden');
   $('connection').textContent='Conectando…';$('connection').className='badge';
-  watch('workers',v=>{workerData=v;cleanupStaleWorkers();drawWorkers();drawClusterProgress();rebalance().then(drawBots)});
+  watch('workers',v=>{workerData=v;syncTrustedWorkers();cleanupStaleWorkers();drawWorkers();drawClusterProgress();rebalance().then(drawBots)});
   watch('botHubClusterUpdates/progress',v=>{clusterUpdateProgress=v||{};drawClusterProgress();drawWorkers()});watch('botHubBotVersions',v=>{botVersionData=v||{};drawBotUpdateProgress();drawBots()});
   watch('bots',v=>{botData=v;drawBots();rebalance()});
   watch('botHubGlobalApis',()=>renderGlobalApis());
