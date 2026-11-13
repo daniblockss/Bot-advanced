@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.7</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.8</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -790,21 +790,7 @@ function navigate(p){
   $('sidebar').classList.remove('open');
   window.scrollTo({top:0,behavior:'smooth'});
 
-  if(p==='workersSection'){
-    workersRenderAfter=Date.now()+5000;
-    if(workersRenderTimer)clearTimeout(workersRenderTimer);
-    const list=document.getElementById('workers');
-    if(list)list.innerHTML='<div class="muted">Atualizando lista de workers… (até 5 segundos)</div>';
-    workersRenderTimer=setTimeout(()=>{
-      workersRenderTimer=null;
-      workersRenderAfter=0;
-      drawWorkers();
-    },5000);
-  }else if(workersRenderTimer){
-    clearTimeout(workersRenderTimer);
-    workersRenderTimer=null;
-    workersRenderAfter=0;
-  }
+  window.dispatchEvent(new CustomEvent('bothub:page-change',{detail:{page:p}}));
   if(p==='overview'){
     startTypewriterOnce();
     if(realtimeChart)realtimeChart.update();
@@ -1002,6 +988,24 @@ function drawWorkers(){
 
   document.querySelectorAll('[data-remove-worker]').forEach(b=>b.onclick=()=>removeWorker(b.dataset.removeWorker));
 }
+
+window.addEventListener('bothub:page-change',event=>{
+  if(event.detail?.page==='workersSection'){
+    workersRenderAfter=Date.now()+5000;
+    if(workersRenderTimer)clearTimeout(workersRenderTimer);
+    const list=document.getElementById('workers');
+    if(list)list.innerHTML='<div class="muted">Atualizando lista de workers… (até 5 segundos)</div>';
+    workersRenderTimer=setTimeout(()=>{
+      workersRenderTimer=null;
+      workersRenderAfter=0;
+      drawWorkers();
+    },5000);
+  }else if(workersRenderTimer){
+    clearTimeout(workersRenderTimer);
+    workersRenderTimer=null;
+    workersRenderAfter=0;
+  }
+});
 
 function drawBots(){
   const bots=Object.entries(botData);
