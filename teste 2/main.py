@@ -888,15 +888,15 @@ class VoiceSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
-        # O dono do servidor que adicionou o bot recebe acesso supremo neste servidor.
-        # A autorização é por servidor; isso não promove o dono globalmente.
+        # Somente a primeira comunidade recebe autorização automática.
+        autorizar_primeira_comunidade([guild])
         try:
             owners = config.setdefault("criadores_supremos_guild", {})
             owners[str(guild.id)] = int(guild.owner_id)
             salvar_config(config)
-            log_console(f"Criador supremo do servidor {guild.id} registrado: {guild.owner_id}")
+            log_console(f"Responsável local da comunidade {guild.id} registrado: {guild.owner_id}")
         except Exception as error:
-            log_console(f"Não foi possível registrar o dono do servidor {guild.id}: {type(error).__name__}")
+            log_console(f"Não foi possível registrar o responsável da comunidade {guild.id}: {type(error).__name__}")
         if _bot_auth_guild_allowed(guild.id):
             await self.sync_commands(guild)
 
@@ -7434,6 +7434,16 @@ async def garantir_personalidade_inicial():
 
 @bot.event
 async def on_ready():
+    # Se o bot já estava em comunidades antes desta versão, registra a primeira
+    # somente quando ainda não existe nenhuma autorização salva.
+    autorizar_primeira_comunidade(bot.guilds)
+    await registrar_criador_token()
+    try:
+        Path(os.path.join(BASE_DIR, ".bothub_discord_ready")).write_text(
+            str(int(time.time() * 1000)), encoding="utf-8"
+        )
+    except OSError:
+        pass
     DISCORD_LOGS.start(bot)
     try:
         await atualizar_memoria_foto_perfil()
@@ -7453,6 +7463,24 @@ async def on_ready():
     if not verificar_lembretes_pendentes.is_running():
         verificar_lembretes_pendentes.start()
     log_console(f"🌪️ Conectado como {bot.user}! Permissões restritas online.")
+
+@bot.event
+async def on_disconnect():
+    try:
+        Path(os.path.join(BASE_DIR, ".bothub_discord_ready")).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+@bot.event
+async def on_resumed():
+    try:
+        Path(os.path.join(BASE_DIR, ".bothub_discord_ready")).write_text(
+            str(int(time.time() * 1000)), encoding="utf-8"
+        )
+    except OSError:
+        pass
+
 
 @bot.event
 async def on_command_error(ctx, error):
@@ -10003,8 +10031,43 @@ def _bot_auth_user_ids():
 
 
 def _bot_auth_can_allow(user_id):
-    # Somente criadores globais do BotHub ou IDs cadastrados no painel deste bot.
+    # O criador global do BotHub ou o proprietário do aplicativo/token do Discord.
     return int(user_id) in obter_ids_criadores() or int(user_id) in _bot_auth_user_ids()
+
+
+def autorizar_primeira_comunidade(guilds):
+    """Autoriza uma única comunidade automaticamente, apenas se o bot ainda não tiver nenhuma."""
+    if _bot_auth_guild_ids():
+        return None
+    guild = next(iter(guilds or []), None)
+    if guild is None:
+        return None
+    guild_id = int(guild.id)
+    config.setdefault("comunidades_autorizadas", []).append(guild_id)
+    config.setdefault("botHubAllowedGuildIds", []).append(guild_id)
+    salvar_comunidades_persistidas()
+    salvar_config(config)
+    log_console(f"Primeira comunidade autorizada automaticamente: {guild_id}")
+    return guild_id
+
+
+async def registrar_criador_token():
+    """Obtém o proprietário real do aplicativo Discord para permitir que ele use !allow."""
+    try:
+        application = await bot.application_info()
+        owner = getattr(application, "owner", None)
+        owner_id = getattr(owner, "id", None)
+        if owner_id:
+            auth = config.setdefault("bot_authorization", {})
+            allowed = auth.setdefault("allow_user_ids", [])
+            if not isinstance(allowed, list):
+                allowed = auth["allow_user_ids"] = []
+            if str(owner_id) not in {str(value) for value in allowed}:
+                allowed.append(str(owner_id))
+                salvar_config(config)
+                log_console("Criador do token registrado para autorizar novas comunidades.")
+    except Exception as error:
+        log_console(f"Não foi possível identificar o criador do token ({type(error).__name__}).")
 
 
 def _bot_auth_guild_allowed(guild_id):
@@ -10018,9 +10081,9 @@ def _bot_auth_guild_allowed(guild_id):
 @bot.command(name="allow")
 @commands.guild_only()
 async def prefix_allow_comunidade(ctx):
-    # O dono da comunidade ou um criador global pode liberar somente esta comunidade.
-    if not is_creator(ctx):
-        return await ctx.reply("⛔ Somente o dono deste servidor ou um criador global pode usar `!allow`.")
+    # Apenas o criador global do BotHub ou o criador deste token pode liberar outra comunidade.
+    if not _bot_auth_can_allow(ctx.author.id):
+        return await ctx.reply("⛔ Somente o administrador do BotHub ou o criador deste bot pode usar `!allow`.")
     guild_id = int(ctx.guild.id)
     autorizadas = config.setdefault("comunidades_autorizadas", [])
     if guild_id not in {int(value) for value in autorizadas if str(value).isdigit()}:
@@ -10030,7 +10093,7 @@ async def prefix_allow_comunidade(ctx):
         bot_allowlist = config["botHubAllowedGuildIds"] = []
     if guild_id not in {int(value) for value in bot_allowlist if str(value).isdigit()}:
         bot_allowlist.append(guild_id)
-    config.setdefault("criadores_supremos_guild", {})[str(guild_id)] = int(ctx.guild.owner_id)
+    config.setdefault("criadores_supremos_guild", {})[str(guild_id)] = int(ctx.author.id)
     salvar_comunidades_persistidas()
     salvar_config(config)
     try:
