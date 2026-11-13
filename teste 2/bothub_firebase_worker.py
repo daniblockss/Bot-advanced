@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.10"
+WORKER_VERSION="2026.11.12.11"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -1395,12 +1395,37 @@ def wake_screen_for_cluster_update():
     except (OSError,subprocess.TimeoutExpired) as exc:
         log_throttled("wake_screen_update_error",60,"[BotHub] Não foi possível solicitar tela ativa:",str(exc)[:120])
 
-def process_cluster_update(tok):
-    """Em atualização obrigatória, baixa o instalador e o worker diretamente do GitHub."""
+def publish_cluster_progress(tok,cfg,update_id,status,message,version=None):
+    """Publica o andamento da atualização para o painel em tempo real."""
+    device_id=(cfg or {}).get("device_id") or CURRENT_DEVICE_ID
+    if not device_id:return
+    did=urllib.parse.quote(str(device_id),safe="")
+    payload={"deviceId":device_id,"updateId":str(update_id),"status":str(status),
+             "message":str(message)[:240],"updatedAt":int(time.time()*1000),
+             "workerVersion":WORKER_VERSION}
+    if version:payload["reportedVersion"]=str(version)
+    try:fb("PUT","botHubClusterUpdates/progress/"+did,tok,payload)
+    except Exception as exc:print("[BotHub] Falha ao publicar progresso:",str(exc)[:140],flush=True)
+
+
+def publish_applied_cluster_update(tok,cfg):
+    state_path=ROOT/".bothub_cluster_update_state.json"
+    try:state=json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    except Exception:state={}
+    if state.get("status")!="applied" or state.get("reportedAt") or not state.get("updateId"):return
+    publish_cluster_progress(tok,cfg,state["updateId"],"completed",
+        "Servidor atualizado e worker reiniciado. Versão do worker: "+WORKER_VERSION,WORKER_VERSION)
+    state["reportedAt"]=int(time.time()*1000);state["reportedVersion"]=WORKER_VERSION
+    save_json(state_path,state)
+
+
+def process_cluster_update(tok,cfg=None):
+    """Executa a atualização e transmite as etapas ao painel."""
     release=fb("GET","botHubClusterUpdates/current",tok)
     if not isinstance(release,dict) or not release.get("updateId"):
         return False
     update_id=str(release.get("updateId"))
+    publish_cluster_progress(tok,cfg,update_id,"received","Solicitação de atualização recebida pelo servidor.")
     state_path=ROOT/".bothub_cluster_update_state.json"
     try: state=json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
     except Exception: state={}
@@ -1408,6 +1433,7 @@ def process_cluster_update(tok):
         return False
 
     wake_screen_for_cluster_update()
+    publish_cluster_progress(tok,cfg,update_id,"downloading","Baixando e validando os arquivos do GitHub.")
 
     requested=release.get("files",[])
     if isinstance(requested,dict):
@@ -1430,6 +1456,7 @@ def process_cluster_update(tok):
 
     pending=ROOT/".bothub_cluster_update_pending.json"
     save_json(pending,{"updateId":update_id,"files":clean})
+    publish_cluster_progress(tok,cfg,update_id,"installing","Arquivos baixados e validados. Preparando a instalação.")
     helper="""import json,os,sys,time,subprocess
 from pathlib import Path
 parent=int(sys.argv[1]);root=Path(sys.argv[2]).resolve();py=sys.argv[3]
@@ -1468,6 +1495,7 @@ os.execv(str(venvpy),[str(venvpy),str(launcher)])
     helper_path=ROOT/".bothub_cluster_updater.py"
     helper_path.write_text(helper,encoding="utf-8")
     save_json(state_path,{"updateId":update_id,"status":"installing","requestedAt":int(time.time()*1000)})
+    publish_cluster_progress(tok,cfg,update_id,"restarting","Atualização preparada. start.py supervisionará o reinício do worker.")
     print("[BotHub] Atualização do cluster: baixando "+", ".join(clean.keys())+" diretamente do GitHub; reiniciando controlador.",flush=True)
     subprocess.Popen([sys.executable,str(helper_path),str(os.getpid()),str(ROOT),sys.executable],
         cwd=str(ROOT),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
@@ -1650,6 +1678,7 @@ def main():
             t=token(cfg);did=urllib.parse.quote(cfg["device_id"],safe="")
             LAST_TOKEN=t;LAST_DID=did;CURRENT_FIREBASE_TOKEN=t
             fb("PATCH","workers/"+did,t,stats(cfg))
+            publish_applied_cluster_update(t,cfg)
             process_bot_deletions(t, cfg["device_id"])
             queue=load_worker_queue(t, cfg["device_id"]) or {}
             LAST_QUEUE=queue if isinstance(queue,dict) else {}
@@ -1714,9 +1743,14 @@ def main():
                         start(k,bot_cfg)
                 except Exception as e: log_throttled("bot-failure:"+k,30,"[BotHub] falha no bot",k,str(e)[:220])
             try:
-                if process_cluster_update(t):
+                if process_cluster_update(t,cfg):
                     break
-            except Exception as e: print("[BotHub] falha ao atualizar arquivos de cluster:",str(e)[:220],flush=True)
+            except Exception as e:
+                try:
+                    rel=fb("GET","botHubClusterUpdates/current",t) or {}
+                    if rel.get("updateId"):publish_cluster_progress(t,cfg,rel.get("updateId"),"failed","Falha na atualização: "+str(e)[:180])
+                except Exception:pass
+                print("[BotHub] falha ao atualizar arquivos de cluster:",str(e)[:220],flush=True)
             try: process_release_updates(t,queue)
             except Exception as e: print("[BotHub] falha ao verificar atualização:",str(e)[:220],flush=True)
         except KeyboardInterrupt: break
