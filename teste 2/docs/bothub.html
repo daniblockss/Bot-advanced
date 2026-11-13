@@ -146,13 +146,55 @@ async function showBotLogs(id){
     out.textContent=(b.name||id)+" — "+(data.truncated?"Mostrando o trecho final do log. ":"")+"Tamanho total: "+bytes(data.size||0);
   }catch(e){out.className="error";out.textContent=e.message||String(e)}
 }
-async function rebalance(){if(busy)return;busy=true;try{const now=Date.now();const nodes=Object.entries(workerData).filter(([,w])=>eligible(w)).sort((a,b)=>capacity(b[1])-capacity(a[1]));const counts={};nodes.forEach(([id])=>counts[id]=0);const assignments={};const seenTokens=new Set();const enabled=Object.entries(botData).filter(([,b])=>b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off');for(const [bid,b] of enabled){const secret=String(b.token||'').trim();if(!secret||seenTokens.has(secret)){assignments[bid]=null;continue}seenTokens.add(secret);const previous=b.workerId||b.lastWorkerId||null;let target=previous;if(!target||!Object.prototype.hasOwnProperty.call(counts,target)||counts[target]>=capacity(workerData[target])){target=nodes.find(([id,w])=>counts[id]<capacity(w))?.[0]||previous}else if(!eligible(workerData[target])){target=nodes.find(([id,w])=>counts[id]<capacity(w))?.[0]||previous}if(target&&Object.prototype.hasOwnProperty.call(counts,target))counts[target]++;assignments[bid]=target}
-let signature=JSON.stringify({assignments,auth:Object.fromEntries(Object.entries(botData).map(([id,b])=>[id,[b.config?.botHubGuildAccessMode||'required',b.config?.botHubAllowedGuildIds||b.authorizedGuildIds||[]]]))});if(signature===lastAssignment){busy=false;return}lastAssignment=signature;
-const updates={};for(const [bid,b] of Object.entries(botData)){const wid=b.enabled?assignments[bid]||null:null;if((b.workerId||null)!==wid)updates['bots/'+bid+'/workerId']=wid}
-if(Object.keys(updates).length)await update(ref(db),updates);
-const allWorkerIds=new Set([...Object.keys(workerData),...Object.values(botData).map(b=>b.workerId).filter(Boolean)]);for(const wid of allWorkerIds){const assigned={};for(const [bid,b] of Object.entries(botData)){if(b.enabled&&assignments[bid]===wid)assigned[bid]={name:b.name,token:b.token,config:b.config||{},allowPasswordSalt:b.allowPasswordSalt||'',allowPasswordHash:b.allowPasswordHash||'',allowUserIds:Array.isArray(b.allowUserIds)?b.allowUserIds:[],authorizedGuildIds:Array.isArray(b.authorizedGuildIds)?b.authorizedGuildIds:[],enabled:true,desiredState:'on',updatedAt:b.updatedAt||now}}await set(testRef('workerTasks/'+wid),assigned)}
-}catch(e){console.error('Rebalance:',e);$('queueMsg').textContent='Erro ao distribuir: '+e.message}finally{busy=false}}
-async function toggleBot(id,enabled){
+async function rebalance(){
+  if(busy)return;
+  busy=true;
+  try{
+    const now=Date.now();
+    const nodes=Object.entries(workerData)
+      .filter(([,w])=>eligible(w))
+      .map(([id,w])=>({id,cap:Math.max(1,capacity(w)),count:0}))
+      .sort((a,b)=>b.cap-a.cap||a.id.localeCompare(b.id));
+    const assignments={};
+    const seenTokens=new Set();
+    const enabled=Object.entries(botData)
+      .filter(([,b])=>b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off')
+      .sort(([a],[b])=>a.localeCompare(b));
+    for(const [bid,b] of enabled){
+      const secret=String(b.token||'').trim();
+      if(!secret||seenTokens.has(secret)){assignments[bid]=null;continue}
+      seenTokens.add(secret);
+      const previous=b.workerId||b.lastWorkerId||null;
+      const available=nodes.filter(n=>n.count<n.cap);
+      if(!available.length){assignments[bid]=previous||null;continue}
+      const minLoad=Math.min(...available.map(n=>n.count/n.cap));
+      const tied=available.filter(n=>Math.abs((n.count/n.cap)-minLoad)<1e-9);
+      const target=tied.find(n=>n.id===previous)||tied[0];
+      target.count++;
+      assignments[bid]=target.id;
+    }
+    const signature=JSON.stringify({assignments,auth:Object.fromEntries(Object.entries(botData).map(([id,b])=>[id,[b.config?.botHubGuildAccessMode||'required',b.config?.botHubAllowedGuildIds||b.authorizedGuildIds||[]]]))});
+    if(signature===lastAssignment)return;
+    lastAssignment=signature;
+    const updates={};
+    for(const [bid,b] of Object.entries(botData)){
+      const wid=b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off'?(assignments[bid]||null):null;
+      if((b.workerId||null)!==wid)updates['bots/'+bid+'/workerId']=wid;
+    }
+    if(Object.keys(updates).length)await update(ref(db),updates);
+    const allWorkerIds=new Set([...Object.keys(workerData),...Object.values(botData).map(b=>b.workerId).filter(Boolean)]);
+    for(const wid of allWorkerIds){
+      const assigned={};
+      for(const [bid,b] of Object.entries(botData)){
+        if(b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off'&&assignments[bid]===wid)
+          assigned[bid]={name:b.name,token:b.token,config:b.config||{},allowPasswordSalt:b.allowPasswordSalt||'',allowPasswordHash:b.allowPasswordHash||'',allowUserIds:Array.isArray(b.allowUserIds)?b.allowUserIds:[],authorizedGuildIds:Array.isArray(b.authorizedGuildIds)?b.authorizedGuildIds:[],enabled:true,desiredState:'on',updatedAt:b.updatedAt||now};
+      }
+      await set(testRef('workerTasks/'+wid),assigned);
+    }
+    console.info('[BotHub] Distribuição equilibrada:',nodes.map(n=>({worker:n.id,bots:n.count,capacidade:n.cap})));
+  }catch(e){console.error('Rebalance:',e);$('queueMsg').textContent='Erro ao distribuir: '+e.message}
+  finally{busy=false}
+}async function toggleBot(id,enabled){
   try{
     const bot=botData[id]||{};
     const workerId=bot.workerId||bot.lastWorkerId||null;
