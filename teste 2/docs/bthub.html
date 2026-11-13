@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#080d18">
+<title>BotHub — Painel do usuário</title>
+<style>
+:root{color-scheme:dark;--bg:#080d18;--panel:#101a2b;--panel2:#142238;--line:#263750;--text:#edf4ff;--muted:#91a4bf;--cyan:#48d7ed;--blue:#6685ff;--green:#48d6a0;--red:#ff718b;--gold:#f7c96b}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 15% 0%,#14284b 0,transparent 42%),var(--bg);color:var(--text);font:14px Inter,system-ui,Arial,sans-serif}button,input{font:inherit}button{cursor:pointer}.hidden{display:none!important}.muted{color:var(--muted)}.small{font-size:12px;line-height:1.55}.wrap{max-width:1250px;margin:auto;padding:22px}.brand{display:flex;align-items:center;gap:11px;font-size:20px;font-weight:850;letter-spacing:-.5px}.logo{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:linear-gradient(135deg,var(--blue),var(--cyan));color:#06101c;font-size:20px;box-shadow:0 8px 28px #48d7ed30}.login{min-height:100vh;display:grid;place-items:center;padding:18px}.login-card{width:min(420px,100%);padding:28px;border:1px solid var(--line);border-radius:20px;background:#101a2bf2;box-shadow:0 24px 80px #0007}.login-card .brand{justify-content:center;margin-bottom:25px}.login-card h1{text-align:center;font-size:23px;margin:0 0 7px}.login-card>p{text-align:center;color:var(--muted);margin:0 0 22px}.field{margin:13px 0}.field label{display:block;color:var(--muted);font-size:12px;margin-bottom:7px}.field input{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:#091321;color:var(--text);outline:none}.field input:focus{border-color:var(--cyan)}.btn{border:0;border-radius:10px;padding:11px 15px;background:linear-gradient(120deg,var(--blue),var(--cyan));color:#06101c;font-weight:800}.btn:disabled{opacity:.45;cursor:not-allowed}.btn.secondary{background:#1c2c44;color:var(--text);border:1px solid var(--line)}.btn.block{width:100%;margin-top:9px}.msg{min-height:18px;margin-top:12px;color:var(--red);font-size:12px;white-space:pre-wrap}.top{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;padding:4px 0 20px}.user{display:flex;align-items:center;gap:12px}.avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#253a5b;color:var(--cyan);font-weight:800}.app{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px}.side,.card{background:#101a2bf2;border:1px solid var(--line);border-radius:16px}.side{padding:12px;height:max-content;position:sticky;top:16px}.nav{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:12px;border:0;border-radius:10px;background:transparent;color:var(--muted);font-weight:650;margin:2px 0}.nav.active,.nav:hover{background:#1a2c45;color:var(--text)}.nav span{width:20px;text-align:center}.content{min-width:0}.page-title{font-size:22px;font-weight:850;margin:0 0 5px}.page-desc{color:var(--muted);margin:0 0 18px;font-size:13px}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:14px}.card{padding:17px;margin-bottom:14px;min-width:0}.stat-label{color:var(--muted);font-size:12px}.stat-value{font-size:27px;font-weight:850;margin-top:7px}.stat-foot{font-size:11px;color:var(--muted);margin-top:4px}.section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:13px}.section-head h2{font-size:16px;margin:0}.empty{padding:25px 12px;text-align:center;color:var(--muted);border:1px dashed #31435c;border-radius:12px}.notice{padding:12px 14px;border-radius:11px;border:1px solid #6d572d;background:#332a183d;color:#f5d99c;margin-bottom:14px}.pill{font-size:11px;padding:5px 9px;border-radius:99px;background:#1b3441;color:var(--cyan)}.provider-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.provider{border:1px solid var(--line);border-radius:12px;padding:14px;background:#0c1625}.provider b{display:block;margin-bottom:5px}.provider p{font-size:11px;color:var(--muted);margin:0}.flow{display:grid;gap:9px}.flow-item{padding:12px;border:1px solid var(--line);border-radius:10px;background:#0c1625}.flow-item strong{display:block;margin-bottom:4px}.page{display:none}.page.active{display:block}.foot{color:var(--muted);font-size:11px;text-align:center;padding:18px 0}@media(max-width:800px){.wrap{padding:14px}.app{grid-template-columns:1fr}.side{position:static;display:flex;overflow-x:auto;gap:4px}.nav{white-space:nowrap;width:auto}.stats{grid-template-columns:1fr 1fr}.provider-grid{grid-template-columns:1fr}.nav span{width:auto}}@media(max-width:430px){.stats{grid-template-columns:1fr}.top{align-items:flex-start}}
+</style>
+</head>
+<body>
+<section id="loginScreen" class="login">
+  <div class="login-card">
+    <div class="brand"><div class="logo">B</div><span>BotHub</span></div>
+    <h1>Painel do usuário</h1>
+    <p>Entre para gerenciar seus bots e seus pontos.</p>
+    <form id="loginForm">
+      <div class="field"><label for="email">E-mail</label><input id="email" type="email" autocomplete="username" required placeholder="seu@email.com"></div>
+      <div class="field"><label for="password">Senha</label><input id="password" type="password" autocomplete="current-password" required placeholder="Sua senha"></div>
+      <button class="btn block" id="loginBtn" type="submit">Entrar no BotHub</button>
+    </form>
+    <div id="loginMsg" class="msg"></div>
+    <p class="small">Use a conta disponibilizada pelo BotHub. Este painel não solicita tokens de bots nem chaves de API na tela de login.</p>
+  </div>
+</section>
+<div id="appScreen" class="hidden">
+  <div class="wrap">
+    <header class="top">
+      <div class="brand"><div class="logo">B</div><span>BotHub <span class="muted" style="font-weight:500">/ usuário</span></span></div>
+      <div class="user"><div class="avatar" id="avatar">U</div><div><b id="userEmail">Conta</b><div class="muted small">Área do usuário</div></div><button class="btn secondary" id="logoutBtn">Sair</button></div>
+    </header>
+    <div class="app">
+      <aside class="side">
+        <button class="nav active" data-page="home"><span>⌂</span>Visão geral</button>
+        <button class="nav" data-page="bots"><span>◈</span>Meus bots</button>
+        <button class="nav" data-page="global"><span>◎</span>API Global</button>
+        <button class="nav" data-page="points"><span>✦</span>Pontos</button>
+        <button class="nav" data-page="history"><span>↗</span>Histórico</button>
+      </aside>
+      <main class="content">
+        <section class="page active" id="page-home">
+          <h1 class="page-title">Visão geral</h1><p class="page-desc">Acompanhe seus bots, pontos e contribuições para a rede global.</p>
+          <div class="stats">
+            <div class="card"><div class="stat-label">Meu saldo</div><div class="stat-value" id="pointsBalance">—</div><div class="stat-foot">Pontos disponíveis</div></div>
+            <div class="card"><div class="stat-label">Meus bots</div><div class="stat-value" id="botCount">—</div><div class="stat-foot">Bots cadastrados na sua conta</div></div>
+            <div class="card"><div class="stat-label">APIs contribuídas</div><div class="stat-value" id="apiCount">—</div><div class="stat-foot">Chaves válidas cadastradas</div></div>
+          </div>
+          <div class="notice"><b>Central do BotHub</b><br><span class="small">O painel visual está criado. As operações de bots, pontos, validação e compartilhamento de APIs serão conectadas ao backend seguro antes de receber dados ou chaves reais.</span></div>
+          <div class="card"><div class="section-head"><h2>Como funciona a inteligência artificial</h2><span class="pill">Fallback</span></div>
+            <div class="flow">
+              <div class="flow-item"><strong>1. LLM7 sem chave própria</strong><span class="small muted">Primeira tentativa do bot.</span></div>
+              <div class="flow-item"><strong>2. APIs configuradas no bot</strong><span class="small muted">Usadas se a primeira opção falhar.</span></div>
+              <div class="flow-item"><strong>3. API Global</strong><span class="small muted">Somente se ativada pelo dono do bot e disponível. O saldo só é debitado quando uma API global processa a solicitação.</span></div>
+              <div class="flow-item"><strong>4. BlockRun</strong><span class="small muted">Última alternativa.</span></div>
+            </div>
+          </div>
+        </section>
+        <section class="page" id="page-bots">
+          <h1 class="page-title">Meus bots</h1><p class="page-desc">Gerencie os bots vinculados à sua conta.</p>
+          <div class="card"><div class="section-head"><h2>Seus bots</h2><span class="pill">Área privada</span></div><div class="empty">A conexão com os bots será ativada na próxima etapa do backend.</div></div>
+        </section>
+        <section class="page" id="page-global">
+          <h1 class="page-title">API Global</h1><p class="page-desc">Contribua com chaves de IA válidas e receba pontos uma única vez por chave aprovada.</p>
+          <div class="notice"><b>Transparência e segurança</b><br><span class="small">Uma chave cadastrada aqui poderá ser usada por outros bots da rede. O proprietário precisa autorizar esse compartilhamento e entender que o provedor pode cobrar pelo consumo. Nunca cole uma chave enquanto a integração segura do servidor não estiver habilitada.</span></div>
+          <div class="provider-grid">
+            <div class="provider"><b>OpenAI / ChatGPT</b><p>Chaves da plataforma OpenAI.</p></div>
+            <div class="provider"><b>OpenRouter</b><p>Acesso a modelos por uma única API.</p></div>
+            <div class="provider"><b>LLM7</b><p>Provedor LLM7, conforme suporte da API.</p></div>
+          </div>
+          <div class="card" style="margin-top:14px"><div class="section-head"><h2>Minhas contribuições</h2><span class="pill">Em preparação</span></div><div class="empty">O cadastro e o teste das chaves serão habilitados após a criação do endpoint seguro. Por enquanto, esta página não recebe nem armazena chaves.</div></div>
+        </section>
+        <section class="page" id="page-points">
+          <h1 class="page-title">Pontos</h1><p class="page-desc">Consulte seu saldo e as opções de recarga.</p>
+          <div class="card"><div class="section-head"><h2>Saldo de pontos</h2><span class="pill">Carteira</span></div><div class="stat-value" id="pointsBalanceLarge">—</div><p class="small muted">Compras e pagamentos serão integrados depois de definirmos o backend e o fluxo de autorização adequado.</p><button class="btn" disabled>Comprar pontos — em preparação</button></div>
+        </section>
+        <section class="page" id="page-history">
+          <h1 class="page-title">Histórico</h1><p class="page-desc">Veja ganhos por contribuição e consumo de pontos.</p>
+          <div class="card"><div class="empty">Ainda não há histórico conectado.</div></div>
+        </section>
+      </main>
+    </div>
+    <div class="foot">BotHub · Painel do usuário · Nunca compartilhe sua senha.</div>
+  </div>
+</div>
+<script type="module">
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+const firebaseConfig={apiKey:'AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE',authDomain:'bothub-bca02.firebaseapp.com',databaseURL:'https://bothub-bca02-default-rtdb.firebaseio.com',projectId:'bothub-bca02',storageBucket:'bothub-bca02.firebasestorage.app',messagingSenderId:'890310788815',appId:'1:890310788815:web:a08d772d6f1afffb3e99ba'};
+const app=initializeApp(firebaseConfig),auth=getAuth(app);
+const $=id=>document.getElementById(id);
+$('loginForm').addEventListener('submit',async e=>{
+ e.preventDefault();$('loginMsg').textContent='Entrando...';$('loginBtn').disabled=true;
+ try{await signInWithEmailAndPassword(auth,$('email').value.trim(),$('password').value);}
+ catch(err){$('loginMsg').textContent=err.code==='auth/invalid-credential'?'E-mail ou senha incorretos.':(err.message||'Não foi possível entrar.');}
+ finally{$('loginBtn').disabled=false;}
+});
+$('logoutBtn').addEventListener('click',()=>signOut(auth));
+onAuthStateChanged(auth,user=>{
+ $('loginScreen').classList.toggle('hidden',!!user);
+ $('appScreen').classList.toggle('hidden',!user);
+ if(user){$('userEmail').textContent=user.email||'Usuário';$('avatar').textContent=(user.email||'U').charAt(0).toUpperCase();}
+});
+document.querySelectorAll('.nav').forEach(btn=>btn.addEventListener('click',()=>{
+ document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===btn));
+ document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+btn.dataset.page));
+}));
+</script>
+</body>
+</html>
