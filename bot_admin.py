@@ -178,7 +178,7 @@ async def on_ready():print(f"[BotHub Admin] Conectado como {bot.user} ({bot.user
 @bot.event
 async def on_message(message):
  if message.author.bot:return
- if message.guild and ENTRY_CHANNEL and message.channel.id==ENTRY_CHANNEL and message.content.strip() and message.author.id not in STAFF:
+ if message.guild and ((ENTRY_CHANNEL and message.channel.id==ENTRY_CHANNEL) or (bot.user and bot.user in message.mentions)) and message.content.strip() and message.author.id not in STAFF:
   if message.author.id not in ticket_locks:
    ticket_locks.add(message.author.id)
    try:
@@ -187,6 +187,15 @@ async def on_message(message):
    finally:ticket_locks.discard(message.author.id)
   return
  if message.guild and str(getattr(message.channel,"topic","") or "").startswith("bothub-ticket:") and not message.content.startswith("!"):
+  text=message.content.lower()
+  if any(term in text for term in ("painel de api","gerenciar api","adicionar api","configurar api")):
+   await message.channel.send(embed=emb("Painel de APIs","Escolha em qual bot configurar suas APIs."),view=ApiView(message.author.id));return
+  if any(term in text for term in ("meus bots","configurar bot","configurações dos bots","painel dos bots")):
+   await message.channel.send(embed=emb("Configurações dos seus bots","Selecione um bot para consultar estado e convite."),view=ConfigView(message.author.id));return
+  if any(term in text for term in ("quantos pontos","meus pontos","saldo de pontos")):
+   await message.channel.send(f"Você tem **{points(message.author.id)} pontos**.");return
+  if "comprar pontos" in text or "quero pontos" in text:
+   await message.channel.send("Use !comprar-pontos quantidade para registrar sua solicitação. A equipe confirma o pagamento antes de adicionar.");return
   response=await __import__("asyncio").to_thread(call_ai,message.author.id,message.content)
   await message.channel.send(response);return
  await bot.process_commands(message)
@@ -203,6 +212,8 @@ async def buy(ctx,amount:int=0):
  await ctx.reply(f"{mentions} {ctx.author.mention} solicitou a compra de **{amount} pontos**. A equipe deve confirmar o pagamento antes de usar !add.",allowed_mentions=discord.AllowedMentions(users=True))
 @bot.command(name="add-bot")
 async def add_bot(ctx,*,args=""):
+ try: await ctx.message.delete()
+ except Exception: pass
  parts=args.split(maxsplit=1)
  if len(parts)!=2 or len(parts[1])<30:return await ctx.reply("Use !add-bot nome token.")
  name,token=parts
