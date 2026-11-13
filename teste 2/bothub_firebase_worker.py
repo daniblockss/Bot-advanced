@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import requests
 
-WORKER_VERSION="2026.11.13.12"
+WORKER_VERSION="2026.11.13.13"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -1110,12 +1110,24 @@ def process_worker_commands(cfg,tok,did,queue):
                 bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
                 secret=bot_cfg.get("token") if isinstance(bot_cfg,dict) else None
                 if not secret: raise ValueError("O bot não está atribuído a este worker ou não tem token.")
-                app=discord_api(secret,"GET","/applications/@me",None)
-                app_id=str(app.get("id") or "")
-                if not re.fullmatch(r"\d{15,22}",app_id):
-                    raise ValueError("O Discord não retornou um ID válido para a aplicação.")
-                invite_url="https://discord.com/oauth2/authorize?client_id="+app_id+"&scope=bot%20applications.commands&permissions=8"
-                result.update(status="ok",message="Convite oficial do Discord gerado.",applicationId=app_id,inviteUrl=invite_url)
+                token_fingerprint=hashlib.sha256(str(secret).encode("utf-8")).hexdigest()
+                bot_path="bots/"+urllib.parse.quote(bid,safe="")
+                saved_bot=fb("GET",bot_path,tok) or {}
+                cached=saved_bot.get("inviteCache") if isinstance(saved_bot,dict) else None
+                if isinstance(cached,dict) and cached.get("tokenFingerprint")==token_fingerprint and str(cached.get("inviteUrl","")).startswith("https://discord.com/oauth2/authorize?"):
+                    invite_url=cached["inviteUrl"]
+                    app_id=str(cached.get("applicationId") or "")
+                    result.update(status="ok",message="Convite recuperado do Firebase; não foi necessário consultar o Discord.",applicationId=app_id,inviteUrl=invite_url,cached=True)
+                else:
+                    app=discord_api(secret,"GET","/applications/@me",None)
+                    app_id=str(app.get("id") or "")
+                    if not re.fullmatch(r"\d{15,22}",app_id):
+                        raise ValueError("O Discord não retornou um ID válido para a aplicação.")
+                    invite_url="https://discord.com/oauth2/authorize?client_id="+app_id+"&scope=bot%20applications.commands&permissions=8"
+                    invite_cache={"tokenFingerprint":token_fingerprint,"applicationId":app_id,"inviteUrl":invite_url,"updatedAt":int(time.time()*1000)}
+                    fb("PATCH",bot_path,tok,{"inviteCache":invite_cache})
+                    if isinstance(bot_cfg,dict): bot_cfg["inviteCache"]=invite_cache
+                    result.update(status="ok",message="Novo convite consultado no Discord e salvo no Firebase.",applicationId=app_id,inviteUrl=invite_url,cached=False)
             elif op=="fetch_avatar":
                 bid=str(cmd.get("botId",""))
                 bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
