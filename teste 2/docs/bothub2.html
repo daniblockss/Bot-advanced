@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.13.3</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.13.4</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -536,7 +536,8 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
       <div class="grid two-col">
         <div class="card">
           <h2>Atualizar main.py (Bots)</h2>
-          <p class="hint">Publica atualização para os bots individuais do cluster.</p>
+          <p class="hint">Atualize todos os bots atribuídos aos workers com uma única publicação.</p>
+          <div id="mainPublishedVersions" class="hint" style="margin:8px 0;padding:9px;border:1px solid var(--line);border-radius:9px">Versão publicada do main.py: 2026.11.13.5</div>
           <label>Tipo de atualização</label>
           <select id="mainUpdateType">
             <option value="optional">Opcional — o criador decide</option>
@@ -544,14 +545,18 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
           </select>
           <label>Descrição</label>
           <textarea id="mainUpdateDescription" rows="2" maxlength="1500" placeholder="Descreva as melhorias"></textarea>
-          <button id="publishMainUpdate" class="primary" style="margin-top:10px">Publicar atualização</button>
-          <div id="mainUpdateMsg" class="hint"></div><div id="botUpdateProgress" class="hint" style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px">Nenhuma atualização de bot recebida ainda.</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+            <button id="publishMainUpdate" class="secondary">Publicar atualização</button>
+            <button id="updateAllBots" class="primary">⚡ Atualizar todos os bots agora</button>
+          </div>
+          <div id="mainUpdateMsg" class="hint"></div><div id="botUpdateProgress" class="hint" style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px">Aguardando versões dos bots…</div>
         </div>
 
         <div class="card">
           <h2>Controlador do Cluster (Workers)</h2>
           <p class="hint">Atualiza os scripts do repositório em todos os workers conectados.</p>
-          <div style="margin-top: 24px;"></div>
+          <div id="clusterPublishedVersions" class="hint" style="margin:8px 0;padding:9px;border:1px solid var(--line);border-radius:9px">Versões publicadas: start.py 2026.11.13.1 · add_cluster_server.py 2026.11.12.11 · worker 2026.11.13.8</div>
+          <div style="margin-top: 12px;"></div>
           <button id="updateCluster" class="primary">Atualizar arquivos do Cefilu</button>
           <div id="clusterUpdateMsg" class="hint" style="margin-top: 10px;"></div>
           <div id="clusterUpdateProgress" class="hint" style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px">Nenhuma atualização em andamento.</div>
@@ -981,18 +986,20 @@ function clusterProgressHtml(id){
 }
 function drawBotUpdateProgress(){
  const box=$('botUpdateProgress');if(!box)return;
- const rows=Object.entries(botVersionData).filter(([,p])=>p&&p.updateId);
- if(!rows.length){box.textContent='Nenhuma atualização de bot recebida ainda.';return;}
+ const rows=Object.entries(botVersionData).filter(([,p])=>p&&(p.installedVersion||p.status||p.updateId));
+ if(!rows.length){box.textContent='Aguardando os workers informarem a versão instalada de cada bot.';return;}
  const labels={received:'Solicitação recebida',updating:'Atualizando',running:'Em execução',starting:'Iniciando',completed:'Atualizado',failed:'Falha na atualização'};
- box.innerHTML='<strong>Andamento dos bots</strong>'+rows.map(([id,p])=>{const b=botData[id]||{};const color=p.status==='completed'||p.status==='running'?'var(--green)':p.status==='failed'?'var(--red)':'var(--cyan)';return '<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(b.name||id)+'</strong> · <span style="color:'+color+'">'+esc(labels[p.status]||p.status)+'</span><div>'+esc(p.message||'')+'</div><div class="small muted">Versão: '+esc(p.installedVersion||'não informada')+' · '+(p.updatedAt?ageText(Date.now()-Number(p.updatedAt)):'')+'</div></div>';}).join('');
+ box.innerHTML='<strong>Versão instalada e andamento por bot</strong>'+rows.map(([id,p])=>{const b=botData[id]||{};const color=p.status==='completed'||p.status==='running'?'var(--green)':p.status==='failed'?'var(--red)':'var(--cyan)';return '<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(b.name||id)+'</strong> · <span style="color:'+color+'">'+esc(labels[p.status]||p.status||'Versão informada')+'</span><div class="small muted">main.py instalado: '+esc(p.installedVersion||'ainda não informado')+'</div>'+(p.message?'<div>'+esc(p.message)+'</div>':'')+(p.updatedAt?'<div class="small muted">'+ageText(Date.now()-Number(p.updatedAt))+'</div>':'')+'</div>';}).join('');
 }
 
 function drawClusterProgress(){
  const box=$('clusterUpdateProgress');if(!box)return;
  const rows=Object.entries(clusterUpdateProgress).filter(([,p])=>p&&p.updateId);
- if(!rows.length){box.textContent='Nenhuma atualização em andamento.';return;}
+ const workers=Object.entries(workerData).filter(([,w])=>w&&w.serverFileVersions);
  const labels={received:'Solicitação recebida',downloading:'Baixando arquivos',installing:'Instalando',restarting:'Reiniciando',completed:'Atualizado',failed:'Falhou'};
- box.innerHTML='<strong>Andamento dos servidores</strong>'+rows.map(([id,p])=>'<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(workerData[id]?.label||workerData[id]?.hostname||id)+'</strong> · '+esc(labels[p.status]||p.status)+'<div>'+esc(p.message||'')+'</div></div>').join('');
+ const progress=rows.length?'<strong>Andamento da atualização</strong>'+rows.map(([id,p])=>'<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(workerData[id]?.label||workerData[id]?.hostname||id)+'</strong> · '+esc(labels[p.status]||p.status)+'<div>'+esc(p.message||'')+'</div></div>').join(''):'';
+ const versions=workers.length?'<strong>Versões instaladas por servidor</strong>'+workers.map(([id,w])=>'<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(w.label||w.hostname||id)+'</strong>'+Object.entries(w.serverFileVersions||{}).map(([file,version])=>'<div class="small muted">'+esc(file)+': '+esc(version)+'</div>').join('')+'</div>').join(''):'Aguardando os workers informarem as versões instaladas.';
+ box.innerHTML=progress+versions;
 }
 
 function drawWorkers(){
@@ -1481,16 +1488,23 @@ async function sendWorkerCommand(wid,command,timeoutMs=50000){
   throw new Error("Tempo esgotado para resposta do worker.");
 }
 
-$('publishMainUpdate').onclick=async()=>{
-  const msg=$('mainUpdateMsg');msg.className='hint';
-  const type=$('mainUpdateType').value,description=$('mainUpdateDescription').value.trim();
-  if(!description){msg.className='error';msg.textContent='Escreva uma descrição.';return}
-  if(!confirm('Publicar atualização do main.py?'))return;
-  msg.textContent='Publicando…';
+async function publishMainRelease(type,description){
+  const msg=$('mainUpdateMsg');msg.className='hint';msg.textContent='Publicando atualização para os bots…';
   try{
     await set(testRef('botHubUpdates/current'),{updateId:'main-'+Date.now(),type,description,clusterOnly:false,requestedAt:Date.now()});
-    msg.className='ok';msg.textContent='Atualização publicada!';
+    msg.className='ok';msg.textContent=type==='mandatory'?'Atualização obrigatória enviada a todos os bots ativos.':'Atualização publicada.';
   }catch(e){msg.className='error';msg.textContent=e.message}
+}
+$('publishMainUpdate').onclick=async()=>{
+  const type=$('mainUpdateType').value,description=$('mainUpdateDescription').value.trim();
+  if(!description){$('mainUpdateMsg').className='error';$('mainUpdateMsg').textContent='Escreva uma descrição.';return}
+  if(!confirm('Publicar atualização do main.py?'))return;
+  await publishMainRelease(type,description);
+};
+$('updateAllBots').onclick=async()=>{
+  const description=$('mainUpdateDescription').value.trim()||'Atualização geral do main.py para todos os bots.';
+  if(!confirm('Atualizar TODOS os bots ativos do cluster para a versão publicada do main.py? Cada bot será reiniciado durante a atualização.'))return;
+  await publishMainRelease('mandatory',description);
 };
 
 $('updateCluster').onclick=async()=>{
