@@ -10,7 +10,7 @@ CFGFILE=ROOT/"worker.json"
 TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
-PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
+PROCS={};LOGS={};CLEAN_EXITED={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 
 def save_json(path,data):
@@ -662,6 +662,14 @@ def start(k,b):
         except Exception:
             last_error="sem detalhes adicionais no log"
         print("[BotHub] o processo encerrou durante a inicialização (código",p.returncode,"):",last_error[-700:],flush=True)
+        if p.returncode == 0:
+            # Saída limpa não deve provocar um ciclo infinito de reinicializações.
+            CLEAN_EXITED[k] = float(b.get("startRequestedAt") or 0)
+            PROCS.pop(k,None)
+            LOGS.pop(k,None)
+            try: log.close()
+            except Exception: pass
+            raise RuntimeError("o processo encerrou com código 0; reinício automático pausado até um novo pedido de inicialização")
         PROCS.pop(k,None)
         LOGS.pop(k,None)
         try: log.close()
@@ -1267,7 +1275,20 @@ def main():
                     print("[BotHub] não foi possível conferir autorização:",active_id,str(auth_restart_error)[:120],flush=True)
             for k,bot_cfg in leased.items():
                 try:
+                    requested_at=float(bot_cfg.get("startRequestedAt") or 0)
+                    if k in CLEAN_EXITED:
+                        if requested_at <= CLEAN_EXITED[k]:
+                            continue
+                        CLEAN_EXITED.pop(k,None)
                     if k not in PROCS or PROCS[k].poll() is not None:
+                        # Se terminou normalmente depois de iniciar, pausa novas tentativas
+                        # até o painel registrar um novo pedido explícito de inicialização.
+                        previous=PROCS.get(k)
+                        if previous is not None and previous.poll() is not None and previous.returncode == 0:
+                            CLEAN_EXITED[k]=requested_at
+                            print("[BotHub] bot encerrou com código 0; reinício automático pausado até novo pedido:",k,flush=True)
+                            stop(k)
+                            continue
                         sync_bot_state(k,'pull',t,cfg['device_id'])
                         sync_bot_state(k,'push',t,cfg['device_id'])
                         auto_start=bot_cfg.get("autoStart",True) is not False
