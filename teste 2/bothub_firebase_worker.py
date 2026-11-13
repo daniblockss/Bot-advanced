@@ -135,11 +135,17 @@ def sid(v):
     return "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or "bot"
 
 def clean_exit_state(k, requested_at=None):
+    """Aplica uma pausa temporária após saída limpa; nunca deixa o bot parado para sempre."""
     path=ROOT/"bots"/sid(k)/".bothub_clean_exit.json"
     try:
         data=json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
         saved=float(data.get("startRequestedAt") or 0)
-        if requested_at is None or float(requested_at or 0) <= saved:
+        current=float(requested_at or 0)
+        if requested_at is not None and current > saved:
+            path.unlink(missing_ok=True)
+            return None
+        retry_after=float(data.get("retryAfter") or 0)
+        if retry_after > time.time():
             return saved
         path.unlink(missing_ok=True)
     except Exception:
@@ -149,12 +155,25 @@ def clean_exit_state(k, requested_at=None):
 def mark_clean_exit(k, requested_at, code=0):
     folder=ROOT/"bots"/sid(k)
     folder.mkdir(parents=True,exist_ok=True)
-    save_json(folder/".bothub_clean_exit.json",{
+    path=folder/".bothub_clean_exit.json"
+    try:
+        previous=json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except Exception:
+        previous={}
+    same_request=float(previous.get("startRequestedAt") or 0)==float(requested_at or 0)
+    attempts=int(previous.get("attempts") or 0)+1 if same_request else 1
+    delay=min(300,30*(2**min(attempts-1,4)))
+    retry_after=time.time()+delay
+    save_json(path,{
         "startRequestedAt":float(requested_at or 0),
         "exitCode":int(code),
-        "exitedAt":int(time.time()*1000)
+        "exitedAt":int(time.time()*1000),
+        "attempts":attempts,
+        "retryAfter":retry_after,
+        "retryDelaySeconds":delay
     })
     CLEAN_EXITED[k]=float(requested_at or 0)
+    print("[BotHub] bot encerrou com código 0; nova tentativa em",delay,"segundos (tentativa",attempts,"):",k,flush=True)
 
 def stop(k):
     p=PROCS.pop(k,None);l=LOGS.pop(k,None)
