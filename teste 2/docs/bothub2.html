@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.2</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.3</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -853,7 +853,7 @@ const duration=s=>{s=Math.max(0,Math.floor(Number(s)||0));const d=Math.floor(s/8
 const ageText=ms=>{if(!Number.isFinite(ms)||ms<0)return 'desconhecido';return duration(ms/1000)+' atrás'};
 const STALE_MS=60*60*1000; let cleanupBusy=false,lastCleanup=0;
 
-function online(w){return !!w&&Date.now()-Number(w.lastSeen||0)<20000}
+function online(w){const seen=Number(w&&w.lastSeen||0);return !!w&&seen>0&&Date.now()-seen<15000}
 function capacity(w){if(!online(w))return 0;const ram=Math.max(0,Math.floor((Number(w.ramFreeBytes||0)-512*1024*1024)/(300*1024*1024)));const disk=Math.max(0,Math.floor((Number(w.diskFreeBytes||0)-1024*1024*1024)/(100*1024*1024)));return Math.min(ram,disk)}
 function eligible(w){return capacity(w)>0}
 function stopSubs(){stopListeners.forEach(f=>f());stopListeners=[]}
