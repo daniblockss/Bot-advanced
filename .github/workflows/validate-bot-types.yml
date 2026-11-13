@@ -15,3 +15,15 @@ jobs:
           python-version: "3.13"
       - name: Compile BotHub Python entrypoints
         run: python -m py_compile main.py bothub_firebase_worker.py bot_admin.py standard_main.py
+      - name: Validate bothub2 panel JavaScript
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path("teste 2/docs/bothub2.html").read_text(encoding="utf-8")
+          scripts = re.findall(r'<script[^>]*>(.*?)</script>', html, re.S)
+          inline = [part for part in scripts if part.strip()]
+          for index, source in enumerate(inline):
+              Path(f"/tmp/bothub2_{index}.mjs").write_text(source, encoding="utf-8")
+          PY
+          for file in /tmp/bothub2_*.mjs; do node --check "$file"; done
