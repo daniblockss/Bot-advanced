@@ -1,4 +1,4 @@
-BOTHUB_MAIN_VERSION = "2026.11.13.2"
+BOTHUB_MAIN_VERSION = "2026.11.13.3"
 
 import discord
 from discord.ext import commands, tasks
@@ -7640,7 +7640,7 @@ async def garantir_personalidade_inicial():
 
 @bot.event
 async def on_ready():
-    for guild_pendente in list(bot.guilds):
+    # Inicialização do bot; servidores são validados pelos eventos e pela política da allowlist.
     DISCORD_LOGS.start(bot)
     try:
         await atualizar_memoria_foto_perfil()
