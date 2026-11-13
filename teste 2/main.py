@@ -2412,6 +2412,52 @@ garantir_arquivos()
 
 config = carregar_config()
 salvar_config(config)
+COMUNIDADES_AUTORIZADAS_FILE = os.path.join(BASE_DIR, "comunidades_autorizadas.txt")
+
+def carregar_comunidades_persistidas():
+    """Recupera a allowlist compartilhada pelo worker via Firebase."""
+    ids = set()
+    try:
+        with open(COMUNIDADES_AUTORIZADAS_FILE, "r", encoding="utf-8") as arquivo:
+            for linha in arquivo:
+                valor = linha.strip()
+                if valor.isdigit() and int(valor) > 0:
+                    ids.add(int(valor))
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        log_console(f"Não foi possível ler comunidades_autorizadas.txt ({type(error).__name__}).")
+    for chave in ("comunidades_autorizadas", "botHubAllowedGuildIds"):
+        valores = config.get(chave, [])
+        if isinstance(valores, (list, tuple, set)):
+            ids.update(int(v) for v in valores if str(v).isdigit() and int(v) > 0)
+    config["comunidades_autorizadas"] = sorted(ids)
+    config["botHubAllowedGuildIds"] = sorted(ids)
+    salvar_comunidades_persistidas()
+
+def salvar_comunidades_persistidas():
+    ids = set()
+    for chave in ("comunidades_autorizadas", "botHubAllowedGuildIds"):
+        valores = config.get(chave, [])
+        if isinstance(valores, (list, tuple, set)):
+            ids.update(int(v) for v in valores if str(v).isdigit() and int(v) > 0)
+    conteudo = "".join(str(gid) + "\n" for gid in sorted(ids))
+    atual = ""
+    try:
+        with open(COMUNIDADES_AUTORIZADAS_FILE, "r", encoding="utf-8") as arquivo:
+            atual = arquivo.read()
+    except OSError:
+        pass
+    if atual == conteudo:
+        return False
+    tmp = COMUNIDADES_AUTORIZADAS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as arquivo:
+        arquivo.write(conteudo)
+    os.replace(tmp, COMUNIDADES_AUTORIZADAS_FILE)
+    return True
+
+carregar_comunidades_persistidas()
+salvar_config(config)
 SYS_CONFIGS = carregar_configs_txt()
 
 TOKEN = os.getenv("DISCORD_TOKEN", config.get("discord_token", "")).strip()
@@ -7635,7 +7681,7 @@ async def garantir_personalidade_inicial():
             foto_path = os.path.join(BASE_DIR, "foto de perfil.txt")
             if os.path.isfile(foto_path):
                 foto_txt = ler_txt(foto_path)
-                if foto_txt.startswith("AVATAR_URL: " + str(bot.user.display_avatar.with_size(1024).url) + "\\n"):
+                if foto_txt.startswith("AVATAR_URL: " + str(bot.user.display_avatar.with_size(1024).url) + "\n"):
                     marcador_visual = "DESCRICAO_VISUAL_PARA_IA:"
                     if marcador_visual in foto_txt:
                         perfil["visual_description"] = foto_txt.split(marcador_visual, 1)[1].strip()[:1600]
