@@ -521,11 +521,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
         <div id="standardBotFields" class="hidden" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0"><b>Comandos STANDARD</b><label>Comandos em JSON (nome, descrição e resposta)</label><textarea id="standardCommands" rows="5" placeholder='{"ping":{"description":"Verificar bot","response":"Pong!"}}'></textarea><p class="hint">Cada chave vira um comando com o prefixo !.</p></div>
         <div id="adminBotFields" class="hidden" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0">
           <b>Configuração do BOT ADMIN</b>
-          <label>IDs dos administradores (separados por vírgula)</label><input id="adminBotAdmins" placeholder="123456789012345678">
-          <label>IDs da equipe de atendimento (opcional)</label><input id="adminBotStaff" placeholder="123456789012345678">
-          <label>ID da categoria onde os tickets serão criados</label><input id="adminBotCategory" inputmode="numeric" placeholder="ID da categoria">
-          <label>ID do canal de entrada dos tickets</label><input id="adminBotEntry" inputmode="numeric" placeholder="Canal onde os usuários chamam o BOT ADMIN">
-          <p class="hint">Ative Message Content Intent e Server Members Intent no Discord Developer Portal.</p>
+          <p class="hint">Não precisa preencher IDs nem canais aqui. O criador será identificado automaticamente pelo token do bot. Depois de adicionar o bot ao servidor, use <b>!config</b> no Discord para escolher o canal de entrada, a categoria dos tickets e a equipe de atendimento.</p>
         </div>
         <label>Nome do bot</label>
         <input id="botName" maxlength="100" placeholder="Meu bot">
@@ -1375,6 +1371,7 @@ window.saveBotProfileOnlySite = async function() {
   const msg = $('modalProfileMsg'); msg.className = "hint"; msg.textContent = "Enviando alterações ao Worker e ao Discord…";
   try {
     const { id, wid } = getSelectedBotAndWorker();
+    const b = botData[id] || {};
     const name = $('modalProfileName').value.trim();
     const description = $('modalProfileDesc').value.trim();
     const avatarBase64 = $('modalProfileAvatarBase64').value;
@@ -1592,7 +1589,7 @@ $('createBot').onclick=async()=>{
     if(Object.values(botData).some(b=>String(b.token||'').trim()===token))throw new Error('Token já cadastrado.');
     const id=crypto.randomUUID().replaceAll('-','');
     const csv=v=>v.split(',').map(x=>x.trim()).filter(x=>/^\d{15,22}$/.test(x));
-    let config={}; if(botType==='bot_admin')config={bot_id:id,admin_ids:csv($('adminBotAdmins').value),staff_ids:csv($('adminBotStaff').value),ticket_category_id:Number($('adminBotCategory').value)||0,ticket_entry_channel_id:Number($('adminBotEntry').value)||0}; if(botType==='standard'){try{config.standard_commands=JSON.parse($('standardCommands').value||'{}');if(!config.standard_commands||Array.isArray(config.standard_commands)||typeof config.standard_commands!=='object')throw new Error('JSON deve ser um objeto.');}catch(err){throw new Error('Comandos STANDARD inválidos: '+err.message)}}
+    let config={}; if(botType==='bot_admin')config={bot_id:id}; if(botType==='standard'){try{config.standard_commands=JSON.parse($('standardCommands').value||'{}');if(!config.standard_commands||Array.isArray(config.standard_commands)||typeof config.standard_commands!=='object')throw new Error('JSON deve ser um objeto.');}catch(err){throw new Error('Comandos STANDARD inválidos: '+err.message)}}
     await set(testRef('bots/'+id),{name,token,botType,ownerId:auth.currentUser?.uid||'admin',config,enabled:true,desiredState:'on',workerId:null,createdAt:Date.now(),updatedAt:Date.now()});
     $('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado como '+botType+'!';
     lastAssignment='';await refreshData();
