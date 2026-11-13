@@ -855,27 +855,41 @@ def download_latest_main(folder):
     tmp.write_bytes(data);tmp.replace(target)
     return len(data)
 
-def notify_update(bot_id, bot_cfg, update):
+def notify_update(bot_id, bot_cfg, update, notification_state):
     token_value=bot_cfg.get("token")
-    if not token_value:return
+    if not token_value:return False
     try:
         app_info=discord_api(token_value,"GET","/applications/@me",None)
         owner=(app_info.get("owner") or {}).get("id")
-        if not owner:return
-        channel=discord_api(token_value,"POST","/users/@me/channels",{"recipient_id":str(owner)})
+        if not owner:return False
+        owner=str(owner)
+        update_id=str(update.get("updateId") or "")
+        # A mesma pessoa pode ser dona de vários bots: avisar somente uma vez por versão.
+        if update_id and notification_state.get(owner)==update_id:
+            return True
+        channel=discord_api(token_value,"POST","/users/@me/channels",{"recipient_id":owner})
         mode="OBRIGATÓRIA" if update.get("type")=="mandatory" else "OPCIONAL"
         description=str(update.get("description") or "Melhorias e correções.")[:1500]
         content=("📦 **Atualização BotHub disponível — "+mode+"**\n"+description+
-                 ("\n\nEsta atualização será instalada automaticamente." if mode=="OBRIGATÓRIA"
+                 ("\n\nEsta atualização será instalada automaticamente." if mode=="mandatory"
                   else "\n\nPara instalar, digite !update neste chat com o bot."))
         discord_api(token_value,"POST","/channels/"+str(channel["id"])+"/messages",
                     {"content":content,"allowed_mentions":{"parse":[]}})
+        if update_id:
+            notification_state[owner]=update_id
+            save_json(ROOT/".bothub_update_notifications.json",notification_state)
+        return True
     except Exception as e:
         print("[BotHub] Não foi possível avisar o criador de",bot_id,":",str(e)[:180],flush=True)
+        return False
 
 def process_release_updates(tok, queue):
     release=fb("GET","botHubUpdates/current",tok)
     if not isinstance(release,dict) or not release.get("updateId") or release.get("clusterOnly"):return
+    notification_file=ROOT/".bothub_update_notifications.json"
+    try:notification_state=json.loads(notification_file.read_text(encoding="utf-8")) if notification_file.exists() else {}
+    except Exception:notification_state={}
+    if not isinstance(notification_state,dict):notification_state={}
     for raw_id,bot_cfg in list(queue.items()):
         if not isinstance(bot_cfg,dict) or not bot_cfg.get("enabled",True):continue
         if str(bot_cfg.get("botType") or "ia_chat").lower() != "ia_chat":
@@ -886,9 +900,9 @@ def process_release_updates(tok, queue):
         try:state=json.loads(state_file.read_text(encoding="utf-8")) if state_file.exists() else {}
         except Exception:state={}
         update_id=str(release.get("updateId"))
-        if state.get("updateId")!=update_id:
-            notify_update(raw_id,bot_cfg,release)
-            state={"updateId":update_id,"announced":True,"updated":False}
+        if state.get("updateId")!=update_id or not state.get("announced"):
+            announced=notify_update(raw_id,bot_cfg,release,notification_state)
+            state={"updateId":update_id,"announced":bool(announced),"updated":False}
             save_json(state_file,state)
         request_file=folder/".bothub_update_request"
         mandatory=release.get("type")=="mandatory"
