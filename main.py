@@ -5645,7 +5645,7 @@ def _bothub_user_api_keys(provedor, user_id):
     if not bot_id:
         return []
     try:
-        item = _bothub_fb("GET", f"botHubUserApis/{user_id}/{bot_id}")[0] or {}
+        item = _bothub_fb("GET", f"botHubUserApis/{user_id}/{bot_id}") or {}
         if isinstance(item, dict) and item.get("enabled") and str(item.get("provider", "")).lower() == provedor:
             key = str(item.get("key") or "").strip()
             return [key] if key else []
@@ -5664,11 +5664,11 @@ def _bothub_global_api_keys(provedor, user_id):
     if cached and now - cached[0] < 25:
         return list(cached[1].get(provedor, []))
     try:
-        opt_in = _bothub_fb("GET", f"botHubGlobalOptIn/{user_id}/{os.getenv('BOTHUB_BOT_ID','')}")[0] or {}
+        opt_in = _bothub_fb("GET", f"botHubGlobalOptIn/{user_id}/{os.getenv('BOTHUB_BOT_ID','')}") or {}
         if not isinstance(opt_in, dict) or not opt_in.get("enabled"):
             _BOTHUB_GLOBAL_API_CACHE["items"][cache_key] = (now, {})
             return []
-        data = _bothub_fb("GET", "botHubGlobalApis")[0] or {}
+        data = _bothub_fb("GET", "botHubGlobalApis") or {}
         by_provider = {}
         if isinstance(data, dict):
             for api_id, item in data.items():
