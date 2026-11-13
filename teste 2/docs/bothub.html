@@ -155,17 +155,21 @@ const allWorkerIds=new Set([...Object.keys(workerData),...Object.values(botData)
 async function toggleBot(id,enabled){
   try{
     const bot=botData[id]||{};
+    const workerId=bot.workerId||bot.lastWorkerId||null;
     const changes={enabled,desiredState:enabled?'on':'off',updatedAt:Date.now()};
     if(!enabled){
-      changes.lastWorkerId=bot.workerId||bot.lastWorkerId||null;
+      changes.lastWorkerId=workerId;
       changes.workerId=null;
     }else{
-      changes.workerId=bot.lastWorkerId||bot.workerId||null;
+      changes.workerId=workerId;
     }
     await update(testRef('bots/'+id),changes);
     lastAssignment='';
     await refreshData();
-  }catch(e){alert('Não foi possível alterar o bot: '+e.message)}
+    if(!enabled&&workerId&&online(workerData[workerId])){
+      await sendWorkerCommand(workerId,{operation:"stop",botId:id});
+    }
+  }catch(e){alert('Não foi possível alterar/parar o bot: '+e.message)}
 }
 async function deleteBot(id){
   const bot=botData[id];
