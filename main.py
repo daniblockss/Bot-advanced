@@ -5600,7 +5600,106 @@ def obter_ordem_provedores():
     return list(dict.fromkeys(p for p in ordem if p in AI_PROVIDER_NAMES))
 
 
-def obter_chaves_provedor(provedor):
+BOTHUB_FIREBASE_DB = "https://bothub-bca02-default-rtdb.firebaseio.com"
+BOTHUB_FIREBASE_API_KEY = "AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
+_BOTHUB_FIREBASE_TOKEN = None
+_BOTHUB_GLOBAL_API_CACHE = {"at": 0.0, "items": {}}
+
+
+def _bothub_fb(method, path, value=None, etag=False, match=None):
+    global _BOTHUB_FIREBASE_TOKEN
+    if not _BOTHUB_FIREBASE_TOKEN:
+        request = Request(
+            "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=" + BOTHUB_FIREBASE_API_KEY,
+            data=b'{"returnSecureToken":true}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=12) as response:
+            _BOTHUB_FIREBASE_TOKEN = json.loads(response.read())["idToken"]
+    url = BOTHUB_FIREBASE_DB + "/" + path.strip("/") + ".json?auth=" + _BOTHUB_FIREBASE_TOKEN
+    headers = {"Content-Type": "application/json"}
+    if etag:
+        headers["X-Firebase-ETag"] = "true"
+    if match:
+        headers["If-Match"] = match
+    data = None if value is None else json.dumps(value, ensure_ascii=False).encode("utf-8")
+    request = Request(url, data=data, headers=headers, method=method)
+    try:
+        with urlopen(request, timeout=12) as response:
+            body = response.read()
+            return (json.loads(body) if body else None, response.headers.get("ETag")) if etag else (json.loads(body) if body else None)
+    except HTTPError as error:
+        if error.code == 401:
+            _BOTHUB_FIREBASE_TOKEN = None
+            return _bothub_fb(method, path, value, etag, match)
+        if error.code == 412:
+            return "CONFLICT", None
+        raise
+
+
+def _bothub_global_api_keys(provedor, user_id):
+    if not user_id:
+        return []
+    now = time.monotonic()
+    cache_key = str(user_id)
+    cached = _BOTHUB_GLOBAL_API_CACHE["items"].get(cache_key)
+    if cached and now - cached[0] < 25:
+        return list(cached[1].get(provedor, []))
+    try:
+        opt_in = _bothub_fb("GET", f"botHubGlobalOptIn/{user_id}/{os.getenv('BOTHUB_BOT_ID','')}")[0] or {}
+        if not isinstance(opt_in, dict) or not opt_in.get("enabled"):
+            _BOTHUB_GLOBAL_API_CACHE["items"][cache_key] = (now, {})
+            return []
+        data = _bothub_fb("GET", "botHubGlobalApis")[0] or {}
+        by_provider = {}
+        if isinstance(data, dict):
+            for api_id, item in data.items():
+                if not isinstance(item, dict) or not item.get("enabled", True):
+                    continue
+                if item.get("available") is False:
+                    continue
+                if str(item.get("provider", "")).lower() != provedor:
+                    continue
+                key = str(item.get("key") or "").strip()
+                if key:
+                    by_provider.setdefault(provedor, []).append(key)
+                    _BOTHUB_GLOBAL_API_CACHE.setdefault("key_ids", {})[hashlib.sha256((provedor + ":" + key).encode()).hexdigest()] = api_id
+        _BOTHUB_GLOBAL_API_CACHE["items"][cache_key] = (now, by_provider)
+        return list(by_provider.get(provedor, []))
+    except Exception as error:
+        log_console(f"AVISO: não foi possível carregar APIs globais ({type(error).__name__}).")
+        return []
+
+
+def _bothub_is_global_key(provedor, chave):
+    import hashlib
+    key_hash = hashlib.sha256((provedor + ":" + (chave or "")).encode()).hexdigest()
+    return key_hash in _BOTHUB_GLOBAL_API_CACHE.get("key_ids", {})
+
+
+def _bothub_consume_global_point(user_id):
+    path = "botHubPoints/" + str(user_id)
+    for _ in range(3):
+        try:
+            data, etag = _bothub_fb("GET", path, etag=True)
+            data = data if isinstance(data, dict) else {}
+            balance = int(data.get("balance", 0))
+            if balance < 1:
+                return False
+            updated = dict(data)
+            updated.update(balance=balance - 1, updatedAt=int(time.time() * 1000),
+                           lastReason="Uso de API global", lastActor=os.getenv("BOTHUB_BOT_ID", "bot"))
+            result, _ = _bothub_fb("PUT", path, updated, match=etag)
+            if result != "CONFLICT":
+                return True
+        except Exception as error:
+            log_console(f"AVISO: falha ao debitar ponto de API global ({type(error).__name__}).")
+            return False
+    return False
+
+
+def obter_chaves_provedor(provedor, user_id=None):
     if provedor == "blockrun":
         return [None]
     chaves = AI_CONFIG["api_keys"].get(provedor, [])
@@ -5617,7 +5716,7 @@ def obter_chaves_provedor(provedor):
     ]
     chaves = list(dict.fromkeys(
         chave.strip()
-        for chave in [*chaves, *env_keys]
+        for chave in [*chaves, *env_keys, *_bothub_global_api_keys(provedor, user_id)]
         if isinstance(chave, str) and chave.strip()
     ))
     if provedor == "llm7":
@@ -5789,7 +5888,7 @@ async def consultar_ia_simples(pergunta):
     mensagens = [{"role": "user", "content": pergunta}]
     falhas = []
     for provedor in obter_ordem_provedores():
-        chaves = obter_chaves_provedor(provedor)
+        chaves = obter_chaves_provedor(provedor, user_id)
         if not chaves:
             continue
         for indice, chave in enumerate(chaves, 1):
@@ -6178,6 +6277,9 @@ async def perguntar_ia(chave_contexto, user_id, user_name, pergunta, bot_instanc
                     canal_id,
                     historico_conversa[chave_contexto],
                 )
+                if _bothub_is_global_key(provedor, chave):
+                    if not _bothub_consume_global_point(user_id):
+                        raise FalhaProvedor("saldo insuficiente para usar APIs globais", status_code=402)
                 return (
                     resposta if pediu_resposta_detalhada
                     else _limitar_resposta_curta(resposta)
