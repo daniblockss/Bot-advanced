@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.11"
+WORKER_VERSION="2026.11.12.12"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -822,6 +822,10 @@ def start(k,b):
         except Exception as exc:
             print("[BotHub] configuração local não pôde ser preservada:",str(exc)[:140],flush=True)
     cfg["discord_token"]=b["token"]
+    bot_policy=b.get("config") if isinstance(b.get("config"),dict) else {}
+    if bot_policy.get("botHubGuildAccessMode") in ("required","optional"):
+        cfg["botHubGuildAccessMode"]=bot_policy["botHubGuildAccessMode"]
+        cfg["botHubAllowedGuildIds"]=list(bot_policy.get("botHubAllowedGuildIds") or [])
     save_json(cp,cfg)
 
     last_error=""
@@ -1085,20 +1089,61 @@ def process_worker_commands(cfg,tok,did,queue):
                 bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
                 secret=bot_cfg.get("token") if isinstance(bot_cfg,dict) else None
                 if not secret: raise ValueError("O bot não está atribuído a este worker ou não tem token.")
-                changes={};name=cmd.get("name");avatar=cmd.get("avatarDataUrl");description=cmd.get("description")
-                if name:
-                    changes["username"]=str(name)[:32]
+                candidate=str(cmd.get("token") or "").strip()
+                active_token=candidate or secret
+                old_identity=discord_bot_avatar(secret)
+                identity=discord_bot_avatar(active_token)
+                if identity.get("avatarDiscordId") != old_identity.get("avatarDiscordId"):
+                    raise ValueError("O novo token precisa pertencer à mesma conta de bot.")
+                name=str(cmd.get("name") or "").strip()
+                if not name or len(name)>32: raise ValueError("O nome deve ter de 1 a 32 caracteres.")
+                description=str(cmd.get("description") or "")
+                if len(description)>400: raise ValueError("A descrição deve ter até 400 caracteres.")
+                avatar=cmd.get("avatarDataUrl") or ""
+                changes={"username":name}
                 if avatar:
                     if not isinstance(avatar,str) or not avatar.startswith(("data:image/png;base64,","data:image/jpeg;base64,")):
                         raise ValueError("Avatar inválido: use PNG ou JPEG.")
                     if len(avatar)>6*1024*1024: raise ValueError("A imagem é muito grande (limite 4,5 MB).")
                     changes["avatar"]=avatar
-                if changes:
-                    discord_api(secret,"PATCH","/users/@me",changes)
-                if description is not None:
-                    if len(str(description))>400: raise ValueError("A descrição deve ter até 400 caracteres.")
-                    discord_api(secret,"PATCH","/applications/@me",{"description":str(description)})
-                result.update(status="ok",message="Perfil atualizado.",nameChanged=bool(name),avatarChanged=bool(avatar),descriptionChanged=description is not None)
+                discord_api(active_token,"PATCH","/users/@me",changes)
+                discord_api(active_token,"PATCH","/applications/@me",{"description":description})
+                fresh=discord_bot_avatar(active_token)
+                mode=str(cmd.get("guildAccessMode") or "required").lower()
+                if mode not in {"required","optional"}: raise ValueError("Modo de permissão inválido.")
+                raw_ids=cmd.get("guildIds") or []
+                if not isinstance(raw_ids,list) or len(raw_ids)>100:
+                    raise ValueError("Informe até 100 IDs de servidores.")
+                guild_ids=[]
+                for value in raw_ids:
+                    value=str(value).strip()
+                    if not re.fullmatch(r"\d{15,22}",value):
+                        raise ValueError("ID de servidor inválido.")
+                    if value not in guild_ids: guild_ids.append(value)
+                config=dict(bot_cfg.get("config") or {})
+                config["botHubGuildAccessMode"]=mode
+                config["botHubAllowedGuildIds"]=guild_ids
+                auto_update=cmd.get("avatarAutoUpdate") is True
+                updates={
+                    "name":name,
+                    "description":description,
+                    "config":config,
+                    "avatarUrl":fresh.get("avatarUrl",""),
+                    "avatarDiscordId":fresh.get("avatarDiscordId",""),
+                    "avatarDiscordName":fresh.get("avatarDiscordName",""),
+                    "avatarFetchedAt":int(time.time()*1000),
+                    "avatarAutoUpdate":auto_update,
+                    "avatarBase64":"" if auto_update else (avatar or bot_cfg.get("avatarBase64") or ""),
+                }
+                if candidate:
+                    updates["token"]=candidate
+                    bot_cfg["token"]=candidate
+                fb("PATCH","bots/"+urllib.parse.quote(bid,safe=""),tok,updates)
+                bot_cfg.update(updates)
+                bot_cfg["config"]=config
+                if candidate:
+                    stop(bid)
+                result.update(status="ok",message="Perfil atualizado no Discord e no Firebase. Token validado para a mesma conta; permissões de servidores salvas.",nameChanged=True,avatarChanged=bool(avatar),descriptionChanged=True,tokenChanged=bool(candidate),guildAccessMode=mode,guildIds=guild_ids,**fresh)
             else:
                 result.update(status="ok",result=file_command(cmd))
         except Exception as e:
@@ -1255,6 +1300,7 @@ def load_worker_queue(tok, device_id):
             "avatarUrl": record.get("avatarUrl") or "",
             "avatarBase64": record.get("avatarBase64") or "",
             "avatarDiscordId": record.get("avatarDiscordId") or "",
+            "avatarAutoUpdate": record.get("avatarAutoUpdate", True) is not False,
         }
         if item["token"]:
             queue[bot_id] = item
