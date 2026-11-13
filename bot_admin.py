@@ -77,28 +77,25 @@ async def ensure_ticket(guild,user,initial=None):
 def api_endpoint(provider,custom=""):
  return {"openrouter":"https://openrouter.ai/api/v1/chat/completions","groq":"https://api.groq.com/openai/v1/chat/completions","llm7":"https://api.llm7.io/v1/chat/completions","chatgpt":"https://api.openai.com/v1/chat/completions"}.get(provider,custom)
 def call_ai(uid,text):
+ # O BOT ADMIN é um assistente gratuito: tenta primeiro a API pessoal do usuário
+ # cadastrada para este bot e, se não houver/funcionar, usa o pool global sem pontos.
  personal=get(f"botHubUserApis/{uid}/{BOT_ID}") or {}
- global_opt=get(f"botHubGlobalOptIn/{uid}/{BOT_ID}") or {}
  pool=[]
- if isinstance(personal,dict) and personal.get("enabled") and personal.get("key"):pool.append((personal,False))
- if points(uid)>0:
-  gl=get("botHubGlobalApis") or {}
-  if isinstance(gl,dict):pool.extend((v,True) for v in gl.values() if isinstance(v,dict) and v.get("enabled") and v.get("key") and v.get("available") is not False)
+ if isinstance(personal,dict) and personal.get("enabled") and personal.get("key"):
+  pool.append((personal,False))
+ gl=get("botHubGlobalApis") or {}
+ if isinstance(gl,dict):
+  pool.extend((v,True) for v in gl.values() if isinstance(v,dict) and v.get("enabled") and v.get("key") and v.get("available") is not False)
  if not pool:
-  if points(uid)<1:return "Você está sem pontos para usar as APIs globais. Use !comprar-pontos quantidade para solicitar pontos à equipe."
-  return "Nenhuma API habilitada. Use !api para adicionar uma API pessoal ou confira as APIs globais."
- if global_opt.get("enabled") and points(uid)<1 and not any(not g for _,g in pool):return "Você está sem pontos para usar APIs globais. Use !comprar-pontos para solicitar pontos à equipe."
+  return "Ainda não encontrei uma API disponível. Você pode cadastrar uma API pessoal com !api ou aguardar uma API global ficar disponível."
  last="Sem provedor disponível."
  for item,is_global in pool:
   provider=str(item.get("provider","openrouter")).lower(); endpoint=api_endpoint(provider,str(item.get("endpoint") or ""))
   if not endpoint:continue
-  payload={"model":item.get("model") or ({"groq":"llama-3.3-70b-versatile","openrouter":"openai/gpt-4o-mini","chatgpt":"gpt-4o-mini","llm7":"gpt-4o-mini"}.get(provider,"gpt-4o-mini")),"messages":[{"role":"system","content":"Você é o assistente oficial do BotHub. Responda em português, de forma clara e concisa. Ajude com tickets, pontos, bots e APIs. Nunca diga que concluiu ações sem executá-las."},{"role":"user","content":text[:4000]}],"max_tokens":500}
+  payload={"model":item.get("model") or ({"groq":"llama-3.3-70b-versatile","openrouter":"openai/gpt-4o-mini","chatgpt":"gpt-4o-mini","llm7":"gpt-4o-mini"}.get(provider,"gpt-4o-mini")),"messages":[{"role":"system","content":"Você é o assistente oficial do BotHub, funcionando como um assistente gratuito de atendimento. Responda em português, de forma clara, simpática e concisa. Ajude com tickets, pontos, bots e APIs. Quando o usuário pedir uma ação, explique ou abra o painel apropriado; nunca diga que concluiu algo sem executar."},{"role":"user","content":text[:4000]}],"max_tokens":500}
   try:
    req=Request(endpoint,data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+str(item["key"]),"Content-Type":"application/json"})
    with urlopen(req,timeout=35) as r: answer=json.loads(r.read())["choices"][0]["message"]["content"]
-   if is_global:
-    if points(uid)<1:return "Você está sem pontos para usar APIs globais. Solicite pontos à equipe com !comprar-pontos."
-    change_points(uid,-1,BOT_ID,"Uso de API global")
    return str(answer)[:3800]
   except Exception as e:last=str(e)[:160]
  return "As APIs configuradas não responderam: "+last
@@ -185,7 +182,7 @@ class BotSelect(discord.ui.Select):
   try:
    req=Request("https://discord.com/api/v10/users/@me",headers={"Authorization":"Bot "+str(item.get("token") or "")})
    with urlopen(req,timeout=12) as r: profile=json.loads(r.read())
-   permissions=117840 if item.get("botType")=="bot_admin" else 0
+   permissions=8
    invite=f"https://discord.com/oauth2/authorize?client_id={profile['id']}&scope=bot%20applications.commands&permissions={permissions}"
   except Exception:pass
   await i.response.send_message(f"**{item.get('name','Bot')}** | tipo: {item.get('botType','ia_chat')} | estado: {'ON' if item.get('enabled') else 'OFF'}\nID: {bid}\nConvite: {invite}",ephemeral=True)
@@ -289,7 +286,7 @@ async def config_cmd(ctx):
  e.add_field(name="Equipe",value=", ".join(f"<@{x}>" for x in cfg.get("staffIds",[])) or "Somente o criador",inline=False)
  await ctx.send(embed=e,view=AdminConfigView())
 @bot.command(name="api")
-async def api(ctx):await ctx.send(embed=emb("Gerenciamento de APIs","Adicione uma API pessoal ou ative as APIs globais. O uso de API global consome pontos."),view=ApiView(ctx.author.id))
+async def api(ctx):await ctx.send(embed=emb("Gerenciamento de APIs","Adicione uma API pessoal ou ative as APIs globais. O BOT ADMIN usa APIs pessoais e globais gratuitamente; nos outros bots, o uso de API global pode consumir pontos."),view=ApiView(ctx.author.id))
 @bot.command(name="configs")
 async def configs(ctx):await ctx.send(embed=emb("Seus bots","Selecione um bot para consultar seu estado."),view=ConfigView(ctx.author.id))
 @bot.command(name="help")
