@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 WORKER = ROOT / "bothub_firebase_worker.py"
 VENV = ROOT / "venv"
 PYTHON = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-TERMUX = "com.termux" in str(Path.home()).lower() or "ANDROID_ROOT" in os.environ
+TERMUX = ("com.termux" in (str(Path.home()) + " " + os.environ.get("PREFIX", "")).lower() or bool(os.environ.get("TERMUX_VERSION")) or "ANDROID_ROOT" in os.environ or "ANDROID_DATA" in os.environ)
 
 def run(args):
     print("\n[BotHub Installer] $", " ".join(map(str, args)), flush=True)
