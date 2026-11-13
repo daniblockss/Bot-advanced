@@ -1065,29 +1065,30 @@ os.execv(str(venvpy),[str(venvpy),str(installer)])
     return True
 
 def _pid_is_this_worker(pid):
-    """Evita matar um processo não relacionado caso o PID antigo tenha sido reutilizado."""
+    """Confere se o PID pertence ao worker desta instalação, não a outro servidor."""
     if pid == os.getpid():
         return True
+    expected = str((ROOT / "bothub_firebase_worker.py").resolve())
     if os.name != "nt":
         try:
-            raw = Path("/proc") / str(pid) / "cmdline"
-            command = raw.read_bytes().replace(b"\\0", b" ").decode("utf-8", errors="ignore")
-            return "bothub_firebase_worker.py" in command
+            raw = (Path("/proc") / str(pid) / "cmdline").read_bytes()
+            args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
+            return any(arg.endswith(".py") and str(Path(arg).resolve()) == expected for arg in args[1:])
         except Exception:
             return False
     try:
         import psutil
         process = psutil.Process(pid)
-        return any("bothub_firebase_worker.py" in str(arg).lower()
-                   for arg in process.cmdline())
+        return any(str(Path(arg).resolve()) == expected for arg in process.cmdline()
+                   if str(arg).lower().endswith(".py"))
     except Exception:
         return False
 
 def acquire_worker_lock():
-    """O controlador novo encerra a instância antiga desta instalação e assume o controle."""
-    # Um único controlador por usuário/dispositivo, mesmo se as instalações estiverem em pastas diferentes.
-    lock_path = Path.home() / ".bothub_worker.lock"
-    # O arquivo guarda o PID da instância que atualmente possui o bloqueio.
+    """Um controlador por instalação; workers de outros servidores não se encerram entre si."""
+    # O lock fica dentro da pasta desta instalação. Path.home() era compartilhado
+    # por instalações diferentes e fazia um worker bloquear/encerrar os demais.
+    lock_path = ROOT / ".bothub_worker.lock"
     old_pid = None
     try:
         raw = lock_path.read_text(encoding="utf-8").strip()
@@ -1096,17 +1097,14 @@ def acquire_worker_lock():
     except Exception:
         pass
 
-    # Migração do bloqueio antigo: versões anteriores gravavam "0" e não guardavam o PID.
-    # Neste caso, localiza os outros workers pelo cmdline e encerra-os; esta instância é preservada.
     other_pids = set()
     if os.name != "nt":
         try:
             for entry in Path("/proc").iterdir():
-                if not entry.name.isdigit():
-                    continue
-                pid = int(entry.name)
-                if pid != os.getpid() and _pid_is_this_worker(pid):
-                    other_pids.add(pid)
+                if entry.name.isdigit():
+                    pid = int(entry.name)
+                    if pid != os.getpid() and _pid_is_this_worker(pid):
+                        other_pids.add(pid)
         except Exception:
             pass
     elif old_pid and old_pid != os.getpid() and _pid_is_this_worker(old_pid):
@@ -1116,8 +1114,8 @@ def acquire_worker_lock():
         other_pids.add(old_pid)
 
     for pid in sorted(other_pids):
-        print("[BotHub] Controlador antigo detectado (PID", pid,
-              "). Encerrando-o; esta instância continuará ativa.", flush=True)
+        print("[BotHub] Controlador duplicado desta instalação detectado (PID", pid,
+              "). Encerrando a cópia antiga.", flush=True)
         try:
             os.kill(pid, signal.SIGTERM)
         except OSError:
@@ -1156,7 +1154,6 @@ def acquire_worker_lock():
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except (OSError, BlockingIOError):
         handle.close()
-        # Se o processo antigo ainda está encerrando, tenta assumir o bloqueio por alguns segundos.
         deadline = time.time() + 8
         while time.time() < deadline:
             time.sleep(0.25)
@@ -1174,7 +1171,7 @@ def acquire_worker_lock():
                 handle.close()
                 handle = None
         if handle is None:
-            print("[BotHub] Não consegui assumir o controle: outro controlador ainda mantém o bloqueio.", flush=True)
+            print("[BotHub] Já existe um controlador ativo nesta instalação; esta cópia será encerrada.", flush=True)
             return None
 
     handle.seek(0)
