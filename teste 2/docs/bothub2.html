@@ -398,6 +398,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
     <button class="nav-btn active" data-page="overview"><span class="nav-ico">📊</span>Visão geral</button>
     <button class="nav-btn" data-page="workersSection"><span class="nav-ico">🖥️</span>Workers & Cluster</button>
     <button class="nav-btn" data-page="botsSection"><span class="nav-ico">🤖</span>Gerenciar Bots</button>
+    <button class="nav-btn" data-page="globalApisSection"><span class="nav-ico">🔑</span>APIs Globais</button>
     <button class="nav-btn" data-page="updatesSection"><span class="nav-ico">🔄</span>Atualizações & Sistema</button>
     <button class="nav-btn" data-page="setupSection"><span class="nav-ico">📖</span>Adicionar Servidor</button>
     <div class="side-bottom">
@@ -515,6 +516,16 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
     <div id="page-botsSection" class="page hidden">
       <div class="card" style="margin-bottom: 14px;">
         <h2>Cadastrar bot Discord</h2>
+        <label>Tipo de bot</label>
+        <select id="botType"><option value="ia_chat">IA CHAT — main.py completo</option><option value="standard">STANDARD — comandos configuráveis</option><option value="bot_admin">BOT ADMIN — tickets, pontos e APIs</option></select>
+        <div id="adminBotFields" class="hidden" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0">
+          <b>Configuração do BOT ADMIN</b>
+          <label>IDs dos administradores (separados por vírgula)</label><input id="adminBotAdmins" placeholder="123456789012345678">
+          <label>IDs da equipe de atendimento (opcional)</label><input id="adminBotStaff" placeholder="123456789012345678">
+          <label>ID da categoria onde os tickets serão criados</label><input id="adminBotCategory" inputmode="numeric" placeholder="ID da categoria">
+          <label>ID do canal de entrada dos tickets</label><input id="adminBotEntry" inputmode="numeric" placeholder="Canal onde os usuários chamam o BOT ADMIN">
+          <p class="hint">Ative Message Content Intent e Server Members Intent no Discord Developer Portal.</p>
+        </div>
         <label>Nome do bot</label>
         <input id="botName" maxlength="100" placeholder="Meu bot">
         <label>Token do bot</label>
@@ -529,6 +540,18 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
         <div id="bots" style="margin-top:10px"><span class="muted">Aguardando dados…</span></div>
         <div id="queueMsg" class="hint" style="margin-top: 8px;"></div>
       </div>
+    </div>
+
+    <div id="page-globalApisSection" class="page hidden">
+      <div class="card">
+        <h2>APIs Globais</h2>
+        <p class="hint">Gerencie chaves compartilhadas pelos bots autorizados. A chave nunca é exibida novamente em texto aberto.</p>
+        <label>Provedor</label><select id="globalApiProvider"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="llm7">LLM7</option><option value="chatgpt">ChatGPT / OpenAI</option></select>
+        <label>Chave da API</label><input id="globalApiKey" type="password" autocomplete="off" placeholder="Cole a chave privada">
+        <label>Modelo (opcional)</label><input id="globalApiModel" placeholder="Ex.: llama-3.3-70b-versatile">
+        <button id="addGlobalApi" class="primary" style="margin-top:10px">Adicionar API global</button><div id="globalApiMsg" class="hint"></div>
+      </div>
+      <div class="card"><h2>Chaves cadastradas</h2><div id="globalApisList" class="hint">Carregando APIs globais…</div></div>
     </div>
 
     <!-- Seção Atualizações & Sistema (Separada corretamente) -->
@@ -801,6 +824,7 @@ const pageInfo = {
   overview: ['Visão geral do Cluster', 'Monitoramento em tempo real dos workers e bots.'],
   workersSection: ['Workers & Cluster', 'Controle de dispositivos e arquivos do Cefilu.'],
   botsSection: ['Gerenciar Bots', 'Cadastro, estado e perfis dos bots Discord.'],
+  globalApisSection: ['APIs Globais', 'Chaves compartilhadas, contribuidores e disponibilidade dos provedores.'],
   updatesSection: ['Atualizações & Sistema', 'Publicação de atualizações de main.py e cluster.'],
   setupSection: ['Adicionar Servidor', 'Instruções para ligar novos workers ao cluster.']
 };
@@ -1088,7 +1112,7 @@ function drawBots(){
           </div>
         </div>
         <div class="small muted" style="line-height:1.4">
-          <div><b>Status:</b> ${botStatus(id,b,running,processes)}</div>
+          <div><b>Tipo:</b> ${esc(({ia_chat:"IA CHAT",standard:"STANDARD",bot_admin:"BOT ADMIN"})[b.botType||"ia_chat"]||"IA CHAT")}</div><div><b>Status:</b> ${botStatus(id,b,running,processes)}</div>
           <div><b>Worker:</b> ${esc(b.workerId || b.lastWorkerId || 'Na fila')}</div><div><b>Versão:</b> ${esc((botVersionData[id]&&botVersionData[id].installedVersion)||'Aguardando worker')}</div><div><b>Atualização:</b> ${esc(({received:'Solicitação recebida',updating:'Atualizando',running:'Em execução',starting:'Iniciando',completed:'Atualizado',failed:'Falha'})[(botVersionData[id]||{}).status]||'Sem atualização recente')}</div>
         </div>
         <div style="display:flex;gap:6px;margin-top:auto;padding-top:6px;flex-wrap:wrap">
@@ -1399,7 +1423,7 @@ async function rebalance(){
     for(const wid of allWorkerIds){
       const assigned={};
       for(const [bid,b] of Object.entries(botData)){
-        if(b.enabled&&assignments[bid]===wid)assigned[bid]={name:b.name,token:b.token,config:b.config||{},enabled:true,desiredState:'on',updatedAt:b.updatedAt||now};
+        if(b.enabled&&assignments[bid]===wid)assigned[bid]={name:b.name,token:b.token,config:b.config||{},botType:b.botType||"ia_chat",ownerId:b.ownerId||null,enabled:true,desiredState:'on',updatedAt:b.updatedAt||now};
       }
       await set(testRef('workerTasks/'+wid),assigned);
     }
@@ -1545,14 +1569,17 @@ $('loginBtn').onclick=async()=>{
 
 $('logout').onclick=()=>signOut(auth);
 
+$('botType').onchange=()=> $('adminBotFields').classList.toggle('hidden',$('botType').value!=='bot_admin');
 $('createBot').onclick=async()=>{
-  const name=$('botName').value.trim(),token=$('botToken').value.trim();
+  const name=$('botName').value.trim(),token=$('botToken').value.trim(),botType=$('botType').value;
   if(!name||token.length<30){$('createMsg').textContent='Informe nome e token válido.';return}
   try{
-    if(Object.values(botData).some(b=>String(b.token||'').trim()===token)){throw new Error('Token já cadastrado.');}
+    if(Object.values(botData).some(b=>String(b.token||'').trim()===token))throw new Error('Token já cadastrado.');
     const id=crypto.randomUUID().replaceAll('-','');
-    await set(testRef('bots/'+id),{name,token,config:{},enabled:true,desiredState:'on',workerId:null,createdAt:Date.now(),updatedAt:Date.now()});
-    $('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado!';
+    const csv=v=>v.split(',').map(x=>x.trim()).filter(x=>/^\d{15,22}$/.test(x));
+    const config=botType==='bot_admin'?{bot_id:id,admin_ids:csv($('adminBotAdmins').value),staff_ids:csv($('adminBotStaff').value),ticket_category_id:Number($('adminBotCategory').value)||0,ticket_entry_channel_id:Number($('adminBotEntry').value)||0}: {};
+    await set(testRef('bots/'+id),{name,token,botType,ownerId:auth.currentUser?.uid||'admin',config,enabled:true,desiredState:'on',workerId:null,createdAt:Date.now(),updatedAt:Date.now()});
+    $('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado como '+botType+'!';
     lastAssignment='';await refreshData();
   }catch(e){$('createMsg').textContent='Erro: '+e.message}
 };
@@ -1571,6 +1598,29 @@ function start(){
   startTypewriterOnce();
 }
 
+
+// APIs Globais — administração
+function maskApiKey(key){const v=String(key||'');return v.length>8?v.slice(0,4)+'••••••'+v.slice(-4):'••••••';}
+async function renderGlobalApis(){
+  const box=$('globalApisList');if(!box)return;
+  try{
+    const snap=await get(testRef('botHubGlobalApis'));const items=snap.val()||{};
+    const rows=Object.entries(items);
+    box.innerHTML=rows.length?rows.map(([id,a])=>`<div class="row" style="align-items:flex-start"><div style="min-width:0;flex:1"><b>${esc(a.provider||'API')}</b> <span class="badge ${a.enabled?'':'off'}">${a.enabled?'Ativa':'Pausada'}</span><div class="small muted">Modelo: ${esc(a.model||'padrão')} · Chave: ${maskApiKey(a.key)}</div><div class="small muted">Adicionada por Discord ID: ${esc(a.addedBy||'Admin do painel')}</div><div class="small muted">Disponibilidade: ${esc(a.status||'Não verificada')}</div></div><div style="display:flex;gap:5px;flex-wrap:wrap"><button class="secondary" data-global-toggle="${esc(id)}">${a.enabled?'Pausar':'Ativar'}</button><button class="danger" data-global-delete="${esc(id)}">Remover</button></div></div>`).join(''):'Nenhuma API global cadastrada.';
+    box.querySelectorAll('[data-global-toggle]').forEach(b=>b.onclick=async()=>{const id=b.dataset.globalToggle,a=items[id];await update(testRef('botHubGlobalApis/'+id),{enabled:!a.enabled,updatedAt:Date.now()});await renderGlobalApis()});
+    box.querySelectorAll('[data-global-delete]').forEach(b=>b.onclick=async()=>{const id=b.dataset.globalDelete;if(!confirm('Remover esta API global?'))return;await remove(testRef('botHubGlobalApis/'+id));await renderGlobalApis()});
+  }catch(e){box.textContent='Erro ao carregar APIs: '+e.message}
+}
+$('addGlobalApi').onclick=async()=>{
+ const provider=$('globalApiProvider').value,key=$('globalApiKey').value.trim(),model=$('globalApiModel').value.trim();
+ if(key.length<8){$('globalApiMsg').textContent='Informe uma chave válida.';return}
+ try{
+  const id=crypto.randomUUID().replaceAll('-','');
+  await set(testRef('botHubGlobalApis/'+id),{provider,key,model,enabled:true,status:'Não verificada',available:null,addedBy:'admin-panel',addedByName:auth.currentUser?.email||'Administrador',createdAt:Date.now(),updatedAt:Date.now()});
+  $('globalApiKey').value='';$('globalApiModel').value='';$('globalApiMsg').textContent='API adicionada. A disponibilidade será atualizada após o primeiro uso.';await renderGlobalApis();
+ }catch(e){$('globalApiMsg').textContent='Erro: '+e.message}
+};
+
 onAuthStateChanged(auth,async user=>{
   if(!user){
     stopSubs();$('dashboard').classList.add('hidden');$('login').classList.remove('hidden');
@@ -1585,6 +1635,7 @@ onAuthStateChanged(auth,async user=>{
       else{$('loginMsg').textContent='UID não autorizado.';await signOut(auth);return;}
     }
     start();
+    renderGlobalApis();
     refreshData().then(()=>refreshAutomaticAvatarsOnLogin()).catch(e=>console.warn('[BotHub] Falha ao atualizar avatares no login:',e));
   }catch(e){
     $('loginMsg').textContent='Erro: '+e.message;
