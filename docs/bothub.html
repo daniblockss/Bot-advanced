@@ -68,7 +68,17 @@ const updates={};for(const [bid,b] of Object.entries(botData)){const wid=b.enabl
 if(Object.keys(updates).length)await update(ref(db),updates);
 const allWorkerIds=new Set([...Object.keys(workerData),...Object.values(botData).map(b=>b.workerId).filter(Boolean)]);for(const wid of allWorkerIds){const assigned={};for(const [bid,b] of Object.entries(botData)){if(b.enabled&&assignments[bid]===wid)assigned[bid]={name:b.name,token:b.token,config:b.config||{},enabled:true,updatedAt:b.updatedAt||now}}await set(ref(db,'workerTasks/'+wid),assigned)}
 }catch(e){console.error('Rebalance:',e);$('queueMsg').textContent='Erro ao distribuir: '+e.message}finally{busy=false}}
-async function toggleBot(id,enabled){try{await update(ref(db,'bots/'+id),{enabled,updatedAt:Date.now(),workerId:null});lastAssignment='';await refreshData()}catch(e){alert('Não foi possível alterar o bot: '+e.message)}}
+async function toggleBot(id,enabled){
+  try{
+    const bot=botData[id]||{},workerId=bot.workerId||bot.lastWorkerId||null;
+    await update(ref(db,'bots/'+id),{enabled,updatedAt:Date.now(),lastWorkerId:!enabled?(workerId||null):(bot.lastWorkerId||null),workerId:enabled?(workerId||null):null});
+    lastAssignment='';
+    await refreshData();
+    if(!enabled&&workerId&&online(workerData[workerId])){
+      await sendWorkerCommand(workerId,{operation:"stop",botId:id});
+    }
+  }catch(e){alert('Não foi possível alterar/parar o bot: '+e.message)}
+}
 async function deleteBot(id){if(!confirm('Excluir este bot?'))return;try{await remove(ref(db,'bots/'+id));await remove(ref(db,'workerTasks/'+(botData[id]?.workerId||'_')+'/'+id));lastAssignment='';await refreshData()}catch(e){alert('Não foi possível excluir: '+e.message)}}
 async function refreshData(){const [w,b]=await Promise.all([get(ref(db,'workers')),get(ref(db,'bots'))]);workerData=w.val()||{};botData=b.val()||{};drawWorkers();drawBots();await rebalance();drawWorkers();drawBots()}
 async function cleanupStaleWorkers(){if(cleanupBusy||Date.now()-lastCleanup<60000)return;cleanupBusy=true;lastCleanup=Date.now();try{for(const [id,w] of Object.entries(workerData)){const seen=Number(w.lastSeen||w.createdAt)||0;if(seen>0&&Date.now()-seen>STALE_MS){await remove(ref(db,'workers/'+id));delete workerData[id]}}}catch(e){console.warn('Limpeza de workers antigos:',e)}finally{cleanupBusy=false}}
