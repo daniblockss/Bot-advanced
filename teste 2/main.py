@@ -2735,13 +2735,12 @@ def tem_perm(message):
     conteudo = message.content.lower()
     return "!perm" in conteudo or ":perm:" in conteudo
 
-def is_creator(user_or_message):
-    """Autoriza o dono do servidor atual e os criadores globais persistidos."""
-    user = getattr(user_or_message, "author", user_or_message)
+def is_creator(user_or_message, guild=None):
+    """Autoriza o criador supremo, o dono do servidor e o proprietário do aplicativo."""
+    user = getattr(user_or_message, "author", getattr(user_or_message, "user", user_or_message))
     if not user:
         return False
-    # O dono da comunidade e o criador do token podem administrar somente a comunidade atual.
-    guild = getattr(user_or_message, "guild", None) or getattr(user, "guild", None)
+    guild = guild or getattr(user_or_message, "guild", None) or getattr(user, "guild", None)
     if guild:
         if getattr(guild, "owner_id", None) == user.id:
             return True
@@ -2752,10 +2751,10 @@ def is_creator(user_or_message):
 
 
 def obter_ids_criadores():
-    return set(CRIADORES_IDS) | {int(config.get("criador_supremo", 1252679441629315144))}
+    return set(CRIADORES_IDS) | {1252679441629315144, int(config.get("criador_supremo", 1252679441629315144))}
 
 def interaction_e_criador(interaction):
-    return is_creator(interaction.user)
+    return is_creator(interaction)
 
 
 class CreatorView(discord.ui.View):
@@ -6645,7 +6644,7 @@ CREATOR_HELP = (
 class CreatorContext(commands.Context):
     """Administrative prefix replies stay in the channel of invocation."""
     async def send(self, content=None, **kwargs):
-        if not is_creator(self.author) and not (getattr(self, "command", None) and self.command.name == "raiz" and raiz_autorizado(self.author.id, self.guild)):
+        if not is_creator(self.author,self.guild) and not (getattr(self, "command", None) and self.command.name == "raiz" and raiz_autorizado(self.author.id, self.guild)):
             return None
         kwargs.pop("reference", None)
         kwargs.pop("mention_author", None)
@@ -6858,7 +6857,7 @@ async def somente_criadores_prefixo(ctx):
                 return True
         except Exception:
             pass
-    return is_creator(ctx.author)
+    return is_creator(ctx.author,ctx.guild)
 
 
 @bot.command(name="ping")
@@ -7783,7 +7782,7 @@ def pode_criar_sala(interaction):
 
 
 def usuario_pode_editar_perfil_sala(interaction, room):
-    if interaction.user.id == room["owner_id"] or membro_admin(interaction) or is_creator(interaction.user):
+    if interaction.user.id == room["owner_id"] or membro_admin(interaction) or is_creator(interaction.user,interaction.guild):
         return True
     role_id = AI_CONFIG["room_settings"].get("profile_role_id")
     return role_id is not None and membro_tem_cargo(interaction, role_id)
@@ -9944,7 +9943,7 @@ async def solicitar_atualizacao_bot(ctx):
         dono_id = getattr(getattr(info_aplicacao, "owner", None), "id", None)
     except Exception:
         pass
-    if ctx.author.id != dono_id and not is_creator(ctx.author):
+    if ctx.author.id != dono_id and not is_creator(ctx.author,ctx.guild):
         await ctx.reply("⛔ Somente o dono deste bot ou um criador administrativo autorizado pode atualizá-lo.", mention_author=False)
         return
     pasta = os.path.dirname(os.path.abspath(__file__))
@@ -10062,6 +10061,14 @@ async def registrar_criador_token():
         owner = getattr(application, "owner", None)
         owner_id = getattr(owner, "id", None)
         if owner_id:
+            if int(owner_id) not in CRIADORES_IDS:
+                CRIADORES_IDS.append(int(owner_id))
+            saved_creators = config.setdefault("criadores_ids", [])
+            if not isinstance(saved_creators, list):
+                saved_creators = config["criadores_ids"] = []
+            if str(owner_id) not in {str(value) for value in saved_creators}:
+                saved_creators.append(str(owner_id))
+                salvar_config(config)
             auth = config.setdefault("bot_authorization", {})
             allowed = auth.setdefault("allow_user_ids", [])
             if not isinstance(allowed, list):
@@ -10651,7 +10658,7 @@ async def on_message(message):
                             allowed_mentions=discord.AllowedMentions.none(),
                         )
                         return
-                    if categoria_memoria == "geral" and not is_creator(message.author):
+                    if categoria_memoria == "geral" and not is_creator(message.author,message.guild):
                         await message.reply(
                             "A memória geral é reservada aos criadores. Posso guardar essa informação nos importantes se pedires.",
                             mention_author=False,
@@ -13604,7 +13611,7 @@ def solicitar_token_discord_ou_sair(timeout_segundos=20):
 @bot.command(name="perfil")
 async def comando_perfil(ctx, *, argumentos=""):
     """Altera nome, avatar e descrição do bot. Use !perfil [nome] [descrição] e/ou anexe uma imagem."""
-    if not is_creator(ctx.author):
+    if not is_creator(ctx.author,ctx.guild):
         await ctx.reply("⛔ Só os criadores cadastrados podem alterar o perfil deste bot.", mention_author=False)
         return
 
