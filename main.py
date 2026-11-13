@@ -871,6 +871,8 @@ class VoiceSystem(commands.Cog):
     async def on_ready(self):
         async with self.ready_lock:
             for guild in self.bot.guilds:
+                if not _bot_auth_guild_allowed(guild.id):
+                    continue
                 try:
                     await self.sync_commands(guild)
                     await self.reconcile(guild)
@@ -897,6 +899,8 @@ class VoiceSystem(commands.Cog):
         if not self.bot.is_ready():
             return
         for guild in self.bot.guilds:
+            if not _bot_auth_guild_allowed(guild.id):
+                continue
             try:
                 await self.reconcile(guild)
                 await self.sync_commands(guild)
@@ -923,6 +927,8 @@ class VoiceSystem(commands.Cog):
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
+        if not _bot_auth_guild_allowed(member.guild.id):
+            return
         if before.channel == after.channel:
             return
         if before.channel:
