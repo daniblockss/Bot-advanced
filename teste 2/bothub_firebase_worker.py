@@ -1104,37 +1104,6 @@ def _pid_is_this_worker(pid):
     except Exception:
         return False
 
-def acquire_worker_lock():
-    """Adquire exclusividade sem aguardar indefinidamente por outra instância."""
-    lock_path = ROOT / ".bothub_worker.lock"
-    handle = open(lock_path, "a+", encoding="utf-8")
-    try:
-        if os.name == "nt":
-            import msvcrt
-            handle.seek(0)
-            if lock_path.stat().st_size == 0:
-                handle.write(" ")
-                handle.flush()
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        handle.seek(0)
-        handle.truncate()
-        handle.write(str(os.getpid()))
-        handle.flush()
-        return handle
-    except (OSError, BlockingIOError):
-        try:
-            handle.seek(0)
-            owner = handle.read().strip() or "PID desconhecido"
-        except Exception:
-            owner = "PID desconhecido"
-        print(f"[BotHub] Lock já está em uso por outra instância (PID {owner}). Este Worker duplicado será encerrado.", flush=True)
-        handle.close()
-        return None
-
 def main():
     global CURRENT_CFG, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN, LEASE_MISSES
     cfg=setup()
@@ -1146,11 +1115,7 @@ def main():
         subprocess.check_call([str(vp),"-m","pip","install","--upgrade","pip"])
         subprocess.check_call([str(vp),"-m","pip","install","requests","discord.py","aiohttp"])
         os.execv(str(vp),[str(vp),str(Path(__file__).resolve())])
-    lock_handle = acquire_worker_lock()
-    if lock_handle is None:
-        # Código 73 informa ao start.py que esta é uma segunda instância
-        # e que ele deve encerrar seu supervisor, sem reiniciar em loop.
-        raise SystemExit(73)
+    # Execução direta: não bloquear o Worker por arquivo de lock.
     signal.signal(signal.SIGTERM, handle_shutdown_signal)
     signal.signal(signal.SIGINT, handle_shutdown_signal)
     atexit.register(cleanup_children)
