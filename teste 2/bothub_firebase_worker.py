@@ -993,25 +993,34 @@ CLUSTER_UPDATE_URLS={
 }
 
 def process_cluster_update(tok):
-    """Em atualização obrigatória, baixa o instalador e o worker diretamente do GitHub."""
+    """Aplica a atualização no próprio processo, sem iniciar outro instalador/supervisor."""
     release=fb("GET","botHubClusterUpdates/current",tok)
     if not isinstance(release,dict) or not release.get("updateId"):
         return False
     update_id=str(release.get("updateId"))
     state_path=ROOT/".bothub_cluster_update_state.json"
-    try: state=json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
-    except Exception: state={}
-    if state.get("updateId")==update_id and state.get("status") in ("applied","installing"):
+    try:
+        state=json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    except Exception:
+        state={}
+    if state.get("updateId")==update_id and state.get("status")=="applied":
         return False
+    # Se uma execução anterior foi interrompida durante o download, permite
+    # tentar novamente depois de 3 minutos, sem iniciar um segundo controlador.
+    if state.get("updateId")==update_id and state.get("status")=="installing":
+        started=float(state.get("requestedAt") or 0)/1000
+        if started and time.time()-started < 180:
+            return False
 
     requested=release.get("files",[])
     if isinstance(requested,dict):
         requested=list(requested.keys())
     if not isinstance(requested,list) or not requested:
         return False
+    allowed={"add_cluster_server.py","bothub_firebase_worker.py"}
     clean={}
     for name in requested:
-        if name not in CLUSTER_UPDATE_URLS:
+        if name not in allowed:
             raise RuntimeError("Arquivo de cluster não permitido: "+str(name))
         url=CLUSTER_UPDATE_URLS[name]
         response=S.get(url,timeout=45)
@@ -1023,45 +1032,19 @@ def process_cluster_update(tok):
         compile(source,name,"exec")
         clean[name]=source
 
-    pending=ROOT/".bothub_cluster_update_pending.json"
-    save_json(pending,{"updateId":update_id,"files":clean})
-    helper="""import json,os,sys,time,subprocess
-from pathlib import Path
-parent=int(sys.argv[1]);root=Path(sys.argv[2]).resolve();py=sys.argv[3]
-pending=root/".bothub_cluster_update_pending.json"
-state=root/".bothub_cluster_update_state.json"
-allowed={"add_cluster_server.py","bothub_firebase_worker.py"}
-def alive(pid):
-    try: os.kill(pid,0); return True
-    except OSError: return False
-deadline=time.time()+90
-while alive(parent) and time.time()<deadline: time.sleep(.5)
-if alive(parent):
-    try: os.kill(parent,15)
-    except OSError: pass
-    time.sleep(2)
-data=json.loads(pending.read_text(encoding="utf-8"))
-for name,source in data.get("files",{}).items():
-    if name not in allowed or not isinstance(source,str): raise RuntimeError("Arquivo não permitido")
-    compile(source,name,"exec")
-    target=root/name;tmp=root/(name+".cluster-update.tmp")
-    tmp.write_text(source,encoding="utf-8");tmp.replace(target)
-venvpy=root/"venv"/("Scripts/python.exe" if os.name=="nt" else "bin/python")
-if not venvpy.exists(): venvpy=Path(py)
-state.write_text(json.dumps({"updateId":data.get("updateId"),"status":"applied","appliedAt":int(time.time()*1000)}),encoding="utf-8")
-pending.unlink(missing_ok=True)
-installer=root/"add_cluster_server.py"
-if not installer.exists():
-    raise RuntimeError("Instalador atualizado não foi encontrado; não é possível reiniciar a instalação.")
-os.execv(str(venvpy),[str(venvpy),str(installer)])
-"""
-    helper_path=ROOT/".bothub_cluster_updater.py"
-    helper_path.write_text(helper,encoding="utf-8")
     save_json(state_path,{"updateId":update_id,"status":"installing","requestedAt":int(time.time()*1000)})
-    print("[BotHub] Atualização do cluster: baixando "+", ".join(clean.keys())+" diretamente do GitHub; reiniciando controlador.",flush=True)
-    subprocess.Popen([sys.executable,str(helper_path),str(os.getpid()),str(ROOT),sys.executable],
-        cwd=str(ROOT),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
-        start_new_session=(os.name!="nt"))
+    # Substituição atômica: o processo atual continua vivo enquanto os arquivos
+    # são preparados. Não chama add_cluster_server.py, pois ele criaria outro
+    # supervisor no Termux e provocaria reinicializações com código 0.
+    for name,source in clean.items():
+        target=ROOT/name
+        tmp=ROOT/(name+".cluster-update.tmp")
+        tmp.write_text(source,encoding="utf-8")
+        tmp.replace(target)
+    save_json(state_path,{"updateId":update_id,"status":"applied","appliedAt":int(time.time()*1000)})
+    print("[BotHub] Atualização aplicada:",", ".join(clean.keys()),"- reiniciando o mesmo processo, sem encerrar o supervisor.",flush=True)
+    worker=ROOT/"bothub_firebase_worker.py"
+    os.execv(sys.executable,[sys.executable,str(worker)])
     return True
 
 def _pid_is_this_worker(pid):
