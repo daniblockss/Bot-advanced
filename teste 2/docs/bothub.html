@@ -173,7 +173,7 @@ async function rebalance(){
       target.count++;
       assignments[bid]=target.id;
     }
-    const signature=JSON.stringify({assignments,auth:Object.fromEntries(Object.entries(botData).map(([id,b])=>[id,[b.config?.botHubGuildAccessMode||'required',b.config?.botHubAllowedGuildIds||b.authorizedGuildIds||[]]]))});
+    const signature=JSON.stringify({assignments,bots:Object.fromEntries(enabled.map(([id,b])=>[id,[b.name,b.token,b.config||{},b.allowPasswordSalt||'',b.allowPasswordHash||'',b.allowUserIds||[],b.authorizedGuildIds||[],b.updatedAt||0]]))});
     if(signature===lastAssignment)return;
     lastAssignment=signature;
     const updates={};
