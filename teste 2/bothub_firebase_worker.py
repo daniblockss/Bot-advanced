@@ -16,12 +16,15 @@ LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 WORKER_VERSION="2026.11.13.4"
 
 def runtime_environment():
-    """Identifica o ambiente real sem confundir Android/Termux com Linux comum."""
-    prefix=os.environ.get("PREFIX","")
-    home=str(Path.home()).lower()
-    android=("ANDROID_ROOT" in os.environ or "ANDROID_DATA" in os.environ
-             or "/data/data/" in prefix.lower() or "/data/data/com.termux" in home)
-    if android and ("com.termux" in prefix.lower() or "com.termux" in home):
+    """Identifica Android/Termux por caminhos antigos e atuais do Android."""
+    prefix=str(os.environ.get("PREFIX",""))
+    home=str(Path.home())
+    combined=(prefix+" "+home+" "+str(os.environ.get("TERMUX_VERSION",""))).lower()
+    is_termux=("com.termux" in combined or bool(os.environ.get("TERMUX_VERSION")))
+    android=(is_termux or "ANDROID_ROOT" in os.environ or "ANDROID_DATA" in os.environ
+             or "/data/data/" in prefix.lower() or "/data/user/0/" in prefix.lower()
+             or "/data/user/0/" in home.lower())
+    if is_termux:
         runtime="Termux"
     elif android:
         runtime="Android"
