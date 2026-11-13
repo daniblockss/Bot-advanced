@@ -1058,6 +1058,13 @@ def main():
         try:
             t=token(cfg);did=urllib.parse.quote(cfg["device_id"],safe="")
             LAST_TOKEN=t;LAST_DID=did;CURRENT_FIREBASE_TOKEN=t
+            # Verifica atualização antes do heartbeat: um erro no PUT de status
+            # não pode impedir que este worker receba a própria correção.
+            try:
+                if process_cluster_update(t):
+                    break
+            except Exception as update_error:
+                print("[BotHub] falha ao verificar atualização do cluster:",str(update_error)[:220],flush=True)
             fb("PUT","workers/"+did,t,stats(cfg))
             queue=fb("GET","workerTasks/"+did,t) or {}
             LAST_QUEUE=queue if isinstance(queue,dict) else {}
@@ -1150,10 +1157,6 @@ def main():
                         if not auto_start and start_requested <= WORKER_STARTED*1000: continue
                         start(k,bot_cfg)
                 except Exception as e: print("[BotHub] falha no bot",k,str(e)[:220],flush=True)
-            try:
-                if process_cluster_update(t):
-                    break
-            except Exception as e: print("[BotHub] falha ao atualizar arquivos de cluster:",str(e)[:220],flush=True)
             try: process_release_updates(t,queue)
             except Exception as e: print("[BotHub] falha ao verificar atualização:",str(e)[:220],flush=True)
         except KeyboardInterrupt: break
