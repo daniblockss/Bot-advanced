@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.15"
+WORKER_VERSION="2026.11.12.16"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -140,15 +140,12 @@ def fb(method,path,tok,data=None,_retried=False):
 TERMUX_DIAGNOSTICS_CACHE={"at":0,"data":{}}
 
 def termux_diagnostics():
-    """Detecta Termux, Termux:API e a configuração local do Termux:Boot."""
+    """Detecta apenas a disponibilidade do Termux:API."""
     if not TERMUX_CONSOLE:
-        return {"runtimeType":"Linux","termuxApiInstalled":None,
-                "termuxBootInstalled":None,"termuxBootConfigured":None}
+        return {"runtimeType":"Linux","termuxApiInstalled":None}
     now=time.monotonic()
     if now-TERMUX_DIAGNOSTICS_CACHE["at"]<60:
         return dict(TERMUX_DIAGNOSTICS_CACHE["data"])
-    # Não confiar apenas no PATH: o processo pode iniciar com PATH incompleto.
-    # Validar a API executando o comando e conferindo a resposta JSON.
     api_cmd=shutil.which("termux-battery-status")
     if not api_cmd:
         prefix=os.environ.get("PREFIX","")
@@ -166,23 +163,7 @@ def termux_diagnostics():
                            0 <= float(payload["percentage"]) <= 100)
         except (OSError,ValueError,TypeError,subprocess.TimeoutExpired):
             api_installed=False
-    boot_installed=False
-    for command in (["/system/bin/pm","path","com.termux.boot"],["pm","path","com.termux.boot"]):
-        try:
-            result=subprocess.run(command,capture_output=True,text=True,timeout=5)
-            if result.returncode==0 and "package:" in (result.stdout or ""):
-                boot_installed=True
-                break
-        except (OSError,subprocess.TimeoutExpired):
-            continue
-    boot_script=Path.home()/".termux"/"boot"/"00-bothub-start"
-    boot_configured=False
-    try:
-        boot_configured=boot_script.is_file() and "start.py" in boot_script.read_text(encoding="utf-8",errors="replace")
-    except OSError:
-        pass
-    data={"runtimeType":"Termux","termuxApiInstalled":api_installed,
-          "termuxBootInstalled":boot_installed,"termuxBootConfigured":boot_configured}
+    data={"runtimeType":"Termux","termuxApiInstalled":api_installed}
     TERMUX_DIAGNOSTICS_CACHE.update({"at":now,"data":data})
     return dict(data)
 
