@@ -1,3 +1,5 @@
+BOTHUB_MAIN_VERSION = "2026.11.12.1"
+
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -2770,9 +2772,18 @@ def cancelar_saida_comunidade_autorizada(guild_id):
         tarefa.cancel()
 
 def comunidade_autorizada(guild_id):
-    """A comunidade só recebe funções completas após !allow pelo criador principal."""
+    """Aplica a política de servidores definida no BotHub e as autorizações feitas no Discord."""
     try:
-        return int(guild_id) in {int(value) for value in config.get("comunidades_autorizadas", [])}
+        mode = str(config.get("botHubGuildAccessMode", "required")).lower()
+        if mode == "optional":
+            return True
+        configured = config.get("botHubAllowedGuildIds", [])
+        legacy = config.get("comunidades_autorizadas", [])
+        allowed = set()
+        for value in (configured if isinstance(configured, list) else []) + (legacy if isinstance(legacy, list) else []):
+            if str(value).isdigit() and int(value) > 0:
+                allowed.add(int(value))
+        return int(guild_id) in allowed
     except (TypeError, ValueError):
         return False
 
@@ -7071,6 +7082,11 @@ async def prefix_allow_comunidade(ctx):
     autorizadas = config.setdefault("comunidades_autorizadas", [])
     if guild_id not in {int(value) for value in autorizadas if str(value).isdigit()}:
         autorizadas.append(guild_id)
+    bot_allowlist = config.setdefault("botHubAllowedGuildIds", [])
+    if not isinstance(bot_allowlist, list):
+        bot_allowlist = config["botHubAllowedGuildIds"] = []
+    if guild_id not in {int(value) for value in bot_allowlist if str(value).isdigit()}:
+        bot_allowlist.append(guild_id)
     config.setdefault("criadores_supremos_guild", {})[str(guild_id)] = int(ctx.guild.owner_id)
     salvar_config(config)
     cancelar_saida_comunidade_autorizada(guild_id)
