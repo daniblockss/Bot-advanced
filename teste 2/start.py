@@ -16,6 +16,9 @@ import time
 import urllib.request
 from pathlib import Path
 
+_SUPERVISOR_LOCK_HANDLE = None
+SUPERVISOR_LOCK_FILE = Path(__file__).resolve().parent / ".bothub_supervisor.lock"
+
 BASE_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 SUPERVISOR_VERSION = "2026.11.13.3"
 ROOT = Path(__file__).resolve().parent
@@ -46,6 +49,33 @@ COMPONENTS = (
         "markers": (b"workerTasks/", b"accounts:signUp", b"def main("),
     },
 )
+
+def acquire_supervisor_lock() -> bool:
+    """Garante um único supervisor por pasta, inclusive no Termux."""
+    global _SUPERVISOR_LOCK_HANDLE
+    handle = SUPERVISOR_LOCK_FILE.open("a+", encoding="utf-8")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(" ")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, ImportError):
+        handle.close()
+        return False
+    handle.seek(0)
+    handle.truncate()
+    handle.write(str(os.getpid()))
+    handle.flush()
+    _SUPERVISOR_LOCK_HANDLE = handle
+    return True
+
 
 def setup_logger():
     ROOT.mkdir(parents=True, exist_ok=True)
@@ -233,6 +263,11 @@ def main() -> int:
         log.critical("É necessário Python 3.10 ou superior.")
         return 2
 
+    if not acquire_supervisor_lock():
+        log.warning("Já existe um start.py ativo nesta pasta. Esta instância duplicada será encerrada sem tocar no Worker.")
+        return 0
+
+    log.info("Lock exclusivo do supervisor adquirido (PID %s).", os.getpid())
     worker_process = None
     try:
         manage_cpu_wakelock(True)
