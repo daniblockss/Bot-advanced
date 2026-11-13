@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import requests
 
-WORKER_VERSION="2026.11.13.11"
+WORKER_VERSION="2026.11.13.12"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -835,18 +835,15 @@ def start(k,b):
     bot_policy=b.get("config") if isinstance(b.get("config"),dict) else {}
     if bot_policy.get("botHubGuildAccessMode") in ("required","optional"):
         cfg["botHubGuildAccessMode"]=str(bot_policy["botHubGuildAccessMode"]).strip().lower()
-        # A lista do painel é a base; preserva também autorizações locais feitas
-        # pelo dono do servidor com !allow, sem perder IDs já cadastrados no painel.
+        # A lista do painel é a fonte única da verdade: revogações também precisam ser aplicadas.
         panel_ids=bot_policy.get("botHubAllowedGuildIds") or []
-        local_ids=cfg.get("botHubAllowedGuildIds") or []
         if not isinstance(panel_ids,(list,tuple,set)): panel_ids=[panel_ids]
-        if not isinstance(local_ids,(list,tuple,set)): local_ids=[local_ids]
-        merged_ids=[]
-        for value in list(panel_ids)+list(local_ids):
+        approved_ids=[]
+        for value in panel_ids:
             value=str(value).strip()
-            if re.fullmatch(r"\d{15,22}",value) and value not in merged_ids:
-                merged_ids.append(value)
-        cfg["botHubAllowedGuildIds"]=merged_ids
+            if re.fullmatch(r"\d{15,22}",value) and value not in approved_ids:
+                approved_ids.append(value)
+        cfg["botHubAllowedGuildIds"]=approved_ids
     save_json(cp,cfg)
     print("[BotHub] política de servidores aplicada:",cfg.get("botHubGuildAccessMode","required"),
           "| IDs autorizados:",len(cfg.get("botHubAllowedGuildIds") or []),flush=True)
