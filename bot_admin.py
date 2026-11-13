@@ -85,7 +85,7 @@ def call_ai(uid,text):
  for item,is_global in pool:
   provider=str(item.get("provider","openrouter")).lower(); endpoint=api_endpoint(provider,str(item.get("endpoint") or ""))
   if not endpoint:continue
-  payload={"model":item.get("model") or ("llama-3.3-70b-versatile" if provider=="groq" else "openai/gpt-4o-mini"),"messages":[{"role":"system","content":"Você é o assistente oficial do BotHub. Responda em português, de forma clara e concisa. Ajude com tickets, pontos, bots e APIs. Nunca diga que concluiu ações sem executá-las."},{"role":"user","content":text[:4000]}],"max_tokens":500}
+  payload={"model":item.get("model") or ({"groq":"llama-3.3-70b-versatile","openrouter":"openai/gpt-4o-mini","chatgpt":"gpt-4o-mini","llm7":"gpt-4o-mini"}.get(provider,"gpt-4o-mini")),"messages":[{"role":"system","content":"Você é o assistente oficial do BotHub. Responda em português, de forma clara e concisa. Ajude com tickets, pontos, bots e APIs. Nunca diga que concluiu ações sem executá-las."},{"role":"user","content":text[:4000]}],"max_tokens":500}
   try:
    req=Request(endpoint,data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+str(item["key"]),"Content-Type":"application/json"})
    with urlopen(req,timeout=35) as r: answer=json.loads(r.read())["choices"][0]["message"]["content"]
@@ -97,7 +97,7 @@ def call_ai(uid,text):
  return "As APIs configuradas não responderam: "+last
 def validate_api_key(provider,key,model):
  endpoint=api_endpoint(provider)
- chosen=model or ("llama-3.3-70b-versatile" if provider=="groq" else "openai/gpt-4o-mini")
+ chosen=model or ({"groq":"llama-3.3-70b-versatile","openrouter":"openai/gpt-4o-mini","chatgpt":"gpt-4o-mini","llm7":"gpt-4o-mini"}.get(provider,"gpt-4o-mini"))
  payload={"model":chosen,"messages":[{"role":"user","content":"Responda apenas OK."}],"max_tokens":5}
  req=Request(endpoint,data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"})
  with urlopen(req,timeout=20) as response:
