@@ -12534,19 +12534,48 @@ def registrar_raiz(app):
             return await destino.send(file=discord.File(io.BytesIO(texto.encode()), filename=nome), allowed_mentions=app["NO_MENTIONS"], **kwargs)
         return await destino.send(texto, allowed_mentions=app["NO_MENTIONS"], **kwargs)
 
-    async def planejar(ctx, pedido):
+    async def planejar(ctx, pedido, logs_msg=None, log_linhas=None):
+        log_linhas = log_linhas if log_linhas is not None else []
+
+        async def log(etapa):
+            if logs_msg is None:
+                return
+            log_linhas.append(etapa)
+            texto = "**!raiz agent — logs**\n" + "\n".join(log_linhas[-12:])
+            try:
+                await logs_msg.edit(content=texto[-1900:])
+            except discord.HTTPException:
+                pass
+
+        await log("🔎 Lendo categorias, canais e descrições...")
         estado = raiz_snapshot(ctx.guild)
         fontes = []
-        tamanho_amostra = max(20, min(400, 64000 // max(1, len(ctx.guild.text_channels) * 8)))
-        for canal in ctx.guild.text_channels:
+        limite_amostras = 12000
+        usados = 0
+        canais_texto = list(ctx.guild.text_channels)
+        await log(f"📚 Estrutura encontrada: {len(estado)} itens; analisando contexto de {len(canais_texto)} canais de texto.")
+        for indice, canal in enumerate(canais_texto, 1):
+            if usados >= limite_amostras:
+                fontes.append({"id": str(canal.id), "leitura": "amostra omitida para limitar contexto"})
+                continue
             if not app["_pode_consultar_canal"](canal, ctx.guild, ctx.author):
                 fontes.append({"id": str(canal.id), "leitura": "indisponível"})
                 continue
             try:
-                mensagens = [m.content[:tamanho_amostra] async for m in canal.history(limit=8)]
-                fontes.append({"id": str(canal.id), "amostra_recente": mensagens})
+                amostra = []
+                async for mensagem in canal.history(limit=2):
+                    trecho = (mensagem.content or "").strip()[:180]
+                    if trecho:
+                        trecho = trecho[:max(0, limite_amostras - usados)]
+                        if trecho:
+                            amostra.append(trecho)
+                            usados += len(trecho)
+                    if usados >= limite_amostras:
+                        break
+                fontes.append({"id": str(canal.id), "amostra_recente": amostra})
             except discord.HTTPException:
                 fontes.append({"id": str(canal.id), "leitura": "falhou"})
+        await log(f"✅ Leitura concluída: {len(estado)} itens e {usados} caracteres de amostras.")
         mensagens = [{"role": "system", "content":
             'Planeje a organização de um servidor Discord. Retorne somente JSON: '
             '{"conclusoes":{"ID":"finalidade inferida, evidência e limitações"},"resumo":"...","operacoes":[...]}. '
@@ -12561,29 +12590,42 @@ def registrar_raiz(app):
                 "estrutura": [{k: v for k, v in c.items() if k != "permissoes"} for c in estado],
                 "amostras": fontes}, ensure_ascii=False)}]
         falhas = []
-        for provedor in app["obter_ordem_provedores"]():
-            for chave in app["obter_chaves_provedor"](provedor):
-                try:
-                    resposta = await app["requisitar_provedor"](provedor, chave, mensagens)
-                    resposta = resposta.strip()
-                    if resposta.startswith("```"):
-                        resposta = resposta.split("\n", 1)[1].rsplit("```", 1)[0]
-                    plano = raiz_validar_plano(json.loads(resposta), estado)
-                    conclusoes = plano.get("conclusoes")
-                    if not isinstance(conclusoes, dict) or any(
-                        not isinstance(conclusoes.get(c["id"]), str) or not conclusoes[c["id"]].strip()
-                        for c in estado if c["tipo"] != "category"
-                    ):
-                        raise ValueError("Faltaram conclusões sobre canais da comunidade.")
-                    if any(op["acao"] == "excluir" for op in plano["operacoes"]) and not any(t in app["normalizar"](pedido) for t in ("exclu", "delet", "apag", "remov")):
-                        raise ValueError("A IA sugeriu exclusão sem solicitação; reformule o pedido.")
-                    view = Proposta(ctx, pedido, estado, plano)
-                    await enviar(ctx.channel, view.detalhes(), "proposta-raiz.txt")
-                    await ctx.send("Revise a proposta acima. Nenhuma alteração foi aplicada.", view=view)
-                    return
-                except (app["FalhaProvedor"], ValueError, TypeError, KeyError) as error:
-                    falhas.append(type(error).__name__)
-        await ctx.send("Não consegui obter uma proposta válida. Nada foi alterado. Tente um pedido menor. " + ", ".join(falhas[-3:]))
+        provedores = list(dict.fromkeys(app["obter_ordem_provedores"]()))
+        await log("🧠 Enviando o contexto para a IA (uma tentativa por provedor, sem repetir chaves do mesmo provedor)...")
+        for provedor in provedores:
+            chaves = list(app["obter_chaves_provedor"](provedor))
+            if not chaves:
+                continue
+            chave = chaves[0]
+            await log(f"🌐 Consultando provedor: {provedor}...")
+            try:
+                resposta = await app["requisitar_provedor"](provedor, chave, mensagens)
+                await log(f"📩 Resposta recebida de {provedor}; convertendo o JSON em ações...")
+                resposta = resposta.strip()
+                if resposta.startswith("```"):
+                    resposta = resposta.split("\n", 1)[1].rsplit("```", 1)[0]
+                plano = raiz_validar_plano(json.loads(resposta), estado)
+                conclusoes = plano.get("conclusoes")
+                if not isinstance(conclusoes, dict) or any(
+                    not isinstance(conclusoes.get(c["id"]), str) or not conclusoes[c["id"]].strip()
+                    for c in estado if c["tipo"] != "category"
+                ):
+                    raise ValueError("Faltaram conclusões sobre canais da comunidade.")
+                if any(op["acao"] == "excluir" for op in plano["operacoes"]) and not any(t in app["normalizar"](pedido) for t in ("exclu", "delet", "apag", "remov")):
+                    raise ValueError("A IA sugeriu exclusão sem solicitação; reformule o pedido.")
+                await log(f"🧾 Plano validado: {len(plano['operacoes'])} operações. Preparando revisão e aprovação...")
+                view = Proposta(ctx, pedido, estado, plano, logs_msg, log_linhas)
+                await enviar(ctx.channel, view.detalhes(), "proposta-raiz.txt")
+                await ctx.send("Revise a proposta acima. Nenhuma alteração foi aplicada.", view=view)
+                await log("✅ Proposta pronta. Revise e aprove; nenhuma alteração foi aplicada ainda.")
+                return
+            except (app["FalhaProvedor"], ValueError, TypeError, KeyError) as error:
+                falhas.append(f"{provedor}: {type(error).__name__}: {str(error)[:180]}")
+                await log(f"⚠️ {provedor} falhou: {str(error)[:150]}. Tentando o próximo provedor, sem repetir este.")
+        resumo = "Não consegui obter uma proposta válida. Nada foi alterado. " + " | ".join(falhas[-3:])
+        await log("❌ " + resumo[:220])
+        if logs_msg is None:
+            await ctx.send(resumo[:1900])
 
     class Revisao(discord.ui.Modal, title="O que precisa mudar na proposta?"):
         motivo = discord.ui.TextInput(label="Explique o que ficou errado e o que deseja", style=discord.TextStyle.paragraph, max_length=1500)
@@ -12594,20 +12636,33 @@ def registrar_raiz(app):
             if not autorizado(interaction.user.id, interaction.guild) or interaction.user.id != self.proposta.ctx.author.id:
                 return await interaction.response.send_message("Sem autorização.", ephemeral=True)
             await interaction.response.defer()
-            await planejar(self.proposta.ctx, self.proposta.pedido + "\nCorreção solicitada: " + self.motivo.value)
+            await planejar(self.proposta.ctx, self.proposta.pedido + "\nCorreção solicitada: " + self.motivo.value,
+                           self.proposta.logs_msg, self.proposta.log_linhas)
 
     class Proposta(discord.ui.View):
-        def __init__(self, ctx, pedido, estado, plano):
+        def __init__(self, ctx, pedido, estado, plano, logs_msg=None, log_linhas=None):
             super().__init__(timeout=900)
             self.ctx, self.pedido, self.estado, self.plano = ctx, pedido, estado, plano
+            self.logs_msg = logs_msg
+            self.log_linhas = log_linhas if log_linhas is not None else []
             self.fase = "revisao"
+
+        async def registrar_log(self, etapa):
+            if self.logs_msg is None:
+                return
+            self.log_linhas.append(etapa)
+            texto = "**!raiz agent — logs**\n" + "\n".join(self.log_linhas[-12:])
+            try:
+                await self.logs_msg.edit(content=texto[-1900:])
+            except discord.HTTPException:
+                pass
         def detalhes(self):
             return ("ESTRUTURA ATUAL\n" + raiz_arvore(self.estado, True) +
                     "\n\nESTRUTURA PROPOSTA (POSIÇÕES SUJEITAS À ORDENAÇÃO DO DISCORD)\n" +
                     raiz_arvore(raiz_projetar(self.estado, self.plano), True) + "\n\nOPERAÇÕES E CONCLUSÕES\n" +
                     json.dumps(self.plano, ensure_ascii=False, indent=2) +
                     "\n\nCada operação acima é uma alteração proposta; canais não citados serão preservados. "
-                    "Conclusões usam até 8 mensagens recentes por canal. Exclusões só serão aplicadas a canais vazios.")
+                    "Conclusões usam até 2 mensagens recentes por canal (com limite total de contexto). Exclusões só serão aplicadas a canais vazios.")
         async def interaction_check(self, interaction):
             if interaction.user.id == self.ctx.author.id and autorizado(interaction.user.id, interaction.guild):
                 return True
@@ -12625,6 +12680,7 @@ def registrar_raiz(app):
             for child in self.children:
                 child.disabled = True
             await interaction.response.edit_message(content="Proposta aprovada. Deseja salvar um backup da estrutura antes de aplicar? Inclui nomes, descrições, posições e permissões; não inclui mensagens nem restauração automática.", view=Backup(self))
+            await self.registrar_log("👍 Proposta aprovada; aguardando decisão sobre o backup.")
         @discord.ui.button(label="Não, quero corrigir", style=discord.ButtonStyle.danger)
         async def rejeitar(self, interaction, button):
             if self.fase != "revisao":
@@ -12673,6 +12729,7 @@ def registrar_raiz(app):
                 for op in self.plano["operacoes"]:
                     if op["acao"] == "excluir":
                         await verificar_exclusao(canais[op["id"]])
+                await self.registrar_log("🔐 Validando permissões e conferindo se a estrutura continua igual...")
                 if backup:
                     pasta = Path(app["BASE_DIR"]) / "backups_raiz"
                     pasta.mkdir(exist_ok=True)
@@ -12683,9 +12740,12 @@ def registrar_raiz(app):
                         await interaction.followup.send("Backup salvo antes das alterações.", file=arquivo, allowed_mentions=app["NO_MENTIONS"])
                     finally:
                         arquivo.close()
+                    await self.registrar_log("💾 Backup salvo. Iniciando as alterações...")
+                else:
+                    await self.registrar_log("🛠️ Backup dispensado. Iniciando as alterações...")
                 concluidas = []
                 try:
-                    for op in self.plano["operacoes"]:
+                    for indice, op in enumerate(self.plano["operacoes"], 1):
                         if not autorizado(interaction.user.id, guild):
                             raise ValueError("Permissão revogada durante a execução.")
                         acao = op["acao"]
@@ -12705,9 +12765,13 @@ def registrar_raiz(app):
                             await verificar_exclusao(canais[op["id"]])
                             await canais[op["id"]].delete(**kwargs)
                         concluidas.append(op)
+                        nome_log = op.get("nome") or op.get("id") or op.get("ref") or "item"
+                        await self.registrar_log(f"⚙️ [{indice}/{len(self.plano['operacoes'])}] {acao}: {nome_log} — concluído.")
                 except (discord.HTTPException, ValueError) as error:
+                    await self.registrar_log(f"❌ Execução interrompida: {str(error)[:160]}")
                     await enviar(interaction.followup, f"Execução interrompida: {error}\nOperações concluídas (não desfeitas automaticamente):\n" + json.dumps(concluidas, ensure_ascii=False, indent=2))
                     return
+                await self.registrar_log(f"🎉 Organização concluída: {len(concluidas)} operações aplicadas.")
                 await interaction.followup.send(f"Organização aplicada: {len(concluidas)} operações concluídas.", allowed_mentions=app["NO_MENTIONS"])
 
     class Backup(discord.ui.View):
@@ -12764,11 +12828,22 @@ def registrar_raiz(app):
             acao = "agent"
         if acao == "agent":
             pedido = pedido.split(maxsplit=1)[1] if len(pedido.split(maxsplit=1)) > 1 else "Organize a comunidade preservando os canais existentes."
-            await ctx.send("Lendo a estrutura e amostras recentes para preparar uma proposta…")
+            partes_pedido = pedido.rsplit(maxsplit=1)
+            usar_logs = bool(partes_pedido and app["normalizar"](partes_pedido[-1]) == "logs")
+            if usar_logs:
+                pedido = partes_pedido[0] if len(partes_pedido) > 1 else "Organize a comunidade preservando os canais existentes."
+            log_linhas = []
+            status = await ctx.send("🔎 Lendo a estrutura da comunidade..." if usar_logs else "Lendo a estrutura da comunidade para preparar uma proposta…")
             try:
-                await planejar(ctx, pedido[:2000])
+                await planejar(ctx, pedido[:2000], status if usar_logs else None, log_linhas)
             except discord.HTTPException:
-                await ctx.send("Falha ao consultar o Discord. Nenhuma alteração aplicada.")
+                if usar_logs:
+                    try:
+                        await status.edit(content="❌ Falha ao consultar o Discord. Nenhuma alteração aplicada.")
+                    except discord.HTTPException:
+                        pass
+                else:
+                    await ctx.send("Falha ao consultar o Discord. Nenhuma alteração aplicada.")
         elif not acao or acao in {"descricao", "descricoes"}:
             await enviar(ctx.channel, raiz_arvore(raiz_snapshot(ctx.guild), bool(acao)))
         else:
