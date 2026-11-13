@@ -14,7 +14,7 @@ PROCS={};LOGS={};CLEAN_EXITED={};S=requests.Session();WORKER_STARTED=time.time()
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 LAST_SAVED_RUNTIME=None;RUNTIME_STATE_LOADED=False
 
-WORKER_VERSION="2026.11.13.8"
+WORKER_VERSION="2026.11.13.9"
 
 def runtime_environment():
     """Identifica Android/Termux por caminhos antigos e atuais do Android."""
@@ -183,7 +183,7 @@ def stats(cfg):
     ready=[k for k in running if (ROOT/"bots"/sid(k)/".bothub_discord_ready").is_file()]
     runtime, battery_command=runtime_environment()
     x={"deviceId":cfg["device_id"],"uid":cfg.get("uid",""),"hostname":socket.gethostname(),
-       "label":socket.gethostname(),"platform":platform.platform(),"runtimeType":runtime,
+       "label":socket.gethostname(),"platform":platform.platform(),"runtimeType":runtime,"runtimeDetectedAt":int(time.time()*1000),
        "termuxApiInstalled":bool(battery_command) if runtime=="Termux" else None,
        "workerVersion":WORKER_VERSION,"architecture":platform.machine(),
        "pythonVersion":platform.python_version(),"diskFreeBytes":d.free,
@@ -216,17 +216,21 @@ def stats(cfg):
     return x
 
 def sync_runtime_type(did,t,cfg):
-    """Grava runtimeType apenas na primeira detecção ou quando o ambiente mudar."""
+    """Mantém o ambiente estável no Firebase e só grava quando a detecção mudar."""
     global LAST_SAVED_RUNTIME,RUNTIME_STATE_LOADED
     detected,_=runtime_environment()
     if not RUNTIME_STATE_LOADED:
-        saved=fb("GET","workers/"+did+"/runtimeType",t)
-        LAST_SAVED_RUNTIME=saved if isinstance(saved,str) else None
+        try:
+            saved=fb("GET","workers/"+did+"/runtimeType",t)
+        except Exception:
+            saved=None
+        LAST_SAVED_RUNTIME=saved if isinstance(saved,str) and saved.strip() else None
         RUNTIME_STATE_LOADED=True
     if detected != LAST_SAVED_RUNTIME:
         fb("PATCH","workers/"+did,t,{
             "runtimeType":detected,
-            "runtimeDetectedAt":int(time.time()*1000)
+            "runtimeDetectedAt":int(time.time()*1000),
+            "runtimeSource":"worker"
         })
         LAST_SAVED_RUNTIME=detected
         print("[BotHub] Ambiente do Worker registrado/atualizado:",detected,flush=True)
@@ -1172,8 +1176,14 @@ CLUSTER_UPDATE_URLS={
     "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bothub_firebase_worker.py",
 }
 
-def process_cluster_update(tok):
-    """Aplica a atualização no próprio processo, sem iniciar outro instalador/supervisor."""
+def publish_cluster_progress(did,update_id,status,message,version=None):
+    """Publica cada etapa da atualização para o painel administrativo."""
+    payload={"updateId":str(update_id),"status":str(status),"message":str(message)[:240],
+             "updatedAt":int(time.time()*1000),"reportedVersion":version or WORKER_VERSION}
+    fb("PUT","botHubClusterUpdates/progress/"+did,CURRENT_FIREBASE_TOKEN or LAST_TOKEN,payload)
+
+def process_cluster_update(tok,did):
+    """Atualiza o worker e confirma a conclusão somente depois de iniciar o código novo."""
     release=fb("GET","botHubClusterUpdates/current",tok)
     if not isinstance(release,dict) or not release.get("updateId"):
         return False
@@ -1184,12 +1194,12 @@ def process_cluster_update(tok):
     except Exception:
         state={}
     if state.get("updateId")==update_id and state.get("status")=="applied":
+        publish_cluster_progress(did,update_id,"completed","Worker voltou e confirmou a atualização.",WORKER_VERSION)
         return False
-    # Se uma execução anterior foi interrompida durante o download, permite
-    # tentar novamente depois de 3 minutos, sem iniciar um segundo controlador.
     if state.get("updateId")==update_id and state.get("status")=="installing":
         started=float(state.get("requestedAt") or 0)/1000
         if started and time.time()-started < 180:
+            publish_cluster_progress(did,update_id,"restarting","Aguardando a retomada do processo atualizado.")
             return False
 
     requested=release.get("files",[])
@@ -1199,33 +1209,37 @@ def process_cluster_update(tok):
         return False
     allowed={"add_cluster_server.py","bothub_firebase_worker.py"}
     clean={}
-    for name in requested:
-        if name not in allowed:
-            raise RuntimeError("Arquivo de cluster não permitido: "+str(name))
-        url=CLUSTER_UPDATE_URLS[name]
-        response=S.get(url,timeout=45)
-        response.raise_for_status()
-        data=response.content
-        if len(data)<1000:
-            raise RuntimeError("Download incompleto de "+name)
-        source=data.decode("utf-8")
-        compile(source,name,"exec")
-        clean[name]=source
+    try:
+        publish_cluster_progress(did,update_id,"received","Solicitação recebida pelo Worker.")
+        publish_cluster_progress(did,update_id,"downloading","Baixando e validando os arquivos publicados.")
+        for name in requested:
+            if name not in allowed:
+                raise RuntimeError("Arquivo de cluster não permitido: "+str(name))
+            response=S.get(CLUSTER_UPDATE_URLS[name],timeout=45)
+            response.raise_for_status()
+            data=response.content
+            if len(data)<1000:
+                raise RuntimeError("Download incompleto de "+name)
+            source=data.decode("utf-8")
+            compile(source,name,"exec")
+            clean[name]=source
 
-    save_json(state_path,{"updateId":update_id,"status":"installing","requestedAt":int(time.time()*1000)})
-    # Substituição atômica: o processo atual continua vivo enquanto os arquivos
-    # são preparados. Não chama add_cluster_server.py, pois ele criaria outro
-    # supervisor no Termux e provocaria reinicializações com código 0.
-    for name,source in clean.items():
-        target=ROOT/name
-        tmp=ROOT/(name+".cluster-update.tmp")
-        tmp.write_text(source,encoding="utf-8")
-        tmp.replace(target)
-    save_json(state_path,{"updateId":update_id,"status":"applied","appliedAt":int(time.time()*1000)})
-    print("[BotHub] Atualização aplicada:",", ".join(clean.keys()),"- reiniciando o mesmo processo, sem encerrar o supervisor.",flush=True)
-    worker=ROOT/"bothub_firebase_worker.py"
-    os.execv(sys.executable,[sys.executable,str(worker)])
-    return True
+        publish_cluster_progress(did,update_id,"installing","Arquivos validados; instalando de forma atômica.")
+        save_json(state_path,{"updateId":update_id,"status":"installing","requestedAt":int(time.time()*1000)})
+        for name,source in clean.items():
+            target=ROOT/name
+            tmp=ROOT/(name+".cluster-update.tmp")
+            tmp.write_text(source,encoding="utf-8")
+            tmp.replace(target)
+        save_json(state_path,{"updateId":update_id,"status":"applied","appliedAt":int(time.time()*1000)})
+        publish_cluster_progress(did,update_id,"restarting","Arquivos instalados; aguardando o Worker atualizado voltar.")
+        print("[BotHub] Atualização aplicada:",", ".join(clean.keys()),"- reiniciando o mesmo processo, sem encerrar o supervisor.",flush=True)
+        os.execv(sys.executable,[sys.executable,str(ROOT/"bothub_firebase_worker.py")])
+        return True
+    except Exception as exc:
+        try: publish_cluster_progress(did,update_id,"failed","Falha: "+str(exc)[:180],WORKER_VERSION)
+        except Exception: pass
+        raise
 
 def _pid_is_this_worker(pid):
     """Confere se o PID pertence ao worker desta instalação, não a outro servidor."""
@@ -1275,14 +1289,15 @@ def main():
             # Verifica atualização antes do heartbeat: um erro no PUT de status
             # não pode impedir que este worker receba a própria correção.
             try:
-                if process_cluster_update(t):
+                if process_cluster_update(t,did):
                     break
             except Exception as update_error:
                 print("[BotHub] falha ao verificar atualização do cluster:",str(update_error)[:220],flush=True)
             # O tipo do ambiente é sincronizado separadamente e somente quando muda.
             sync_runtime_type(did,t,cfg)
             heartbeat=stats(cfg)
-            heartbeat.pop("runtimeType",None)
+            heartbeat["runtimeType"]=sync_runtime_type(did,t,cfg)
+            heartbeat["runtimeSource"]="worker"
             fb("PATCH","workers/"+did,t,heartbeat)
             queue=fb("GET","workerTasks/"+did,t) or {}
             LAST_QUEUE=queue if isinstance(queue,dict) else {}
