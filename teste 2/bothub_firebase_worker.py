@@ -13,6 +13,68 @@ DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 PROCS={};LOGS={};CLEAN_EXITED={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 
+WORKER_VERSION="2026.11.13.4"
+
+def runtime_environment():
+    """Identifica o ambiente real sem confundir Android/Termux com Linux comum."""
+    prefix=os.environ.get("PREFIX","")
+    home=str(Path.home()).lower()
+    android=("ANDROID_ROOT" in os.environ or "ANDROID_DATA" in os.environ
+             or "/data/data/" in prefix.lower() or "/data/data/com.termux" in home)
+    if android and ("com.termux" in prefix.lower() or "com.termux" in home):
+        runtime="Termux"
+    elif android:
+        runtime="Android"
+    elif os.name=="nt":
+        runtime="Windows"
+    elif sys.platform=="darwin":
+        runtime="macOS"
+    elif sys.platform.startswith("linux"):
+        runtime="Linux"
+    else:
+        runtime=platform.system() or "Desconhecido"
+    command=shutil.which("termux-battery-status")
+    if not command and prefix:
+        candidate=Path(prefix)/"bin"/"termux-battery-status"
+        if candidate.is_file():command=str(candidate)
+    return runtime,command
+
+def battery_stats(command):
+    """Lê a bateria pelo Termux:API; em outros sistemas informa ausência real."""
+    result={"batteryPresent":False,"batteryPercent":None,"batteryStatus":"unknown",
+            "batteryPlugged":False,"batteryPluggedType":None,"batteryTemperatureC":None,
+            "batteryHealth":None,"batteryVoltageMv":None,"batteryCurrentUa":None}
+    if not command:return result
+    try:
+        proc=subprocess.run([command],capture_output=True,text=True,timeout=6,
+                            stdin=subprocess.DEVNULL)
+        if proc.returncode!=0:return result
+        raw=json.loads(proc.stdout or "{}")
+        if not isinstance(raw,dict) or "percentage" not in raw:return result
+        pct=float(raw.get("percentage"))
+        if not 0<=pct<=100:return result
+        status=str(raw.get("status") or "unknown").strip().lower().replace(" ","_")
+        status_map={"charging":"charging","discharging":"discharging","full":"full",
+                    "not_charging":"not_charging","unknown":"unknown"}
+        plugged_type=str(raw.get("plugged") or "").strip().upper() or None
+        plugged=(plugged_type not in (None,"UNPLUGGED","NONE","UNKNOWN"))
+        if isinstance(raw.get("plugged"),bool):plugged=raw["plugged"]
+        elif isinstance(raw.get("plugged"),str) and raw["plugged"].upper() in ("TRUE","FALSE"):
+            plugged=raw["plugged"].upper()=="TRUE"
+        result.update(batteryPresent=True,batteryPercent=round(pct,1),
+                      batteryStatus=status_map.get(status,"unknown"),
+                      batteryPlugged=plugged,batteryPluggedType=plugged_type,
+                      batteryHealth=str(raw.get("health") or "") or None)
+        for source,target,divisor in (("temperature","batteryTemperatureC",1),
+                                      ("voltage","batteryVoltageMv",1),
+                                      ("current","batteryCurrentUa",1)):
+            value=raw.get(source)
+            if isinstance(value,(int,float)) and not isinstance(value,bool):
+                result[target]=value/divisor
+        return result
+    except (OSError,subprocess.SubprocessError,ValueError,TypeError,json.JSONDecodeError):
+        return result
+
 def save_json(path,data):
     tmp=path.with_suffix(path.suffix+".tmp")
     tmp.write_text(json.dumps(data,ensure_ascii=False),encoding="utf-8")
@@ -103,13 +165,18 @@ def stats(cfg):
     d=shutil.disk_usage(str(ROOT))
     running=[k for k,p in PROCS.items() if p.poll() is None]
     ready=[k for k in running if (ROOT/"bots"/sid(k)/".bothub_discord_ready").is_file()]
+    runtime, battery_command=runtime_environment()
     x={"deviceId":cfg["device_id"],"uid":cfg.get("uid",""),"hostname":socket.gethostname(),
-       "label":socket.gethostname(),"platform":platform.platform(),"diskFreeBytes":d.free,
+       "label":socket.gethostname(),"platform":platform.platform(),"runtimeType":runtime,
+       "termuxApiInstalled":bool(battery_command) if runtime=="Termux" else None,
+       "workerVersion":WORKER_VERSION,"architecture":platform.machine(),
+       "pythonVersion":platform.python_version(),"diskFreeBytes":d.free,
        "diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"runningBots":len(running),
        "runningBotIds":running,"readyBotIds":ready,"lastSeen":int(time.time()*1000),
        "uptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerUptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerStartedAt":int(WORKER_STARTED*1000)}
+    x.update(battery_stats(battery_command))
     try:x["uptimeSeconds"]=int(float(Path("/proc/uptime").read_text().split()[0]))
     except Exception:pass
     try:x["publicIp"]=S.get("https://api.ipify.org?format=json",timeout=4).json().get("ip","")
