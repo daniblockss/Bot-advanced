@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
-SUPERVISOR_VERSION = "2026.11.13.1"
+SUPERVISOR_VERSION = "2026.11.13.2"
 ROOT = Path(__file__).resolve().parent
 LOG_FILE = ROOT / "start.log"
 INSTALLER = ROOT / "add_cluster_server.py"
@@ -146,21 +146,33 @@ def install_component(item: dict, data: bytes) -> None:
         pass
 
 def prepare_initial_files() -> None:
-    """Valida os arquivos locais; baixa do GitHub somente no primeiro bootstrap."""
+    """Confere os componentes no GitHub ao iniciar e atualiza cópias locais antigas."""
     for item in COMPONENTS:
+        local_data = None
         try:
-            validate(item["path"].read_bytes(), item)
-            log.info("%s local validado. Atualizações serão aplicadas somente por solicitação no painel.",
-                     item["name"])
-            continue
+            local_data = item["path"].read_bytes()
+            validate(local_data, item)
         except Exception as local_error:
-            log.warning("%s ausente ou inválido (%s); tentando bootstrap pelo GitHub.",
+            log.warning("%s ausente ou inválido (%s); será baixado do GitHub.",
                         item["name"], local_error)
 
-        data = fetch_component(item)
-        install_component(item, data)
-        log.info("%s baixado no bootstrap (%d bytes; SHA-256 %s).",
-                 item["name"], len(data), hashlib.sha256(data).hexdigest())
+        try:
+            remote_data = fetch_component(item)
+        except Exception as remote_error:
+            if local_data is not None:
+                log.warning("GitHub indisponível para %s; mantendo a cópia local válida: %s",
+                            item["name"], str(remote_error)[:180])
+                continue
+            raise
+
+        if local_data is not None and hashlib.sha256(local_data).digest() == hashlib.sha256(remote_data).digest():
+            log.info("%s já está na versão mais recente (SHA-256 %s).",
+                     item["name"], hashlib.sha256(remote_data).hexdigest())
+            continue
+
+        install_component(item, remote_data)
+        log.info("%s atualizado no início (%d bytes; SHA-256 %s).",
+                 item["name"], len(remote_data), hashlib.sha256(remote_data).hexdigest())
 
 def stop_worker(process: subprocess.Popen | None) -> None:
     if process is None or process.poll() is not None:
