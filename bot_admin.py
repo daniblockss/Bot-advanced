@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""BotHub Admin: tickets, points, bot registration and API panels."""
+import os,json,time,uuid
+from pathlib import Path
+from urllib.request import Request,urlopen
+from urllib.error import HTTPError
+import discord
+from discord.ext import commands
+ROOT=Path(__file__).resolve().parent
+CFG=json.loads((ROOT/"config.json").read_text(encoding="utf-8"))
+TOKEN=str(CFG.get("discord_token") or "")
+BOT_ID=str(CFG.get("bot_id") or ROOT.name)
+API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
+DB="https://bothub-bca02-default-rtdb.firebaseio.com"
+AUTH=None
+ADMINS={int(x) for x in CFG.get("admin_ids",[]) if str(x).isdigit()}
+STAFF={int(x) for x in CFG.get("staff_ids",[]) if str(x).isdigit()}|ADMINS
+ENTRY_CHANNEL=int(CFG.get("ticket_entry_channel_id") or 0)
+CATEGORY_ID=int(CFG.get("ticket_category_id") or 0)
+PREFIX=str(CFG.get("prefix") or "!")
+intents=discord.Intents.default()
+intents.message_content=True
+intents.members=True
+bot=commands.Bot(command_prefix=PREFIX,intents=intents,help_command=None)
+ticket_locks=set()
+def fb(method,path,value=None):
+ global AUTH
+ if not AUTH:
+  req=Request("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key="+API_KEY,data=b'{"returnSecureToken":true}',headers={"Content-Type":"application/json"},method="POST")
+  with urlopen(req,timeout=20) as r: AUTH=json.loads(r.read())["idToken"]
+ url=DB+"/"+path.strip("/")+".json?auth="+AUTH
+ data=None if value is None else json.dumps(value,ensure_ascii=False).encode()
+ try:
+  with urlopen(Request(url,data=data,headers={"Content-Type":"application/json"},method=method),timeout=20) as r: return json.loads(r.read() or b"null")
+ except HTTPError as e:
+  if e.code==401: AUTH=None; return fb(method,path,value)
+  raise RuntimeError("Firebase HTTP "+str(e.code))
+def get(path): return fb("GET",path)
+def put(path,value): return fb("PUT",path,value)
+def is_admin(user): return user.id in ADMINS
+def points(uid):
+ d=get("botHubPoints/"+str(uid)) or {}
+ return int(d.get("balance",0)) if isinstance(d,dict) else 0
+def change_points(uid,delta,actor,reason):
+ path="botHubPoints/"+str(uid); old=get(path) or {}
+ balance=max(0,int(old.get("balance",0))+int(delta))
+ put(path,{"balance":balance,"updatedAt":int(time.time()*1000),"lastActor":str(actor),"lastReason":reason[:160]})
+ return balance
+def emb(title,desc=""): return discord.Embed(title=title,description=desc,color=0x38BDF8)
+async def ensure_ticket(guild,user,initial=None):
+ existing=discord.utils.find(lambda c:c.topic==f"bothub-ticket:{user.id}",guild.text_channels)
+ if existing:return existing
+ category=guild.get_channel(CATEGORY_ID) if CATEGORY_ID else None
+ overwrites={guild.default_role:discord.PermissionOverwrite(view_channel=False),user:discord.PermissionOverwrite(view_channel=True,send_messages=True,read_message_history=True),guild.me:discord.PermissionOverwrite(view_channel=True,send_messages=True,manage_channels=True,read_message_history=True)}
+ for uid in STAFF:
+  member=guild.get_member(uid)
+  if member:overwrites[member]=discord.PermissionOverwrite(view_channel=True,send_messages=True,read_message_history=True)
+ ch=await guild.create_text_channel(("ticket-"+user.name.lower().replace(" ","-"))[:90],category=category if isinstance(category,discord.CategoryChannel) else None,overwrites=overwrites,topic=f"bothub-ticket:{user.id}")
+ await ch.send(f"{user.mention}, este é seu atendimento privado do BotHub. Use !help para ajuda e !fechar para encerrar.")
+ if initial:await ch.send("Mensagem inicial: "+discord.utils.escape_markdown(initial[:1200]))
+ return ch
+def api_endpoint(provider,custom=""):
+ return {"openrouter":"https://openrouter.ai/api/v1/chat/completions","groq":"https://api.groq.com/openai/v1/chat/completions","llm7":"https://api.llm7.io/v1/chat/completions","chatgpt":"https://api.openai.com/v1/chat/completions"}.get(provider,custom)
+def call_ai(uid,text):
+ personal=get(f"botHubUserApis/{uid}/{BOT_ID}") or {}
+ global_opt=get(f"botHubGlobalOptIn/{uid}/{BOT_ID}") or {}
+ pool=[]
+ if isinstance(personal,dict) and personal.get("enabled") and personal.get("key"):pool.append((personal,False))
+ if global_opt.get("enabled"):
+  gl=get("botHubGlobalApis") or {}
+  if isinstance(gl,dict):pool.extend((v,True) for v in gl.values() if isinstance(v,dict) and v.get("enabled") and v.get("key"))
+ if not pool:return "Nenhuma API habilitada. Use !api para adicionar sua chave ou ativar APIs globais."
+ if global_opt.get("enabled") and points(uid)<1 and not any(not g for _,g in pool):return "Você está sem pontos para usar APIs globais. Use !comprar-pontos para solicitar pontos à equipe."
+ last="Sem provedor disponível."
+ for item,is_global in pool:
+  provider=str(item.get("provider","openrouter")).lower(); endpoint=api_endpoint(provider,str(item.get("endpoint") or ""))
+  if not endpoint:continue
+  payload={"model":item.get("model") or ("llama-3.3-70b-versatile" if provider=="groq" else "openai/gpt-4o-mini"),"messages":[{"role":"system","content":"Você é o assistente oficial do BotHub. Responda em português, de forma clara e concisa. Ajude com tickets, pontos, bots e APIs. Nunca diga que concluiu ações sem executá-las."},{"role":"user","content":text[:4000]}],"max_tokens":500}
+  try:
+   req=Request(endpoint,data=json.dumps(payload).encode(),headers={"Authorization":"Bearer "+str(item["key"]),"Content-Type":"application/json"})
+   with urlopen(req,timeout=35) as r: answer=json.loads(r.read())["choices"][0]["message"]["content"]
+   if is_global:
+    if points(uid)<1:return "Você está sem pontos para usar APIs globais. Solicite pontos à equipe com !comprar-pontos."
+    change_points(uid,-1,BOT_ID,"Uso de API global")
+   return str(answer)[:3800]
+  except Exception as e:last=str(e)[:160]
+ return "As APIs configuradas não responderam: "+last
+class ApiModal(discord.ui.Modal,title="Adicionar API pessoal"):
+ provider=discord.ui.TextInput(label="Provedor: openrouter, groq, llm7 ou chatgpt",default="openrouter",max_length=30)
+ key=discord.ui.TextInput(label="Chave da API",max_length=500)
+ model=discord.ui.TextInput(label="Modelo (opcional)",required=False,max_length=120)
+ async def on_submit(self,interaction):
+  p=str(self.provider.value).strip().lower()
+  if p not in {"openrouter","groq","llm7","chatgpt"}:return await interaction.response.send_message("Provedor não suportado.",ephemeral=True)
+  put(f"botHubUserApis/{interaction.user.id}/{BOT_ID}",{"provider":p,"key":str(self.key.value).strip(),"model":str(self.model.value).strip(),"enabled":True,"updatedAt":int(time.time()*1000)})
+  await interaction.response.send_message("API pessoal salva.",ephemeral=True)
+class ApiView(discord.ui.View):
+ def __init__(self):super().__init__(timeout=180)
+ @discord.ui.button(label="Adicionar API pessoal",style=discord.ButtonStyle.primary)
+ async def add(self,i,b):await i.response.send_modal(ApiModal())
+ @discord.ui.button(label="Ativar/desativar APIs globais",style=discord.ButtonStyle.success)
+ async def toggle(self,i,b):
+  path=f"botHubGlobalOptIn/{i.user.id}/{BOT_ID}"; old=get(path) or {}; enabled=not bool(old.get("enabled"))
+  put(path,{"enabled":enabled,"updatedAt":int(time.time()*1000)})
+  await i.response.send_message("APIs globais "+("ativadas" if enabled else "desativadas")+". Cada resposta que usar API global custa 1 ponto.",ephemeral=True)
+ @discord.ui.button(label="Remover API pessoal",style=discord.ButtonStyle.danger)
+ async def remove(self,i,b):
+  put(f"botHubUserApis/{i.user.id}/{BOT_ID}",None);await i.response.send_message("API pessoal removida.",ephemeral=True)
+class BotSelect(discord.ui.Select):
+ def __init__(self,uid):
+  opts=[]; data=get("bots") or {}
+  for bid,item in list(data.items())[:25]:
+   if str(item.get("ownerId"))==str(uid):opts.append(discord.SelectOption(label=str(item.get("name","Bot"))[:100],value=bid,description=str(item.get("botType","ia_chat"))[:100]))
+  if not opts:opts=[discord.SelectOption(label="Nenhum bot cadastrado",value="none")]
+  super().__init__(placeholder="Selecione um bot",options=opts)
+ async def callback(self,i):
+  bid=self.values[0]
+  if bid=="none":return await i.response.send_message("Você ainda não cadastrou bots.",ephemeral=True)
+  item=get("bots/"+bid) or {}
+  await i.response.send_message(f"**{item.get('name','Bot')}** | tipo: {item.get('botType','ia_chat')} | estado: {'ON' if item.get('enabled') else 'OFF'}. Use o painel para convite e permissões.",ephemeral=True)
+class ConfigView(discord.ui.View):
+ def __init__(self,uid):super().__init__(timeout=180);self.add_item(BotSelect(uid))
+@bot.event
+async def on_ready():print(f"[BotHub Admin] Conectado como {bot.user} ({bot.user.id})",flush=True)
+@bot.event
+async def on_message(message):
+ if message.author.bot:return
+ if message.guild and ENTRY_CHANNEL and message.channel.id==ENTRY_CHANNEL and message.content.strip() and message.author.id not in STAFF:
+  if message.author.id not in ticket_locks:
+   ticket_locks.add(message.author.id)
+   try:
+    ch=await ensure_ticket(message.guild,message.author,message.content)
+    await ch.send(f"{message.author.mention}, seu ticket privado: {ch.mention}")
+   finally:ticket_locks.discard(message.author.id)
+  return
+ if message.guild and str(getattr(message.channel,"topic","") or "").startswith("bothub-ticket:") and not message.content.startswith("!"):
+  response=await __import__("asyncio").to_thread(call_ai,message.author.id,message.content)
+  await message.channel.send(response);return
+ await bot.process_commands(message)
+@bot.command(name="ticket")
+async def ticket(ctx):
+ if ctx.guild:
+  ch=await ensure_ticket(ctx.guild,ctx.author);await ctx.reply(f"Seu atendimento: {ch.mention}",delete_after=20)
+@bot.command(name="pontos")
+async def show_points(ctx):await ctx.reply(f"Você tem **{points(ctx.author.id)} pontos**.")
+@bot.command(name="comprar-pontos",aliases=["comprar"])
+async def buy(ctx):await ctx.reply("Solicitação de compra registrada para a equipe. Informe no ticket a quantidade desejada; um administrador confirmará e adicionará os pontos.")
+@bot.command(name="add-bot")
+async def add_bot(ctx,*,args=""):
+ parts=args.split(maxsplit=1)
+ if len(parts)!=2 or len(parts[1])<30:return await ctx.reply("Use !add-bot nome token.")
+ name,token=parts
+ try:
+  req=Request("https://discord.com/api/v10/users/@me",headers={"Authorization":"Bot "+token})
+  with urlopen(req,timeout=15) as r:profile=json.loads(r.read())
+ except Exception:return await ctx.reply("Token inválido ou não foi possível validar no Discord.")
+ bid=uuid.uuid4().hex
+ put("bots/"+bid,{"name":name[:100],"token":token,"botType":"ia_chat","ownerId":str(ctx.author.id),"enabled":True,"desiredState":"on","workerId":None,"createdAt":int(time.time()*1000),"config":{"bot_authorization":{"allow_user_ids":[str(ctx.author.id)]}}})
+ await ctx.reply(f"Bot {discord.utils.escape_markdown(name)} validado ({profile.get('username','bot')}) e cadastrado. O cluster fará a distribuição quando houver worker.")
+@bot.command(name="api")
+async def api(ctx):await ctx.send(embed=emb("Gerenciamento de APIs","Adicione uma API pessoal ou ative as APIs globais. O uso de API global consome pontos."),view=ApiView())
+@bot.command(name="configs")
+async def configs(ctx):await ctx.send(embed=emb("Seus bots","Selecione um bot para consultar seu estado."),view=ConfigView(ctx.author.id))
+@bot.command(name="help")
+async def help_cmd(ctx):
+ e=emb("BotHub — Ajuda");e.add_field(name="Usuários",value="!pontos · !comprar-pontos · !add-bot nome token · !api · !configs · !ticket",inline=False);e.add_field(name="Tickets",value="Converse normalmente neste canal privado. !fechar encerra.",inline=False)
+ if is_admin(ctx.author):e.add_field(name="Administração",value="!add @usuário pontos · !remove @usuário pontos",inline=False)
+ await ctx.reply(embed=e)
+@bot.command(name="add")
+async def add_points(ctx,member:discord.Member=None,amount:int=0):
+ if not is_admin(ctx.author):return await ctx.reply("Sem permissão.")
+ if member is None or not 1<=amount<=1000000:return await ctx.reply("Use !add @usuário quantidade.")
+ balance=change_points(member.id,amount,ctx.author.id,"Adição administrativa");await ctx.reply(f"{member.mention}: +{amount}. Saldo: **{balance}**.")
+@bot.command(name="remove")
+async def remove_points(ctx,member:discord.Member=None,amount:int=0):
+ if not is_admin(ctx.author):return await ctx.reply("Sem permissão.")
+ if member is None or amount<1:return await ctx.reply("Use !remove @usuário quantidade.")
+ balance=change_points(member.id,-amount,ctx.author.id,"Remoção administrativa");await ctx.reply(f"{member.mention}: saldo **{balance}**.")
+@bot.command(name="fechar")
+async def close(ctx):
+ topic=str(getattr(ctx.channel,"topic","") or "")
+ if not topic.startswith("bothub-ticket:"):return await ctx.reply("Este canal não é um ticket.")
+ owner=int(topic.split(":")[-1])
+ if ctx.author.id!=owner and not is_admin(ctx.author) and ctx.author.id not in STAFF:return await ctx.reply("Somente o criador ou a equipe pode fechar.")
+ await ctx.reply("Ticket encerrado; canal será removido em 5 segundos.");await __import__("asyncio").sleep(5);await ctx.channel.delete(reason="Ticket BotHub encerrado")
+if __name__=="__main__":
+ if not TOKEN:raise SystemExit("discord_token ausente em config.json")
+ bot.run(TOKEN)
