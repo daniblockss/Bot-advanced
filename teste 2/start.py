@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
-SUPERVISOR_VERSION = "2026.11.12.1"
+SUPERVISOR_VERSION = "2026.11.12.2"
 ROOT = Path(__file__).resolve().parent
 LOG_FILE = ROOT / "start.log"
 INSTALLER = ROOT / "add_cluster_server.py"
@@ -216,13 +216,13 @@ def main() -> int:
         prepare_initial_files()
         setup_environment()
         worker_process = start_worker()
-        log.info("Worker iniciado. Atualizações de scripts somente serão aplicadas quando solicitadas no painel.")
+        log.info("Worker iniciado. start.py supervisiona a execução e reinicia o worker após atualizações solicitadas no painel.")
 
         while True:
             # Este monitor só recupera uma queda do processo. Não consulta o GitHub.
             time.sleep(SUPERVISOR_POLL_INTERVAL)
             if worker_process.poll() is not None:
-                log.warning("Worker encerrou com código %s. Reiniciando em %ss.",
+                log.warning("Worker encerrou com código %s. Supervisor reiniciando em %ss.",
                             worker_process.returncode, RESTART_DELAY)
                 time.sleep(RESTART_DELAY)
                 worker_process = start_worker()
