@@ -5,7 +5,7 @@ from __future__ import annotations
 import os, platform, shutil, subprocess, sys, urllib.request, shlex, time, json, zipfile, io
 from pathlib import Path
 
-INSTALLER_VERSION = "2026.11.12.7"
+INSTALLER_VERSION = "2026.11.12.8"
 GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 INSTALLER_URL = GITHUB_RAW + "/add_cluster_server.py"
 WORKER_URL = GITHUB_RAW + "/bothub_firebase_worker.py"
@@ -226,28 +226,34 @@ def configure_termux_boot():
                 print("[BotHub Installer] Abra a instalação e confirme Termux:Boot no Android.",
                       flush=True)
                 subprocess.Popen([opener, str(apk)])
-                print("[BotHub Installer] Quando terminar de instalar no Android, volte ao Termux.", flush=True)
-                print("[BotHub Installer] Pressione ENTER aqui para continuar (ou Ctrl+C para cancelar).",
+                print("[BotHub Installer] Confirme a instalação na tela do Android. "
+                      "O instalador vai verificar automaticamente, sem precisar pressionar ENTER.",
                       flush=True)
-                try:
-                    input()
-                except EOFError:
+                # start.py chama este instalador com stdin=DEVNULL; portanto não podemos
+                # usar input(). Aguardar a confirmação observando o Package Manager.
+                deadline = time.time() + 300
+                final_status = False
+                while time.time() < deadline:
+                    final_status = termux_package_installed("com.termux.boot")
+                    if final_status is True:
+                        break
+                    time.sleep(3)
+
+                if final_status is True:
+                    print("[BotHub Installer] Termux:Boot instalado e confirmado pelo Android.", flush=True)
+                    installed = True
+                    break
+
+                if final_status is None:
                     raise RuntimeError(
-                        "Não foi possível ler a confirmação no Termux. "
-                        "Volte ao Termux e execute start.py em um terminal interativo."
+                        "O Android bloqueou a consulta do pacote durante a instalação. "
+                        "Não vou abrir outra instalação para evitar duplicidade. "
+                        "Confira se Termux:Boot aparece nos aplicativos do Android e execute start.py novamente."
                     )
-                # A consulta via pm/cmd pode ser bloqueada em alguns Androids.
-                # Após a confirmação explícita do usuário, não manter o instalador preso
-                # esperando um resultado que o sistema pode não disponibilizar.
-                final_status = termux_package_installed("com.termux.boot")
-                if final_status is not True:
-                    raise RuntimeError(
-                        "Você confirmou a tela, mas o Android ainda não informa Termux:Boot como instalado. "
-                        "Não vou marcar a instalação como concluída."
-                    )
-                print("[BotHub Installer] Termux:Boot instalado e confirmado pelo Android.", flush=True)
-                installed = True
-                break
+
+                raise RuntimeError(
+                    "O Android ainda informa que Termux:Boot não está instalado após 5 minutos."
+                )
             except Exception as exc:
                 print(f"[BotHub Installer] Tentativa {attempt}/2 falhou: {str(exc)[:220]}",
                       flush=True)
