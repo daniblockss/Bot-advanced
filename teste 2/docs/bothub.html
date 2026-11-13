@@ -368,7 +368,7 @@ $('publishMainUpdate').onclick=async()=>{
     const updateId='manual-'+Date.now()+'-'+crypto.randomUUID().slice(0,8);
     await set(testRef('botHubClusterUpdates/current'),{
       updateId, type:'mandatory', clusterOnly:true,
-      files:['start.py','add_cluster_server.py','bothub_firebase_worker.py'],
+      files:['add_cluster_server.py','bothub_firebase_worker.py'],
       requestedAt:Date.now(), requestedBy:auth.currentUser?.uid||'admin'
     });
     msg.className='ok';msg.textContent='Solicitação publicada. Os workers online vão baixar e aplicar a atualização automaticamente.';
