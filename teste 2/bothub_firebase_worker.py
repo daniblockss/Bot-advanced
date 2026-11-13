@@ -12,8 +12,9 @@ API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 PROCS={};LOGS={};CLEAN_EXITED={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
+LAST_SAVED_RUNTIME=None;RUNTIME_STATE_LOADED=False
 
-WORKER_VERSION="2026.11.13.5"
+WORKER_VERSION="2026.11.13.6"
 
 def runtime_environment():
     """Identifica Android/Termux por caminhos antigos e atuais do Android."""
@@ -213,6 +214,23 @@ def stats(cfg):
             x.update(ramFreeBytes=available,ramTotalBytes=total,cpuPercent=0,cpuCount=os.cpu_count() or 1)
         except Exception:x.update(ramFreeBytes=0,ramTotalBytes=0,cpuPercent=0,cpuCount=os.cpu_count() or 1)
     return x
+
+def sync_runtime_type(did,t,cfg):
+    """Grava runtimeType apenas na primeira detecção ou quando o ambiente mudar."""
+    global LAST_SAVED_RUNTIME,RUNTIME_STATE_LOADED
+    detected,_=runtime_environment()
+    if not RUNTIME_STATE_LOADED:
+        saved=fb("GET","workers/"+did+"/runtimeType",t)
+        LAST_SAVED_RUNTIME=saved if isinstance(saved,str) else None
+        RUNTIME_STATE_LOADED=True
+    if detected != LAST_SAVED_RUNTIME:
+        fb("PATCH","workers/"+did,t,{
+            "runtimeType":detected,
+            "runtimeDetectedAt":int(time.time()*1000)
+        })
+        LAST_SAVED_RUNTIME=detected
+        print("[BotHub] Ambiente do Worker registrado/atualizado:",detected,flush=True)
+    return detected
 
 def sid(v):
     return "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or "bot"
@@ -1261,7 +1279,11 @@ def main():
                     break
             except Exception as update_error:
                 print("[BotHub] falha ao verificar atualização do cluster:",str(update_error)[:220],flush=True)
-            fb("PUT","workers/"+did,t,stats(cfg))
+            # O tipo do ambiente é sincronizado separadamente e somente quando muda.
+            sync_runtime_type(did,t,cfg)
+            heartbeat=stats(cfg)
+            heartbeat.pop("runtimeType",None)
+            fb("PATCH","workers/"+did,t,heartbeat)
             queue=fb("GET","workerTasks/"+did,t) or {}
             LAST_QUEUE=queue if isinstance(queue,dict) else {}
             process_worker_commands(cfg,t,did,queue)
