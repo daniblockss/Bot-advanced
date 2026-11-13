@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.11</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.12</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -554,6 +554,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
           <div style="margin-top: 24px;"></div>
           <button id="updateCluster" class="primary">Atualizar arquivos do Cefilu</button>
           <div id="clusterUpdateMsg" class="hint" style="margin-top: 10px;"></div>
+          <div id="clusterUpdateProgress" class="hint" style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px">Nenhuma atualização em andamento.</div>
         </div>
       </div>
     </div>
@@ -955,6 +956,20 @@ function workerBotListHtml(workerId,w){
  if(!items.length)return '<div class="hint" style="margin-top:7px">Nenhum bot em execução detectado.</div>';
  return '<details open style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Bots em execução ('+items.length+') · mostrar/ocultar</summary><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+items.map(([id,b])=>'<span title="'+esc(b.name||'Bot')+'" style="display:inline-flex;align-items:center;gap:5px;max-width:170px;padding:4px 7px;border:1px solid var(--line);border-radius:8px;font-size:11px"><img src="'+(b.avatarBase64||b.avatarUrl||'')+'" onerror="this.style.display=\'none\'" style="width:19px;height:19px;border-radius:50%;object-fit:cover;'+(b.avatarBase64?'':'display:none;')+'"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||'Bot')+'</span></span>').join('')+'</div></details>';
 }
+function clusterProgressHtml(id){
+ const p=clusterUpdateProgress[id];if(!p||!p.status)return '';
+ const labels={received:'Solicitação recebida',downloading:'Baixando arquivos',installing:'Preparando instalação',restarting:'Reiniciando worker',completed:'Atualizado',failed:'Falha na atualização'};
+ const color=p.status==='completed'?'var(--green)':p.status==='failed'?'var(--red)':'var(--cyan)';
+ return '<div class="hint" style="margin-top:7px;padding:8px 10px;border:1px solid '+color+'55;border-radius:9px"><strong style="color:'+color+'">Work · '+esc(labels[p.status]||p.status)+'</strong><div>'+esc(p.message||'')+'</div><div>Atualizado: '+(p.updatedAt?ageText(Date.now()-Number(p.updatedAt)):'—')+(p.reportedVersion?' · Versão: '+esc(p.reportedVersion):'')+'</div></div>';
+}
+function drawClusterProgress(){
+ const box=$('clusterUpdateProgress');if(!box)return;
+ const rows=Object.entries(clusterUpdateProgress).filter(([,p])=>p&&p.updateId);
+ if(!rows.length){box.textContent='Nenhuma atualização em andamento.';return;}
+ const labels={received:'Solicitação recebida',downloading:'Baixando arquivos',installing:'Instalando',restarting:'Reiniciando',completed:'Atualizado',failed:'Falhou'};
+ box.innerHTML='<strong>Andamento dos servidores</strong>'+rows.map(([id,p])=>'<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(workerData[id]?.label||workerData[id]?.hostname||id)+'</strong> · '+esc(labels[p.status]||p.status)+'<div>'+esc(p.message||'')+'</div></div>').join('');
+}
+
 function drawWorkers(){
  if(workersRenderAfter>Date.now()){
   $('workers').innerHTML='<div class="muted">Aguardando atualização dos workers…</div>';
@@ -989,7 +1004,7 @@ function drawWorkers(){
   $('workers').innerHTML=entries.length?entries.map(([id,w])=>{
     const isOnline=online(w),seen=Number(w.lastSeen||0),runCount=Array.isArray(w.runningBotIds)?w.runningBotIds.length:Object.keys(w.runningBotIds||{}).length,ipShared=isOnline&&w.publicIp&&sharedIps.has(String(w.publicIp).trim());
     const remainingCapacity=isOnline?capacity(w):0;
-    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipShared?'<span class="badge shared" title="Outro worker conectado está usando o mesmo IP público">IP compartilhado · mesma rede</span>':'')+'<div class="hint">ID exclusivo: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">Versão do worker: '+esc(w.workerVersion||'não informada')+'</div><div class="hint">IP público: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Bateria: '+batterySummary(w)+'</div><div class="hint" style="margin-top:7px;display:flex;flex-wrap:wrap;gap:5px;align-items:center"><strong style="margin-right:3px">Ambiente:</strong>'+statusChip(w.runtimeType==='Termux'?'Termux':w.runtimeType==='Linux'?'Linux':(w.runtimeType||'Não identificado'),w.runtimeType==='Termux'||w.runtimeType==='Linux')+(w.runtimeType==='Termux'?statusChip('Termux:API '+(w.termuxApiInstalled===true?'instalada':w.termuxApiInstalled===false?'não instalada':'sem dados'),w.termuxApiInstalled===true):'')+(w.runtimeType==='Termux'?statusChip('Termux:Boot '+(w.termuxBootInstalled===true?'instalado':w.termuxBootInstalled===false?'não instalado':'sem dados'),w.termuxBootInstalled===true):'')+(w.runtimeType==='Termux'?statusChip('Boot automático '+(w.termuxBootConfigured===true?'configurado':w.termuxBootConfigured===false?'desativado':'sem dados'),w.termuxBootConfigured===true):'')+'</div><div>'+workerBotListHtml(id,w)+'</div><div class="hint">Ainda aguenta: '+remainingCapacity+' bots adicionais (estimativa)</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
+    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipShared?'<span class="badge shared" title="Outro worker conectado está usando o mesmo IP público">IP compartilhado · mesma rede</span>':'')+'<div class="hint">ID exclusivo: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">Versão do worker: '+esc(w.workerVersion||'não informada')+'</div><div class="hint">IP público: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Bateria: '+batterySummary(w)+'</div><div class="hint" style="margin-top:7px;display:flex;flex-wrap:wrap;gap:5px;align-items:center"><strong style="margin-right:3px">Ambiente:</strong>'+statusChip(w.runtimeType==='Termux'?'Termux':w.runtimeType==='Linux'?'Linux':(w.runtimeType||'Não identificado'),w.runtimeType==='Termux'||w.runtimeType==='Linux')+(w.runtimeType==='Termux'?statusChip('Termux:API '+(w.termuxApiInstalled===true?'instalada':w.termuxApiInstalled===false?'não instalada':'sem dados'),w.termuxApiInstalled===true):'')+(w.runtimeType==='Termux'?statusChip('Termux:Boot '+(w.termuxBootInstalled===true?'instalado':w.termuxBootInstalled===false?'não instalado':'sem dados'),w.termuxBootInstalled===true):'')+(w.runtimeType==='Termux'?statusChip('Boot automático '+(w.termuxBootConfigured===true?'configurado':w.termuxBootConfigured===false?'desativado':'sem dados'),w.termuxBootConfigured===true):'')+'</div><div>'+workerBotListHtml(id,w)+'</div>'+clusterProgressHtml(id)+'<div class="hint">Ainda aguenta: '+remainingCapacity+' bots adicionais (estimativa)</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
   }).join('')+(hasSharedIps?'<div class="hint" style="margin-top:10px;padding:9px 11px;border:1px solid rgba(56,189,248,0.22);border-radius:9px;background:rgba(56,189,248,0.06)">ℹ️ IP público compartilhado é normal quando vários dispositivos estão no mesmo Wi-Fi ou roteador. Cada worker continua independente e é reconhecido pelo seu ID exclusivo.</div>':''):'<div class="muted">Nenhum worker registrado.</div>';
 
   document.querySelectorAll('[data-remove-worker]').forEach(b=>b.onclick=()=>removeWorker(b.dataset.removeWorker));
@@ -1426,8 +1441,10 @@ $('updateCluster').onclick=async()=>{
   if(!confirm('Atualizar controlador em todos os workers?'))return;
   msg.className='hint';msg.textContent='Solicitando atualização…';
   try{
-    await set(testRef('botHubClusterUpdates/current'),{updateId:'manual-'+Date.now(),type:'mandatory',clusterOnly:true,files:['start.py','add_cluster_server.py','bothub_firebase_worker.py'],requestedAt:Date.now()});
-    msg.className='ok';msg.textContent='Solicitação publicada!';
+    const updateId='manual-'+Date.now();
+    await set(testRef('botHubClusterUpdates/current'),{updateId,type:'mandatory',clusterOnly:true,files:['start.py','add_cluster_server.py','bothub_firebase_worker.py'],requestedAt:Date.now()});
+    msg.className='ok';msg.textContent='Solicitação enviada. Aguardando os servidores…';
+    $('clusterUpdateProgress').textContent='Solicitação publicada. Os servidores mostrarão cada etapa assim que receberem o comando.';
   }catch(e){msg.className='error';msg.textContent=e.message}
 };
 
@@ -1462,6 +1479,7 @@ function start(){
   $('dashboard').classList.remove('hidden');
   $('connection').textContent='Conectando…';$('connection').className='badge';
   watch('workers',v=>{workerData=v;cleanupStaleWorkers();drawWorkers();rebalance().then(drawBots)});
+  watch('botHubClusterUpdates/progress',v=>{clusterUpdateProgress=v||{};drawClusterProgress();drawWorkers()});
   watch('bots',v=>{botData=v;drawBots();rebalance()});
   $('connection').textContent='Conectado';$('connection').className='badge';
   initRealtimeChart();
