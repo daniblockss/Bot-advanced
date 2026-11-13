@@ -24,7 +24,16 @@ def setup():
     if CFGFILE.exists():
         try:
             cfg=json.loads(CFGFILE.read_text(encoding="utf-8"))
-            if cfg.get("device_id"):return cfg
+            if cfg.get("device_id"):
+                original=str(cfg["device_id"])
+                safe_id="".join(c for c in original if c.isalnum() or c in "-_")[:80]
+                if not safe_id:
+                    safe_id="device-"+uuid.uuid4().hex[:16]
+                if safe_id != original:
+                    print("[BotHub] ID antigo do worker continha caracteres inválidos para o Firebase; ID normalizado.",flush=True)
+                    cfg["device_id"]=safe_id
+                    save_json(CFGFILE,cfg)
+                return cfg
         except Exception:pass
     # A local random ID is generated automatically; no ID/email/password prompt.
     cfg={"device_id":"device-"+uuid.uuid4().hex[:16],"createdAt":int(time.time()*1000)}
@@ -86,7 +95,8 @@ def fb(method,path,tok,data=None,_retried=False):
             except Exception as e:
                 raise RuntimeError("Firebase recusou a sessão (401) e a renovação falhou: "+str(e)[:180])
         raise RuntimeError("Firebase HTTP 401: "+detail+" | Confira Authentication > Anonymous e as regras de leitura/gravação do Realtime Database para usuários autenticados.")
-    if r.status_code>=300:raise RuntimeError("Firebase "+str(r.status_code)+": "+r.text[:220])
+    if r.status_code>=300:
+        raise RuntimeError("Firebase "+str(r.status_code)+" em "+method+" "+path+": "+r.text[:220])
     return r.json() if r.text else None
 
 def stats(cfg):
