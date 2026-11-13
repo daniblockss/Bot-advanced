@@ -12534,7 +12534,7 @@ def registrar_raiz(app):
             return await destino.send(file=discord.File(io.BytesIO(texto.encode()), filename=nome), allowed_mentions=app["NO_MENTIONS"], **kwargs)
         return await destino.send(texto, allowed_mentions=app["NO_MENTIONS"], **kwargs)
 
-    async def planejar(ctx, pedido, logs_msg=None, log_linhas=None):
+    async def planejar(ctx, pedido, logs_msg=None, log_linhas=None, status_msg=None):
         log_linhas = log_linhas if log_linhas is not None else []
 
         async def log(etapa):
@@ -12618,6 +12618,8 @@ def registrar_raiz(app):
                 await enviar(ctx.channel, view.detalhes(), "proposta-raiz.txt")
                 await ctx.send("Revise a proposta acima. Nenhuma alteração foi aplicada.", view=view)
                 await log("✅ Proposta pronta. Revise e aprove; nenhuma alteração foi aplicada ainda.")
+                if status_msg is not None and logs_msg is None:
+                    await status_msg.edit(content="✅ Proposta pronta. Revise a proposta enviada; nenhuma alteração foi aplicada ainda.")
                 return
             except (app["FalhaProvedor"], ValueError, TypeError, KeyError) as error:
                 falhas.append(f"{provedor}: {type(error).__name__}: {str(error)[:180]}")
@@ -12625,7 +12627,10 @@ def registrar_raiz(app):
         resumo = "Não consegui obter uma proposta válida. Nada foi alterado. " + " | ".join(falhas[-3:])
         await log("❌ " + resumo[:220])
         if logs_msg is None:
-            await ctx.send(resumo[:1900])
+            if status_msg is not None:
+                await status_msg.edit(content="❌ " + resumo[:1850])
+            else:
+                await ctx.send(resumo[:1900])
 
     class Revisao(discord.ui.Modal, title="O que precisa mudar na proposta?"):
         motivo = discord.ui.TextInput(label="Explique o que ficou errado e o que deseja", style=discord.TextStyle.paragraph, max_length=1500)
@@ -12692,6 +12697,7 @@ def registrar_raiz(app):
                 guild = self.ctx.guild
                 if not autorizado(interaction.user.id, guild):
                     raise ValueError("Autorização revogada.")
+                await self.registrar_log("🔐 Validando permissões e conferindo se a estrutura continua igual...")
                 atuais = await guild.fetch_channels()
                 # REST state must match what was reviewed; positions and permissions count.
                 facade = type("Estado", (), {"channels": atuais})()
@@ -12729,7 +12735,6 @@ def registrar_raiz(app):
                 for op in self.plano["operacoes"]:
                     if op["acao"] == "excluir":
                         await verificar_exclusao(canais[op["id"]])
-                await self.registrar_log("🔐 Validando permissões e conferindo se a estrutura continua igual...")
                 if backup:
                     pasta = Path(app["BASE_DIR"]) / "backups_raiz"
                     pasta.mkdir(exist_ok=True)
@@ -12802,6 +12807,7 @@ def registrar_raiz(app):
                 return await interaction.response.send_message("Decisão já utilizada.", ephemeral=True)
             self.usada = True
             await interaction.response.edit_message(content="Cancelado. Nenhuma alteração aplicada.", view=None)
+            await self.proposta.registrar_log("⏹️ Execução cancelada. Nenhuma alteração aplicada.")
             self.stop()
 
     @bot.command(name="raiz")
@@ -12835,7 +12841,7 @@ def registrar_raiz(app):
             log_linhas = []
             status = await ctx.send("🔎 Lendo a estrutura da comunidade..." if usar_logs else "Lendo a estrutura da comunidade para preparar uma proposta…")
             try:
-                await planejar(ctx, pedido[:2000], status if usar_logs else None, log_linhas)
+                await planejar(ctx, pedido[:2000], status if usar_logs else None, log_linhas, status)
             except discord.HTTPException:
                 if usar_logs:
                     try:
