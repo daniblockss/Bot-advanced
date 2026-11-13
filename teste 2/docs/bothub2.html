@@ -1341,7 +1341,9 @@ window.generateBotInvite = async function() {
     const result = await sendWorkerCommand(wid, { operation: 'create_invite', botId: id });
     const inviteUrl = String(result.inviteUrl || '');
     showBotInvite(status, inviteUrl, result.applicationId, !!result.cached);
-    if (botData[id]) botData[id].inviteCache = { tokenFingerprint: fingerprint, applicationId: result.applicationId, inviteUrl, updatedAt: Date.now() };
+    const inviteCache={tokenFingerprint:fingerprint,applicationId:result.applicationId,inviteUrl,updatedAt:Date.now()};
+    if (botData[id]) botData[id].inviteCache=inviteCache;
+    await update(testRef('bots/'+id),{inviteCache});
   } catch(e) {
     status.className = 'error';
     status.textContent = e.message || String(e);
