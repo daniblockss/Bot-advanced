@@ -94,6 +94,9 @@ def validate_api_key(provider,key,model):
   json.loads(response.read())
  return chosen
 class ApiModal(discord.ui.Modal,title="Cadastrar API"):
+ def __init__(self,target_bot_id):
+  super().__init__()
+  self.target.default=str(target_bot_id)
  scope=discord.ui.TextInput(label="Destino: pessoal ou global",default="pessoal",max_length=15)
  provider=discord.ui.TextInput(label="Provedor: openrouter, groq, llm7 ou chatgpt",default="openrouter",max_length=30)
  key=discord.ui.TextInput(label="Chave da API",max_length=500)
@@ -140,7 +143,7 @@ class ApiView(discord.ui.View):
  def __init__(self,uid):
   super().__init__(timeout=180);self.target_bot_id=BOT_ID;self.add_item(ApiTargetSelect(self,uid))
  @discord.ui.button(label="Adicionar API",style=discord.ButtonStyle.primary)
- async def add(self,i,b):await i.response.send_modal(ApiModal())
+ async def add(self,i,b):await i.response.send_modal(ApiModal(self.target_bot_id))
  @discord.ui.button(label="Ativar/desativar APIs globais",style=discord.ButtonStyle.success)
  async def toggle(self,i,b):
   path=f"botHubGlobalOptIn/{i.user.id}/{self.target_bot_id}";old=get(path) or {};enabled=not bool(old.get("enabled"))
@@ -187,7 +190,10 @@ async def ticket(ctx):
 @bot.command(name="pontos")
 async def show_points(ctx):await ctx.reply(f"Você tem **{points(ctx.author.id)} pontos**.")
 @bot.command(name="comprar-pontos",aliases=["comprar"])
-async def buy(ctx):await ctx.reply("Solicitação de compra registrada para a equipe. Informe no ticket a quantidade desejada; um administrador confirmará e adicionará os pontos.")
+async def buy(ctx,amount:int=0):
+ if amount<1 or amount>1000000:return await ctx.reply("Use !comprar-pontos quantidade. A equipe confirmará o pagamento antes de adicionar pontos.")
+ mentions=" ".join(f"<@{uid}>" for uid in STAFF)
+ await ctx.reply(f"{mentions} {ctx.author.mention} solicitou a compra de **{amount} pontos**. A equipe deve confirmar o pagamento antes de usar !add.",allowed_mentions=discord.AllowedMentions(users=True))
 @bot.command(name="add-bot")
 async def add_bot(ctx,*,args=""):
  parts=args.split(maxsplit=1)
