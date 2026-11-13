@@ -10016,14 +10016,31 @@ def _bot_auth_guild_allowed(guild_id):
 
 
 @bot.command(name="allow")
-async def bot_allow_command(ctx, *, senha: str = ""):
-    if ctx.guild is not None:
-        try:
-            await ctx.message.delete()
-        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-            pass
-        return
-    await ctx.send("A autorização deste bot é gerenciada exclusivamente pelo painel BotHub. O comando !allow foi desativado.")
+@commands.guild_only()
+async def prefix_allow_comunidade(ctx):
+    # O dono da comunidade ou um criador global pode liberar somente esta comunidade.
+    if not is_creator(ctx):
+        return await ctx.reply("⛔ Somente o dono deste servidor ou um criador global pode usar `!allow`.")
+    guild_id = int(ctx.guild.id)
+    autorizadas = config.setdefault("comunidades_autorizadas", [])
+    if guild_id not in {int(value) for value in autorizadas if str(value).isdigit()}:
+        autorizadas.append(guild_id)
+    bot_allowlist = config.setdefault("botHubAllowedGuildIds", [])
+    if not isinstance(bot_allowlist, list):
+        bot_allowlist = config["botHubAllowedGuildIds"] = []
+    if guild_id not in {int(value) for value in bot_allowlist if str(value).isdigit()}:
+        bot_allowlist.append(guild_id)
+    config.setdefault("criadores_supremos_guild", {})[str(guild_id)] = int(ctx.guild.owner_id)
+    salvar_comunidades_persistidas()
+    salvar_config(config)
+    try:
+        await bot.tree.sync(guild=ctx.guild)
+    except (discord.HTTPException, discord.Forbidden):
+        pass
+    await ctx.reply(
+        f"✅ Comunidade **{ctx.guild.name}** autorizada. O dono desta comunidade (<@{ctx.guild.owner_id}>) agora tem acesso administrativo local; isso não concede acesso global nem altera outros servidores.",
+        allowed_mentions=NO_MENTIONS,
+    )
 
 
 # Bloqueia também comandos de barra em comunidades que ainda não foram liberadas.
@@ -10052,12 +10069,10 @@ async def on_message(message):
     if message.guild and str(getattr(message.channel, "topic", "") or "").startswith("bothub-ticket:"):
         return
 
-    # !allow nunca pode ser executado em canais de comunidade: apaga imediatamente.
-    if message.guild and (message.content or "").strip().lower().startswith("!allow"):
-        try:
-            await message.delete()
-        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-            pass
+    # !allow é o comando de entrada para autorizar uma comunidade.
+    # Ele precisa passar antes do bloqueio de comunidades ainda não autorizadas.
+    if message.guild and (message.content or "").strip().lower().split(maxsplit=1)[0] == "!allow":
+        await bot.process_commands(message)
         return
 
     # Comunidades pendentes não recebem respostas, comandos de texto nem processamento de IA.
