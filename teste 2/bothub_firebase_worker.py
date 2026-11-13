@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.5"
+WORKER_VERSION="2026.11.12.6"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -136,6 +136,37 @@ def fb(method,path,tok,data=None,_retried=False):
     if r.status_code>=300:raise RuntimeError("Firebase "+str(r.status_code)+": "+r.text[:220])
     return r.json() if r.text else None
 
+TERMUX_DIAGNOSTICS_CACHE={"at":0,"data":{}}
+
+def termux_diagnostics():
+    """Detecta Termux, Termux:API e a configuração local do Termux:Boot."""
+    if not TERMUX_CONSOLE:
+        return {"runtimeType":"Linux","termuxApiInstalled":None,
+                "termuxBootInstalled":None,"termuxBootConfigured":None}
+    now=time.monotonic()
+    if now-TERMUX_DIAGNOSTICS_CACHE["at"]<60:
+        return dict(TERMUX_DIAGNOSTICS_CACHE["data"])
+    api_installed=bool(shutil.which("termux-battery-status"))
+    boot_installed=False
+    for command in (["/system/bin/pm","path","com.termux.boot"],["pm","path","com.termux.boot"]):
+        try:
+            result=subprocess.run(command,capture_output=True,text=True,timeout=5)
+            if result.returncode==0 and "package:" in (result.stdout or ""):
+                boot_installed=True
+                break
+        except (OSError,subprocess.TimeoutExpired):
+            continue
+    boot_script=Path.home()/".termux"/"boot"/"00-bothub-start"
+    boot_configured=False
+    try:
+        boot_configured=boot_script.is_file() and "start.py" in boot_script.read_text(encoding="utf-8",errors="replace")
+    except OSError:
+        pass
+    data={"runtimeType":"Termux","termuxApiInstalled":api_installed,
+          "termuxBootInstalled":boot_installed,"termuxBootConfigured":boot_configured}
+    TERMUX_DIAGNOSTICS_CACHE.update({"at":now,"data":data})
+    return dict(data)
+
 def stats(cfg):
     d=shutil.disk_usage(str(ROOT))
     running=[k for k,p in PROCS.items() if p.poll() is None]
@@ -156,6 +187,7 @@ def stats(cfg):
        "uptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerUptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerStartedAt":int(WORKER_STARTED*1000)}
+    x.update(termux_diagnostics())
     try:x["uptimeSeconds"]=int(float(Path("/proc/uptime").read_text().split()[0]))
     except Exception:pass
     try:x["publicIp"]=S.get("https://api.ipify.org?format=json",timeout=4).json().get("ip","")
