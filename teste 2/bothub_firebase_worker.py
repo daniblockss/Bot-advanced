@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.8"
+WORKER_VERSION="2026.11.12.9"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -1029,26 +1029,31 @@ def discord_bot_avatar(token_value):
 
 
 def sync_missing_bot_avatars(queue,tok):
-    """Ao cadastrar um bot, busca seu avatar no Discord e salva no cadastro do painel."""
+    """Busca imediatamente a foto de bots novos e atualiza avatares do Discord periodicamente."""
     now=time.time()
     for bid,bot_cfg in (queue.items() if isinstance(queue,dict) else []):
         if not isinstance(bot_cfg,dict) or not bot_cfg.get("token"):
             continue
-        if bot_cfg.get("avatarUrl") or bot_cfg.get("avatarBase64"):
+        # Uma imagem enviada manualmente pelo usuário tem prioridade e não deve ser sobrescrita.
+        if bot_cfg.get("avatarBase64"):
             continue
-        last=AVATAR_SYNC_CACHE.get(str(bid),0)
-        if now-last<600:
+        key=str(bid)
+        last=AVATAR_SYNC_CACHE.get(key,0)
+        # Primeira tentativa é imediata; depois atualiza a cada 90 segundos para refletir
+        # mudanças de foto no Discord sem consultar a API em todas as voltas do worker.
+        if now-last<90:
             continue
-        AVATAR_SYNC_CACHE[str(bid)]=now
+        AVATAR_SYNC_CACHE[key]=now
         try:
             avatar=discord_bot_avatar(bot_cfg["token"])
-            fb("PATCH","bots/"+urllib.parse.quote(str(bid),safe=""),tok,{
-                **avatar,"avatarFetchedAt":int(time.time()*1000)
-            })
+            avatar["avatarFetchedAt"]=int(time.time()*1000)
+            fb("PATCH","bots/"+urllib.parse.quote(key,safe=""),tok,avatar)
             bot_cfg.update(avatar)
-            log_throttled("avatar-sync:"+str(bid),3600,"[BotHub] Avatar do bot sincronizado com o painel:",str(bid))
+            log_throttled("avatar-sync:"+key,3600,"[BotHub] Avatar do bot sincronizado:",key)
         except Exception as exc:
-            log_throttled("avatar-sync-error:"+str(bid),600,"[BotHub] Não foi possível obter avatar do bot",str(bid),str(exc)[:120])
+            # Falhas temporárias podem ser tentadas novamente rapidamente.
+            AVATAR_SYNC_CACHE[key]=now-70
+            log_throttled("avatar-sync-error:"+key,30,"[BotHub] Falha ao sincronizar avatar de",key,str(exc)[:120])
 
 
 def process_worker_commands(cfg,tok,did,queue):
