@@ -13,10 +13,14 @@ BOT_ID=str(CFG.get("bot_id") or ROOT.name)
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 AUTH=None
-ADMINS={int(x) for x in CFG.get("admin_ids",[]) if str(x).isdigit()}
-STAFF={int(x) for x in CFG.get("staff_ids",[]) if str(x).isdigit()}|ADMINS
-ENTRY_CHANNEL=int(CFG.get("ticket_entry_channel_id") or 0)
-CATEGORY_ID=int(CFG.get("ticket_category_id") or 0)
+CREATOR_ID=int(CFG.get("creator_id") or 0)
+def admin_config():
+ d=get("botHubAdminConfig/"+BOT_ID) or {}
+ return d if isinstance(d,dict) else {}
+def staff_ids():
+ return {int(x) for x in admin_config().get("staffIds",[]) if str(x).isdigit()} | ({CREATOR_ID} if CREATOR_ID else set())
+def is_admin(user): return bool(CREATOR_ID and user.id==CREATOR_ID)
+def is_staff(user): return user.id in staff_ids()
 PREFIX=str(CFG.get("prefix") or "!")
 intents=discord.Intents.default()
 intents.message_content=True
@@ -48,7 +52,6 @@ def fb(method,path,value=None,_retried=False):
 def get(path): return fb("GET",path)
 def put(path,value): return fb("PUT",path,value)
 def delete(path): return fb("DELETE",path)
-def is_admin(user): return user.id in ADMINS
 def points(uid):
  d=get("botHubPoints/"+str(uid)) or {}
  return int(d.get("balance",0)) if isinstance(d,dict) else 0
@@ -61,9 +64,10 @@ def emb(title,desc=""): return discord.Embed(title=title,description=desc,color=
 async def ensure_ticket(guild,user,initial=None):
  existing=discord.utils.find(lambda c:c.topic==f"bothub-ticket:{user.id}",guild.text_channels)
  if existing:return existing
- category=guild.get_channel(CATEGORY_ID) if CATEGORY_ID else None
+ cfg=admin_config(); category_id=int(cfg.get("categoryId") or 0)
+ category=guild.get_channel(category_id) if category_id else None
  overwrites={guild.default_role:discord.PermissionOverwrite(view_channel=False),user:discord.PermissionOverwrite(view_channel=True,send_messages=True,read_message_history=True),guild.me:discord.PermissionOverwrite(view_channel=True,send_messages=True,manage_channels=True,read_message_history=True)}
- for uid in STAFF:
+ for uid in staff_ids():
   member=guild.get_member(uid)
   if member:overwrites[member]=discord.PermissionOverwrite(view_channel=True,send_messages=True,read_message_history=True)
  ch=await guild.create_text_channel(("ticket-"+user.name.lower().replace(" ","-"))[:90],category=category if isinstance(category,discord.CategoryChannel) else None,overwrites=overwrites,topic=f"bothub-ticket:{user.id}")
@@ -188,11 +192,19 @@ class BotSelect(discord.ui.Select):
 class ConfigView(discord.ui.View):
  def __init__(self,uid):super().__init__(timeout=180);self.add_item(BotSelect(uid))
 @bot.event
-async def on_ready():print(f"[BotHub Admin] Conectado como {bot.user} ({bot.user.id})",flush=True)
+async def on_ready():
+ global CREATOR_ID
+ try:
+  req=Request("https://discord.com/api/v10/applications/@me",headers={"Authorization":"Bot "+TOKEN})
+  with urlopen(req,timeout=15) as r: app=json.loads(r.read())
+  owner=app.get("owner") or {}
+  if owner.get("id"): CREATOR_ID=int(owner["id"])
+ except Exception as e: print("[BotHub Admin] Não foi possível obter o criador da aplicação:",str(e)[:160],flush=True)
+ print(f"[BotHub Admin] Conectado como {bot.user} ({bot.user.id}); criador={CREATOR_ID or 'não identificado'}",flush=True)
 @bot.event
 async def on_message(message):
  if message.author.bot:return
- if message.guild and ((ENTRY_CHANNEL and message.channel.id==ENTRY_CHANNEL) or (bot.user and bot.user in message.mentions)) and message.content.strip() and message.author.id not in STAFF:
+ if message.guild and ((int(admin_config().get("entryChannelId") or 0) and message.channel.id==int(admin_config().get("entryChannelId") or 0)) or (bot.user and bot.user in message.mentions)) and message.content.strip() and message.author.id not in staff_ids():
   if message.author.id not in ticket_locks:
    ticket_locks.add(message.author.id)
    try:
@@ -224,7 +236,7 @@ async def buy(ctx,amount:int=0):
  if amount<1 or amount>1000000:return await ctx.reply("Use !comprar-pontos quantidade. A equipe confirmará o pagamento antes de adicionar pontos.")
  request_id=uuid.uuid4().hex
  put(f"botHubPointPurchases/{ctx.author.id}/{request_id}",{"amount":amount,"status":"pending","createdAt":int(time.time()*1000),"guildId":str(ctx.guild.id if ctx.guild else 0),"ticketChannelId":str(ctx.channel.id)})
- mentions=" ".join(f"<@{uid}>" for uid in STAFF)
+ mentions=" ".join(f"<@{uid}>" for uid in staff_ids())
  await ctx.reply(f"{mentions} {ctx.author.mention} solicitou a compra de **{amount} pontos**. Pedido: `{request_id[:8]}`. A equipe deve confirmar o pagamento antes de usar !add.",allowed_mentions=discord.AllowedMentions(users=True))
 @bot.command(name="add-bot")
 async def add_bot(ctx,*,args=""):
@@ -240,14 +252,50 @@ async def add_bot(ctx,*,args=""):
  bid=uuid.uuid4().hex
  put("bots/"+bid,{"name":name[:100],"token":token,"botType":"ia_chat","ownerId":str(ctx.author.id),"enabled":True,"desiredState":"on","workerId":None,"createdAt":int(time.time()*1000),"config":{"bot_authorization":{"allow_user_ids":[str(ctx.author.id)]}}})
  await ctx.reply(f"Bot {discord.utils.escape_markdown(name)} validado ({profile.get('username','bot')}) e cadastrado. O cluster fará a distribuição quando houver worker.")
+class AdminConfigView(discord.ui.View):
+ def __init__(self):
+  super().__init__(timeout=300)
+  self.add_item(EntryChannelSelect())
+  self.add_item(TicketCategorySelect())
+  self.add_item(StaffUserSelect())
+class EntryChannelSelect(discord.ui.ChannelSelect):
+ def __init__(self):
+  super().__init__(placeholder="Canal de entrada dos tickets",channel_types=[discord.ChannelType.text],min_values=1,max_values=1)
+ async def callback(self,interaction):
+  if not is_admin(interaction.user):return await interaction.response.send_message("Somente o criador do bot pode alterar.",ephemeral=True)
+  cfg=admin_config();cfg["entryChannelId"]=str(self.values[0].id);put("botHubAdminConfig/"+BOT_ID,cfg)
+  await interaction.response.send_message("Canal de entrada salvo: "+self.values[0].mention,ephemeral=True)
+class TicketCategorySelect(discord.ui.ChannelSelect):
+ def __init__(self):
+  super().__init__(placeholder="Categoria dos tickets",channel_types=[discord.ChannelType.category],min_values=1,max_values=1)
+ async def callback(self,interaction):
+  if not is_admin(interaction.user):return await interaction.response.send_message("Somente o criador do bot pode alterar.",ephemeral=True)
+  cfg=admin_config();cfg["categoryId"]=str(self.values[0].id);put("botHubAdminConfig/"+BOT_ID,cfg)
+  await interaction.response.send_message("Categoria salva: "+self.values[0].name,ephemeral=True)
+class StaffUserSelect(discord.ui.UserSelect):
+ def __init__(self):
+  super().__init__(placeholder="Equipe de atendimento",min_values=1,max_values=10)
+ async def callback(self,interaction):
+  if not is_admin(interaction.user):return await interaction.response.send_message("Somente o criador do bot pode alterar.",ephemeral=True)
+  cfg=admin_config();cfg["staffIds"]=[str(u.id) for u in self.values if u.id!=CREATOR_ID];put("botHubAdminConfig/"+BOT_ID,cfg)
+  await interaction.response.send_message("Equipe de atendimento atualizada.",ephemeral=True)
+@bot.command(name="config")
+async def config_cmd(ctx):
+ if not is_admin(ctx.author):return await ctx.reply("Somente o criador identificado pelo token pode usar !config.")
+ cfg=admin_config()
+ e=emb("Configuração do BOT ADMIN","O criador é identificado automaticamente pelo token. Use os seletores abaixo para configurar o atendimento.")
+ e.add_field(name="Canal de entrada",value=f"<#{cfg.get('entryChannelId')}>" if cfg.get("entryChannelId") else "Não definido — mencionar o bot também abre ticket.",inline=False)
+ e.add_field(name="Categoria",value=f"<#{cfg.get('categoryId')}>" if cfg.get("categoryId") else "Categoria padrão do servidor",inline=False)
+ e.add_field(name="Equipe",value=", ".join(f"<@{x}>" for x in cfg.get("staffIds",[])) or "Somente o criador",inline=False)
+ await ctx.send(embed=e,view=AdminConfigView())
 @bot.command(name="api")
 async def api(ctx):await ctx.send(embed=emb("Gerenciamento de APIs","Adicione uma API pessoal ou ative as APIs globais. O uso de API global consome pontos."),view=ApiView(ctx.author.id))
 @bot.command(name="configs")
 async def configs(ctx):await ctx.send(embed=emb("Seus bots","Selecione um bot para consultar seu estado."),view=ConfigView(ctx.author.id))
 @bot.command(name="help")
 async def help_cmd(ctx):
- e=emb("BotHub — Ajuda");e.add_field(name="Usuários",value="!pontos · !comprar-pontos · !add-bot nome token · !api · !configs · !ticket",inline=False);e.add_field(name="Tickets",value="Converse normalmente neste canal privado. !fechar encerra.",inline=False)
- if is_admin(ctx.author):e.add_field(name="Administração",value="!add @usuário pontos · !remove @usuário pontos",inline=False)
+ e=emb("BotHub — Ajuda");e.add_field(name="Usuários",value="!pontos · !comprar-pontos · !add-bot nome token · !api · !configs · !config · !ticket",inline=False);e.add_field(name="Tickets",value="Converse normalmente neste canal privado. !fechar encerra.",inline=False)
+ if is_admin(ctx.author):e.add_field(name="Administração",value="!config · !add @usuário pontos · !remove @usuário pontos",inline=False)
  await ctx.reply(embed=e)
 @bot.command(name="add")
 async def add_points(ctx,member:discord.Member=None,amount:int=0):
@@ -264,7 +312,7 @@ async def close(ctx):
  topic=str(getattr(ctx.channel,"topic","") or "")
  if not topic.startswith("bothub-ticket:"):return await ctx.reply("Este canal não é um ticket.")
  owner=int(topic.split(":")[-1])
- if ctx.author.id!=owner and not is_admin(ctx.author) and ctx.author.id not in STAFF:return await ctx.reply("Somente o criador ou a equipe pode fechar.")
+ if ctx.author.id!=owner and not is_admin(ctx.author) and not is_staff(ctx.author):return await ctx.reply("Somente o criador ou a equipe pode fechar.")
  await ctx.reply("Ticket encerrado; canal será removido em 5 segundos.");await __import__("asyncio").sleep(5);await ctx.channel.delete(reason="Ticket BotHub encerrado")
 if __name__=="__main__":
  if not TOKEN:raise SystemExit("discord_token ausente em config.json")
