@@ -638,7 +638,7 @@ def start(k,b):
         default_urls={
             "ia_chat":os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"),
             "standard":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/standard_main.py",
-            "bot_admin":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bot_admin.py",
+            "bot_admin":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot_admin.py",
         }
         url=default_urls[bot_type]
         r=S.get(url,timeout=45);r.raise_for_status()
@@ -992,6 +992,7 @@ def process_release_updates(tok, queue):
             state={}
         if state.get("updateId")!=update_id:
             state={"updateId":update_id,"announced":False,"updated":False,"attempts":0}
+        mandatory=release.get("type")=="mandatory"
         bot_type=str(bot_cfg.get("botType") or (bot_cfg.get("config") or {}).get("botType") or "ia_chat").lower()
         if bot_type not in {"ia_chat","standard","bot_admin"}:continue
         script_name,_,_=bot_script_info(bot_type)
@@ -1018,7 +1019,6 @@ def process_release_updates(tok, queue):
             save_json(state_file,state)
 
         request_file=folder/".bothub_update_request"
-        mandatory=release.get("type")=="mandatory"
         accepted=request_file.exists()
         # Não repete download/restart a cada ciclo quando a atualização falhou.
         # A tentativa seguinte só ocorre depois do backoff persistido em disco.
@@ -1034,7 +1034,7 @@ def process_release_updates(tok, queue):
             stop(bid)
             size=download_latest_bot_script(folder,bot_type)
             start(bid,bot_cfg)
-            state.update(updateId=update_id,announced=True,updated=True,
+            state.update(updateId=update_id,announced=bool(mandatory or state.get("announced")),updated=True,
                          updatedAt=int(time.time()*1000),bytes=size,
                          retryAfter=0,lastError="")
             save_json(state_file,state)
