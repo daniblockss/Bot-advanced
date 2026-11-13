@@ -9799,7 +9799,7 @@ async def bot_allow_command(ctx, *, senha: str = ""):
         lines = ["Estou nestas comunidades. Qual devo selecionar como permitida?"]
         lines.extend(f"{index}. {guild.name} — ID: {guild.id}" for index, guild in enumerate(pending, 1))
         lines.append("Responda com o número da lista ou com o ID da comunidade. Esta escolha expira em 2 minutos.")
-        await ctx.send("\\n".join(lines))
+        await ctx.send("\n".join(lines))
         try:
             answer = await bot.wait_for(
                 "message",
