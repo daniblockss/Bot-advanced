@@ -247,7 +247,17 @@ async def on_ready():
   owner=app.get("owner") or {}
   if owner.get("id"): CREATOR_ID=int(owner["id"])
  except Exception as e: print("[BotHub Admin] Não foi possível obter o criador da aplicação:",str(e)[:160],flush=True)
+ try:(ROOT/".bothub_discord_ready").write_text(str(int(time.time()*1000)),encoding="utf-8")
+ except OSError:pass
  print(f"[BotHub Admin] Conectado como {bot.user} ({bot.user.id}); criador={CREATOR_ID or 'não identificado'}",flush=True)
+@bot.event
+async def on_disconnect():
+ try:(ROOT/".bothub_discord_ready").unlink(missing_ok=True)
+ except OSError:pass
+@bot.event
+async def on_resumed():
+ try:(ROOT/".bothub_discord_ready").write_text(str(int(time.time()*1000)),encoding="utf-8")
+ except OSError:pass
 @bot.event
 async def on_message(message):
  if message.author.bot:return
