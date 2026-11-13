@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # BotHub Firebase worker: auto-registers this device using Firebase Anonymous Auth.
-import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid
+import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,signal,atexit,base64,hashlib,sqlite3
 from pathlib import Path
 import requests
 
@@ -10,7 +10,8 @@ CFGFILE=ROOT/"worker.json"
 TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
-PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time()
+PROCS={};LOGS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
+LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 
 def save_json(path,data):
     tmp=path.with_suffix(path.suffix+".tmp")
@@ -23,7 +24,16 @@ def setup():
     if CFGFILE.exists():
         try:
             cfg=json.loads(CFGFILE.read_text(encoding="utf-8"))
-            if cfg.get("device_id"):return cfg
+            if cfg.get("device_id"):
+                original=str(cfg["device_id"])
+                safe_id="".join(c for c in original if c.isalnum() or c in "-_")[:80]
+                if not safe_id:
+                    safe_id="device-"+uuid.uuid4().hex[:16]
+                if safe_id != original:
+                    print("[BotHub] ID antigo do worker continha caracteres inválidos para o Firebase; ID normalizado.",flush=True)
+                    cfg["device_id"]=safe_id
+                    save_json(CFGFILE,cfg)
+                return cfg
         except Exception:pass
     # A local random ID is generated automatically; no ID/email/password prompt.
     cfg={"device_id":"device-"+uuid.uuid4().hex[:16],"createdAt":int(time.time()*1000)}
@@ -70,9 +80,23 @@ def token(cfg):
     save_json(CFGFILE,cfg)
     return t["idToken"]
 
-def fb(method,path,tok,data=None):
+def fb(method,path,tok,data=None,_retried=False):
     r=S.request(method,DB+"/"+path.strip("/")+".json",params={"auth":tok},json=data,timeout=20)
-    if r.status_code>=300:raise RuntimeError("Firebase "+str(r.status_code)+": "+r.text[:220])
+    if r.status_code==401 and not _retried:
+        detail=r.text[:300]
+        low=detail.lower()
+        # Reautentica apenas quando o Firebase indica token inválido/expirado.
+        if any(term in low for term in ("expired","invalid token","invalid_token","auth token","id token")) and CURRENT_CFG is not None:
+            try:
+                if TOKFILE.exists(): TOKFILE.unlink()
+                fresh=token(CURRENT_CFG)
+                print("[BotHub] Token rejeitado pelo Firebase; sessão renovada, repetindo a solicitação uma vez.",flush=True)
+                return fb(method,path,fresh,data,_retried=True)
+            except Exception as e:
+                raise RuntimeError("Firebase recusou a sessão (401) e a renovação falhou: "+str(e)[:180])
+        raise RuntimeError("Firebase HTTP 401: "+detail+" | Confira Authentication > Anonymous e as regras de leitura/gravação do Realtime Database para usuários autenticados.")
+    if r.status_code>=300:
+        raise RuntimeError("Firebase "+str(r.status_code)+" em "+method+" "+path+": "+r.text[:220])
     return r.json() if r.text else None
 
 def stats(cfg):
@@ -113,29 +137,538 @@ def sid(v):
 def stop(k):
     p=PROCS.pop(k,None);l=LOGS.pop(k,None)
     if p and p.poll() is None:
-        try:p.terminate();p.wait(timeout=5)
+        try:
+            if os.name != "nt" and p.pid:
+                os.killpg(p.pid, signal.SIGTERM)
+            else:
+                p.terminate()
+            p.wait(timeout=5)
         except Exception:
-            try:p.kill()
+            try:
+                if os.name != "nt" and p.pid:
+                    os.killpg(p.pid, getattr(signal,"SIGKILL",signal.SIGTERM))
+                else:
+                    p.kill()
+            except Exception:
+                try:p.kill()
+                except Exception:pass
+            try:p.wait(timeout=2)
             except Exception:pass
     if l:
         try:l.close()
         except Exception:pass
 
+def stop_bot_processes(bot_id):
+    """Encerra o script exato deste bot (IA, Standard ou Admin), mesmo se estiver órfão."""
+    folder = (ROOT / "bots" / sid(bot_id)).resolve()
+    targets = {(folder / name).resolve() for name in ("main.py", "standard_main.py", "bot_admin.py")}
+    current_pid = os.getpid()
+    found = []
+    if os.name != "nt" and Path("/proc").is_dir():
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit() or int(entry.name) == current_pid:
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes()
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\0") if part]
+                if any(arg.endswith(".py") and Path(arg).resolve() in targets for arg in args[1:]):
+                    found.append(int(entry.name))
+            except (OSError, ValueError, RuntimeError):
+                continue
+    else:
+        try:
+            import psutil
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                pid = proc.info.get("pid")
+                if not pid or pid == current_pid:
+                    continue
+                for arg in (proc.info.get("cmdline") or [])[1:]:
+                    try:
+                        if arg.endswith(".py") and Path(arg).resolve() in targets:
+                            found.append(pid)
+                            break
+                    except (OSError, ValueError, RuntimeError):
+                        continue
+        except Exception as e:
+            print("[BotHub] Não foi possível localizar o processo do bot", bot_id, str(e)[:140], flush=True)
+    for pid in sorted(set(found)):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    deadline = time.time() + 4
+    remaining = set(found)
+    while remaining and time.time() < deadline:
+        remaining = {pid for pid in remaining if Path("/proc").exists() and Path("/proc", str(pid)).exists()}
+        if remaining:
+            time.sleep(0.2)
+    for pid in remaining:
+        try:
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+        except OSError:
+            pass
+    if found:
+        print("[BotHub] processo do bot", bot_id, "encerrado; PID(s):", ", ".join(map(str, sorted(set(found)))), flush=True)
+    return bool(found)
+
+def child_parent_death_signal():
+    """Linux: encerra o bot se o controlador morrer abruptamente."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+        libc = ctypes.CDLL(None)
+        PR_SET_PDEATHSIG = 1
+        libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+        # Fecha a pequena janela em que o pai pode morrer antes de prctl.
+        if os.getppid() == 1:
+            os.kill(os.getpid(), signal.SIGTERM)
+    except Exception:
+        pass
+
+def kill_bot_processes_under_root():
+    """Encerra todos os main.py pertencentes às pastas de bots desta instalação, inclusive órfãos."""
+    bots_root = (ROOT / "bots").resolve()
+    current_pid = os.getpid()
+    candidates = []
+    if os.name != "nt" and Path("/proc").is_dir():
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            pid = int(entry.name)
+            if pid == current_pid:
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes()
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\0") if part]
+                for arg in args[1:]:
+                    if not arg.endswith(".py"):
+                        continue
+                    script = Path(arg).resolve()
+                    if script.name in {"main.py","standard_main.py","bot_admin.py"} and bots_root in script.parents:
+                        candidates.append(pid)
+                        break
+            except (OSError, ValueError, RuntimeError):
+                continue
+    else:
+        try:
+            import psutil
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                pid = proc.info.get("pid")
+                if not pid or pid == current_pid:
+                    continue
+                for arg in (proc.info.get("cmdline") or [])[1:]:
+                    try:
+                        script = Path(arg).resolve()
+                        if script.name in {"main.py","standard_main.py","bot_admin.py"} and bots_root in script.parents:
+                            candidates.append(pid)
+                            break
+                    except (OSError, ValueError, RuntimeError):
+                        continue
+        except Exception as e:
+            print("[BotHub] Não foi possível localizar todos os main.py órfãos:", str(e)[:160], flush=True)
+    stopped = []
+    for pid in sorted(set(candidates)):
+        try:
+            os.kill(pid, signal.SIGTERM)
+            stopped.append(pid)
+        except OSError:
+            pass
+    deadline = time.time() + 5
+    while stopped and time.time() < deadline:
+        alive = []
+        for pid in stopped:
+            try:
+                os.kill(pid, 0)
+                alive.append(pid)
+            except OSError:
+                pass
+        stopped = alive
+        if stopped:
+            time.sleep(0.2)
+    for pid in stopped:
+        try:
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+        except OSError:
+            pass
+    if candidates:
+        print("[BotHub] Processos main.py encerrados:", ", ".join(map(str, sorted(set(candidates)))), flush=True)
+
+def cleanup_children():
+    # Encerra primeiro os processos para que o snapshot SQLite final seja consistente.
+    for key in list(PROCS):
+        stop(key)
+        try:
+            sync_bot_state(key, 'push', CURRENT_FIREBASE_TOKEN, CURRENT_DEVICE_ID)
+        except Exception:
+            pass
+        try:
+            release_bot_lease(key, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN)
+        except Exception:
+            pass
+    # Depois encontra e encerra processos órfãos que sobreviveram a uma execução anterior.
+    kill_bot_processes_under_root()
+
+def publish_shutdown_status(reason="Servidor desligado"):
+    """Publica o desligamento no Firebase sem enviar mensagens privadas aos donos dos bots."""
+    global LAST_TOKEN, LAST_DID, LAST_QUEUE
+    now = int(time.time() * 1000)
+    stopped_ids = list(LAST_QUEUE.keys()) if isinstance(LAST_QUEUE, dict) else []
+    if LAST_TOKEN and LAST_DID:
+        try:
+            fb("PATCH", "workers/" + LAST_DID, LAST_TOKEN, {
+                "status": "offline", "online": False, "runningBots": 0,
+                "runningBotIds": [], "shutdownAt": now, "shutdownReason": reason,
+                "lastSeen": now - 120000, "workerUptimeSeconds": int(time.time() - WORKER_STARTED)
+            })
+            fb("PUT", "workerEvents/" + LAST_DID + "/lastShutdown", LAST_TOKEN, {
+                "status": "offline", "online": False, "reason": reason,
+                "stoppedBotIds": stopped_ids, "timestamp": now
+            })
+            print("[BotHub] Desligamento publicado no Firebase.", flush=True)
+        except Exception as e:
+            print("[BotHub] Não foi possível publicar o desligamento no Firebase:", str(e)[:180], flush=True)
+
+def handle_shutdown_signal(signum, frame):
+    global SHUTDOWN_IN_PROGRESS
+    if SHUTDOWN_IN_PROGRESS:
+        return
+    SHUTDOWN_IN_PROGRESS = True
+    reason = "SIGINT (interrupção manual)" if signum == signal.SIGINT else "SIGTERM (servidor encerrado)"
+    print("[BotHub] Controlador sendo desligado; publicando status e encerrando processos...", flush=True)
+    publish_shutdown_status(reason)
+    cleanup_children()
+    raise SystemExit(0)
+
+def script_already_running(script, token_value=None):
+    """Detecta main.py duplicado por caminho OU pelo mesmo token em outra pasta."""
+    target = str(script.resolve())
+    current_pid = os.getpid()
+    if sys.platform.startswith("linux") and Path("/proc").is_dir():
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit() or int(entry.name) in (current_pid, os.getppid()):
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes()
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
+                script_args = [arg for arg in args[1:] if arg.endswith(".py")]
+                for arg in script_args:
+                    try:
+                        running_script = Path(arg).resolve()
+                    except Exception:
+                        continue
+                    if running_script.name != "main.py":
+                        continue
+                    if str(running_script) == target:
+                        return int(entry.name)
+                    if token_value:
+                        try:
+                            cfg_path = running_script.parent / "config.json"
+                            running_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                            running_token = str(running_cfg.get("discord_token") or running_cfg.get("token") or "")
+                            if running_token and running_token == str(token_value):
+                                return int(entry.name)
+                        except Exception:
+                            pass
+            except (OSError, ValueError, RuntimeError):
+                continue
+    else:
+        try:
+            import psutil
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                if proc.info["pid"] == current_pid:
+                    continue
+                args = proc.info.get("cmdline") or []
+                for arg in (proc.info.get("cmdline") or [])[1:]:
+                    try:
+                        running_script = Path(arg).resolve()
+                    except Exception:
+                        continue
+                    if not str(arg).endswith(".py") or running_script.name != "main.py":
+                        continue
+                    if str(running_script) == target:
+                        return proc.info["pid"]
+                    if token_value:
+                        try:
+                            cfg_path = running_script.parent / "config.json"
+                            running_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                            running_token = str(running_cfg.get("discord_token") or running_cfg.get("token") or "")
+                            if running_token and running_token == str(token_value):
+                                return proc.info["pid"]
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+    return None
+
+def kill_existing_bothub_bots():
+    """Encerra processos antigos de bots do BotHub antes de o controlador atual iniciá-los."""
+    current_pid = os.getpid()
+    killed = []
+    if sys.platform.startswith("linux") and Path("/proc").is_dir():
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            pid = int(entry.name)
+            if pid in (current_pid, os.getppid()):
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes()
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
+                if len(args) < 2:
+                    continue
+                script_args = [arg for arg in args[1:] if arg.endswith(".py")]
+                if not script_args:
+                    continue
+                is_bot_script = False
+                for arg in script_args:
+                    path = Path(arg).resolve()
+                    if path.name == "main.py" and "bots" in path.parts:
+                        is_bot_script = True
+                        break
+                if is_bot_script:
+                    os.kill(pid, signal.SIGTERM)
+                    killed.append(pid)
+            except (OSError, ValueError, RuntimeError):
+                continue
+    elif os.name == "nt":
+        try:
+            import psutil
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                pid = proc.info.get("pid")
+                if not pid or pid in (current_pid, os.getppid()):
+                    continue
+                args = proc.info.get("cmdline") or []
+                for arg in args[1:]:
+                    try:
+                        path = Path(arg).resolve()
+                        if path.name == "main.py" and "bots" in path.parts:
+                            proc.terminate()
+                            killed.append(pid)
+                            break
+                    except (OSError, ValueError, RuntimeError):
+                        continue
+        except Exception as e:
+            print("[BotHub] Não foi possível verificar todos os processos antigos:", str(e)[:160], flush=True)
+    if killed:
+        print("[BotHub] Encerrando bots antigos antes de iniciar esta instância:", ", ".join(map(str, killed)), flush=True)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            alive = []
+            for pid in killed:
+                try:
+                    os.kill(pid, 0)
+                    alive.append(pid)
+                except OSError:
+                    pass
+            if not alive:
+                break
+            time.sleep(0.2)
+        for pid in alive if 'alive' in locals() else []:
+            try:
+                os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+            except OSError:
+                pass
+
+# --- Cooperative leases and Firebase-backed memory state ---
+LEASE_SECONDS = max(45, int(os.getenv('BOTHUB_LEASE_SECONDS', '75')))
+STATE_FIXED_FILES = {'bot_personality.json','foto de perfil.txt','image_history.json','memory.sqlite3','reminders.sqlite3','memoria_geral','importantes','geral_avisos','identidade','regras','identidade-padrao.txt','regras-padrao.txt','comunidades_autorizadas.txt'}
+ACTIVE_LEASES = {}
+CURRENT_DEVICE_ID = ''
+CURRENT_FIREBASE_TOKEN = ''
+LEASE_MISSES = 0
+
+def _lease_url(bot_id):
+    return DB + '/botLeases/' + urllib.parse.quote(sid(bot_id), safe='') + '.json'
+
+def _state_url(bot_id):
+    return DB + '/botState/' + urllib.parse.quote(sid(bot_id), safe='') + '/files'
+
+def _req_json(method, url, tok, data=None, headers=None):
+    h = {'User-Agent':'BotHub-Cluster/4.0'}
+    if headers: h.update(headers)
+    r = S.request(method, url, params={'auth':tok}, json=data, headers=h, timeout=20)
+    if r.status_code >= 300: raise RuntimeError('Firebase HTTP '+str(r.status_code)+': '+r.text[:160])
+    return r
+
+def claim_bot_lease(bot_id, device_id, tok):
+    bid=sid(bot_id); url=_lease_url(bid); now=int(time.time()*1000)
+    for _ in range(5):
+        r=_req_json('GET',url,tok,headers={'X-Firebase-ETag':'true'})
+        etag=r.headers.get('ETag','null_etag'); cur=r.json() if r.text else {}
+        if not isinstance(cur,dict): cur={}
+        owner=str(cur.get('owner') or ''); until=int(cur.get('leaseUntil') or 0)
+        if owner and owner != device_id and until > now: return None
+        same=(owner == device_id); fence=int(cur.get('fence') or 0)+(0 if same else 1)
+        lease={'owner':device_id,'leaseUntil':now+LEASE_SECONDS*1000,'heartbeatAt':now,'fence':max(1,fence)}
+        put=S.put(url,params={'auth':tok},json=lease,headers={'If-Match':etag,'User-Agent':'BotHub-Cluster/4.0'},timeout=20)
+        if put.status_code in (200,204):
+            ACTIVE_LEASES[bid]={'fence':lease['fence'],'leaseUntil':lease['leaseUntil']}; return lease
+        if put.status_code in (409,412): continue
+        raise RuntimeError('Falha ao gravar lease: HTTP '+str(put.status_code))
+    return None
+
+def release_bot_lease(bot_id, device_id, tok):
+    bid=sid(bot_id); url=_lease_url(bid)
+    try:
+        r=_req_json('GET',url,tok,headers={'X-Firebase-ETag':'true'}); cur=r.json() if r.text else {}
+        if isinstance(cur,dict) and cur.get('owner') == device_id:
+            S.put(url,params={'auth':tok},json={'owner':'','leaseUntil':0,'heartbeatAt':int(time.time()*1000),'fence':int(cur.get('fence') or 0)},headers={'If-Match':r.headers.get('ETag','null_etag'),'User-Agent':'BotHub-Cluster/4.0'},timeout=15)
+    except Exception as e: print('[BotHub] falha ao liberar lease:',str(e)[:120],flush=True)
+    ACTIVE_LEASES.pop(bid,None)
+
+def _state_key(name):
+    return base64.urlsafe_b64encode(name.encode('utf-8')).decode('ascii').rstrip('=')
+
+def _state_files(folder):
+    out={}
+    for p in folder.iterdir():
+        if not p.is_file() or p.name.startswith('.') or p.name in {'config.json','bot.log','worker.json','firebase-token.json'}: continue
+        if p.name in STATE_FIXED_FILES or (p.suffix.lower()=='.txt' and any(x in p.name for x in ('memoria','importante','avisos','identidade','regras'))):
+            try:
+                if p.stat().st_size <= 8*1024*1024: out[p.name]=p
+            except OSError: pass
+    return out
+
+def _snapshot_bytes(path):
+    if path.name.endswith('.sqlite3') and path.exists():
+        tmp=path.with_name(path.name+'.sync.tmp')
+        try:
+            src=sqlite3.connect(str(path),timeout=10); dst=sqlite3.connect(str(tmp),timeout=10)
+            try: src.backup(dst)
+            finally: dst.close(); src.close()
+            return tmp.read_bytes()
+        finally:
+            try: tmp.unlink()
+            except OSError: pass
+    return path.read_bytes()
+
+def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
+    bid=sid(bot_id); tok=tok or CURRENT_FIREBASE_TOKEN; device_id=device_id or CURRENT_DEVICE_ID
+    lease=ACTIVE_LEASES.get(bid)
+    if not tok or not device_id or not lease: return
+    owner=_req_json('GET',_lease_url(bid),tok).json()
+    if not isinstance(owner,dict) or owner.get('owner') != device_id or int(owner.get('fence') or 0) != int(lease['fence']):
+        ACTIVE_LEASES.pop(bid,None); raise RuntimeError('Lease perdido; estado compartilhado protegido.')
+    folder=ROOT/'bots'/bid; folder.mkdir(parents=True,exist_ok=True); url=_state_url(bid)
+    r=_req_json('GET',url+'.json',tok); remote=r.json() if r.text else {}
+    if not isinstance(remote,dict): remote={}
+    if mode == 'pull' and remote:
+        for rec in remote.values():
+            if not isinstance(rec,dict): continue
+            name=str(rec.get('name') or '')
+            if not name or Path(name).name != name or name.startswith('.') or '..' in name or '/' in name or chr(92) in name: continue
+            if name not in STATE_FIXED_FILES and not (name.endswith('.txt') and any(x in name for x in ('memoria','importante','avisos','identidade','regras'))): continue
+            try:
+                raw=base64.b64decode(rec.get('data',''),validate=True)
+                if len(raw)>8*1024*1024: continue
+                dest=folder/name; tmp=dest.with_name(dest.name+'.sync.tmp'); tmp.write_bytes(raw); tmp.replace(dest)
+            except Exception as e: print('[BotHub] estado remoto ignorado:',name,str(e)[:100],flush=True)
+    changed=False
+    for name,path in _state_files(folder).items():
+        try:
+            raw=_snapshot_bytes(path); digest=hashlib.sha256(raw).hexdigest(); key=_state_key(name)
+            if isinstance(remote.get(key),dict) and remote[key].get('sha256') == digest: continue
+            if len(raw)>8*1024*1024: continue
+            rec={'name':name,'sha256':digest,'data':base64.b64encode(raw).decode('ascii'),'updatedAt':int(time.time()*1000),'writer':device_id,'fence':int(lease['fence'])}
+            _req_json('PUT',url+'/'+key+'.json',tok,rec); changed=True
+        except Exception as e: print('[BotHub] sync de memória falhou:',name,str(e)[:120],flush=True)
+    if changed: print('[BotHub] memórias/estado sincronizados:',bid,flush=True)
+
+
 def start(k,b):
-    folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main.py"
+    folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True)
+    bot_type=str(b.get("botType") or (b.get("config") or {}).get("botType") or "ia_chat").lower()
+    if bot_type not in {"ia_chat","standard","bot_admin"}: bot_type="ia_chat"
+    script_name={"ia_chat":"main.py","standard":"standard_main.py","bot_admin":"bot_admin.py"}[bot_type]
+    script=folder/script_name
+    if k in PROCS and PROCS[k].poll() is None:
+        return
+    sync_bot_state(k, 'pull')
     if not script.exists():
-        url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py")
-        r=S.get(url,timeout=30);r.raise_for_status()
-        if len(r.content)<10000:raise RuntimeError("Download de main.py incompleto.")
-        script.write_bytes(r.content)
+        default_urls={
+            "ia_chat":os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py"),
+            "standard":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/standard_main.py",
+            "bot_admin":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bot_admin.py",
+        }
+        url=default_urls[bot_type]
+        r=S.get(url,timeout=45);r.raise_for_status()
+        if len(r.content)<1000:raise RuntimeError("Download incompleto de "+script_name)
+        source=r.content.decode("utf-8");compile(source,str(script),"exec")
+        tmp=script.with_suffix(".py.download.tmp");tmp.write_bytes(r.content);tmp.replace(script)
+    try:
+        compile(script.read_text(encoding="utf-8"),str(script),"exec")
+    except Exception as exc:
+        raise RuntimeError(script_name+" não passou na validação de sintaxe: "+str(exc)[:180])
+    duplicate_pid = script_already_running(script, b.get("token"))
+    if duplicate_pid is not None:
+        print("[BotHub] Duplicata de main.py/token detectada (PID",duplicate_pid,"). Encerrando a cópia antiga antes de iniciar a instância correta para",k,flush=True)
+        try:
+            os.kill(duplicate_pid, signal.SIGTERM)
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                try:
+                    os.kill(duplicate_pid, 0)
+                except OSError:
+                    break
+                time.sleep(0.2)
+            else:
+                os.kill(duplicate_pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+        except OSError:
+            pass
     cfg=dict(b.get("config") or {});cfg["discord_token"]=b["token"]
+    # Configuração de autorização individual, recebida do painel BotHub.
+    auth=dict(cfg.get("bot_authorization") or {})
+    auth.update({
+        "password_salt": str(b.get("allowPasswordSalt") or auth.get("password_salt") or ""),
+        "password_hash": str(b.get("allowPasswordHash") or auth.get("password_hash") or ""),
+        "allow_user_ids": [str(x) for x in (b.get("allowUserIds") if b.get("allowUserIds") is not None else auth.get("allow_user_ids", [])) if str(x).isdigit()],
+        "authorized_guild_ids": [str(x) for x in (b.get("authorizedGuildIds") if b.get("authorizedGuildIds") is not None else auth.get("authorized_guild_ids", [])) if str(x).isdigit()],
+    })
+    cfg["bot_authorization"]=auth
     cp=folder/"config.json";save_json(cp,cfg)
-    if k in PROCS and PROCS[k].poll() is None:return
-    log=open(folder/"bot.log","ab",buffering=0)
-    p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
-        stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"))
-    PROCS[k]=p;LOGS[k]=log
-    print("[BotHub] iniciado",b.get("name",k),"PID",p.pid,flush=True)
+
+    # Tenta iniciar mais de uma vez se o processo cair imediatamente (ex.: falha transitória).
+    last_error=""
+    for attempt in range(1,4):
+        if k in PROCS:
+            stop(k)
+        log=open(folder/"bot.log","ab",buffering=0)
+        popen_kwargs = {}
+        if sys.platform.startswith("linux"):
+            popen_kwargs["preexec_fn"] = child_parent_death_signal
+        try:
+            child_env=os.environ.copy()
+            child_env["BOTHUB_SHARED_STATE_DIR"]=str(ROOT/".bothub_shared")
+            child_env["BOTHUB_BOT_ID"]=str(k)
+            p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
+                stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),env=child_env,**popen_kwargs)
+        except Exception:
+            log.close()
+            raise
+        PROCS[k]=p;LOGS[k]=log
+        print("[BotHub] iniciando",b.get("name",k),"PID",p.pid,"tentativa",attempt,"/3",flush=True)
+        # Pequena janela de saúde: processos que morrem logo após o Popen não são marcados como iniciados.
+        deadline=time.time()+3
+        while time.time()<deadline and p.poll() is None:
+            time.sleep(0.25)
+        if p.poll() is None:
+            print("[BotHub] processo permaneceu ativo após a verificação inicial:",b.get("name",k),flush=True)
+            return
+        try:
+            log.flush()
+            with open(folder/"bot.log","r",encoding="utf-8",errors="replace") as handle:
+                last_error="\\n".join(handle.readlines()[-18:])[-1800:]
+        except Exception:
+            last_error="sem detalhes adicionais no log"
+        print("[BotHub] o processo encerrou durante a inicialização (código",p.returncode,"):",last_error[-700:],flush=True)
+        PROCS.pop(k,None)
+        LOGS.pop(k,None)
+        try: log.close()
+        except Exception: pass
+        if attempt<3:
+            time.sleep(attempt)
+    raise RuntimeError("main.py encerrou nas 3 tentativas. Últimas linhas do log: "+last_error[-900:])
 
 
 # File manager seguro: somente a pasta do bot selecionado; sem shell arbitrário.
@@ -244,7 +777,28 @@ def process_worker_commands(cfg,tok,did,queue):
         result={"id":request_id,"updatedAt":int(time.time()*1000)}
         try:
             op=cmd.get("operation")
-            if op=="profile":
+            if op=="stop":
+                bid=sid(cmd.get("botId",""))
+                tracked = bid in PROCS
+                stop(bid)
+                orphan_stopped = stop_bot_processes(bid)
+                # Impede que a cópia da fila lida antes do comando reinicie o bot neste ciclo.
+                if isinstance(queue, dict):
+                    queue.pop(bid, None)
+                try:
+                    fb("DELETE","workerTasks/"+did+"/"+urllib.parse.quote(bid,safe=""),tok)
+                except Exception as queue_error:
+                    print("[BotHub] não foi possível remover a tarefa do bot parado:",bid,str(queue_error)[:140],flush=True)
+                try: sync_bot_state(bid,"push",tok,cfg.get("device_id"))
+                except Exception as state_error:
+                    print("[BotHub] estado final não sincronizado ao parar",bid,str(state_error)[:140],flush=True)
+                try: release_bot_lease(bid,cfg.get("device_id"),tok)
+                except Exception as lease_error:
+                    print("[BotHub] lease não liberado ao parar",bid,str(lease_error)[:140],flush=True)
+                stopped = tracked or orphan_stopped
+                print("[BotHub] parada explícita confirmada:",bid,"processo encerrado:",stopped,flush=True)
+                result.update(status="ok",message="main.py do bot encerrado neste worker.",stopped=stopped)
+            elif op=="profile":
                 bid=str(cmd.get("botId",""))
                 bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
                 secret=bot_cfg.get("token") if isinstance(bot_cfg,dict) else None
@@ -273,32 +827,440 @@ def process_worker_commands(cfg,tok,did,queue):
         except Exception as e:
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
+def download_latest_main(folder):
+    url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py")
+    response=S.get(url,timeout=45);response.raise_for_status()
+    data=response.content
+    if len(data)<10000: raise RuntimeError("main.py baixado está incompleto.")
+    compile(data.decode("utf-8"),"main.py","exec")
+    target=folder/"main.py";tmp=folder/"main.py.update.tmp"
+    backup=folder/".main.py.last-good"
+    if target.exists():
+        old=target.read_bytes()
+        if len(old)>=10000:
+            compile(old.decode("utf-8"),"main.py (versão anterior)","exec")
+            backup_tmp=backup.with_suffix(".tmp")
+            backup_tmp.write_bytes(old);backup_tmp.replace(backup)
+    tmp.write_bytes(data);tmp.replace(target)
+    return len(data)
+
+def notify_update(bot_id, bot_cfg, update):
+    token_value=bot_cfg.get("token")
+    if not token_value:return
+    try:
+        app_info=discord_api(token_value,"GET","/applications/@me",None)
+        owner=(app_info.get("owner") or {}).get("id")
+        if not owner:return
+        channel=discord_api(token_value,"POST","/users/@me/channels",{"recipient_id":str(owner)})
+        mode="OBRIGATÓRIA" if update.get("type")=="mandatory" else "OPCIONAL"
+        description=str(update.get("description") or "Melhorias e correções.")[:1500]
+        content=("📦 **Atualização BotHub disponível — "+mode+"**\n"+description+
+                 ("\n\nEsta atualização será instalada automaticamente." if mode=="OBRIGATÓRIA"
+                  else "\n\nPara instalar, digite !update neste chat com o bot."))
+        discord_api(token_value,"POST","/channels/"+str(channel["id"])+"/messages",
+                    {"content":content,"allowed_mentions":{"parse":[]}})
+    except Exception as e:
+        print("[BotHub] Não foi possível avisar o criador de",bot_id,":",str(e)[:180],flush=True)
+
+def process_release_updates(tok, queue):
+    release=fb("GET","botHubUpdates/current",tok)
+    if not isinstance(release,dict) or not release.get("updateId") or release.get("clusterOnly"):return
+    for raw_id,bot_cfg in list(queue.items()):
+        if not isinstance(bot_cfg,dict) or not bot_cfg.get("enabled",True):continue
+        if str(bot_cfg.get("botType") or "ia_chat").lower() != "ia_chat":
+            continue
+        bid=sid(raw_id);folder=ROOT/"bots"/bid
+        if not folder.exists():continue
+        state_file=folder/".bothub_update_state.json"
+        try:state=json.loads(state_file.read_text(encoding="utf-8")) if state_file.exists() else {}
+        except Exception:state={}
+        update_id=str(release.get("updateId"))
+        if state.get("updateId")!=update_id:
+            notify_update(raw_id,bot_cfg,release)
+            state={"updateId":update_id,"announced":True,"updated":False}
+            save_json(state_file,state)
+        request_file=folder/".bothub_update_request"
+        mandatory=release.get("type")=="mandatory"
+        accepted=request_file.exists()
+        if state.get("updateId")==update_id and state.get("updated"):continue
+        if not mandatory and not accepted:continue
+        try:
+            stop(bid)
+            size=download_latest_main(folder)
+            start(bid,bot_cfg)
+            state.update(updateId=update_id,announced=True,updated=True,updatedAt=int(time.time()*1000),bytes=size)
+            save_json(state_file,state)
+            if request_file.exists():request_file.unlink()
+            print("[BotHub] bot atualizado:",raw_id,"bytes:",size,flush=True)
+        except Exception as e:
+            print("[BotHub] falha ao atualizar",raw_id,":",str(e)[:220],flush=True)
+            # Se a versão nova não iniciar, restaura a última versão válida e tenta recuperá-la.
+            try:
+                backup=folder/".main.py.last-good"
+                if backup.is_file():
+                    restored=folder/"main.py.restore.tmp"
+                    restored.write_bytes(backup.read_bytes())
+                    restored.replace(folder/"main.py")
+                    print("[BotHub] versão anterior restaurada para",raw_id,flush=True)
+                if bid not in PROCS or PROCS[bid].poll() is not None:
+                    start(bid,bot_cfg)
+            except Exception as recovery_error:
+                print("[BotHub] recuperação após atualização falhou para",raw_id,":",str(recovery_error)[:220],flush=True)
+
+
+CLUSTER_UPDATE_URLS={
+    "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/add_cluster_server.py",
+    "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bothub_firebase_worker.py",
+}
+
+def process_cluster_update(tok):
+    """Em atualização obrigatória, baixa o instalador e o worker diretamente do GitHub."""
+    release=fb("GET","botHubClusterUpdates/current",tok)
+    if not isinstance(release,dict) or not release.get("updateId"):
+        return False
+    update_id=str(release.get("updateId"))
+    state_path=ROOT/".bothub_cluster_update_state.json"
+    try: state=json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    except Exception: state={}
+    if state.get("updateId")==update_id and state.get("status") in ("applied","installing"):
+        return False
+
+    requested=release.get("files",[])
+    if isinstance(requested,dict):
+        requested=list(requested.keys())
+    if not isinstance(requested,list) or not requested:
+        return False
+    clean={}
+    for name in requested:
+        if name not in CLUSTER_UPDATE_URLS:
+            raise RuntimeError("Arquivo de cluster não permitido: "+str(name))
+        url=CLUSTER_UPDATE_URLS[name]
+        response=S.get(url,timeout=45)
+        response.raise_for_status()
+        data=response.content
+        if len(data)<1000:
+            raise RuntimeError("Download incompleto de "+name)
+        source=data.decode("utf-8")
+        compile(source,name,"exec")
+        clean[name]=source
+
+    pending=ROOT/".bothub_cluster_update_pending.json"
+    save_json(pending,{"updateId":update_id,"files":clean})
+    helper="""import json,os,sys,time,subprocess
+from pathlib import Path
+parent=int(sys.argv[1]);root=Path(sys.argv[2]).resolve();py=sys.argv[3]
+pending=root/".bothub_cluster_update_pending.json"
+state=root/".bothub_cluster_update_state.json"
+allowed={"add_cluster_server.py","bothub_firebase_worker.py"}
+def alive(pid):
+    try: os.kill(pid,0); return True
+    except OSError: return False
+deadline=time.time()+90
+while alive(parent) and time.time()<deadline: time.sleep(.5)
+if alive(parent):
+    try: os.kill(parent,15)
+    except OSError: pass
+    time.sleep(2)
+data=json.loads(pending.read_text(encoding="utf-8"))
+for name,source in data.get("files",{}).items():
+    if name not in allowed or not isinstance(source,str): raise RuntimeError("Arquivo não permitido")
+    compile(source,name,"exec")
+    target=root/name;tmp=root/(name+".cluster-update.tmp")
+    tmp.write_text(source,encoding="utf-8");tmp.replace(target)
+venvpy=root/"venv"/("Scripts/python.exe" if os.name=="nt" else "bin/python")
+if not venvpy.exists(): venvpy=Path(py)
+state.write_text(json.dumps({"updateId":data.get("updateId"),"status":"applied","appliedAt":int(time.time()*1000)}),encoding="utf-8")
+pending.unlink(missing_ok=True)
+installer=root/"add_cluster_server.py"
+if not installer.exists():
+    raise RuntimeError("Instalador atualizado não foi encontrado; não é possível reiniciar a instalação.")
+os.execv(str(venvpy),[str(venvpy),str(installer)])
+"""
+    helper_path=ROOT/".bothub_cluster_updater.py"
+    helper_path.write_text(helper,encoding="utf-8")
+    save_json(state_path,{"updateId":update_id,"status":"installing","requestedAt":int(time.time()*1000)})
+    print("[BotHub] Atualização do cluster: baixando "+", ".join(clean.keys())+" diretamente do GitHub; reiniciando controlador.",flush=True)
+    subprocess.Popen([sys.executable,str(helper_path),str(os.getpid()),str(ROOT),sys.executable],
+        cwd=str(ROOT),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+        start_new_session=(os.name!="nt"))
+    return True
+
+def _pid_is_this_worker(pid):
+    """Evita matar um processo não relacionado caso o PID antigo tenha sido reutilizado."""
+    if pid == os.getpid():
+        return True
+    if os.name != "nt":
+        try:
+            raw = Path("/proc") / str(pid) / "cmdline"
+            command = raw.read_bytes().replace(b"\\0", b" ").decode("utf-8", errors="ignore")
+            return "bothub_firebase_worker.py" in command
+        except Exception:
+            return False
+    try:
+        import psutil
+        process = psutil.Process(pid)
+        return any("bothub_firebase_worker.py" in str(arg).lower()
+                   for arg in process.cmdline())
+    except Exception:
+        return False
+
+def acquire_worker_lock():
+    """O controlador novo encerra a instância antiga desta instalação e assume o controle."""
+    # Um único controlador por usuário/dispositivo, mesmo se as instalações estiverem em pastas diferentes.
+    lock_path = Path.home() / ".bothub_worker.lock"
+    # O arquivo guarda o PID da instância que atualmente possui o bloqueio.
+    old_pid = None
+    try:
+        raw = lock_path.read_text(encoding="utf-8").strip()
+        if raw.isdigit():
+            old_pid = int(raw)
+    except Exception:
+        pass
+
+    # Migração do bloqueio antigo: versões anteriores gravavam "0" e não guardavam o PID.
+    # Neste caso, localiza os outros workers pelo cmdline e encerra-os; esta instância é preservada.
+    other_pids = set()
+    if os.name != "nt":
+        try:
+            for entry in Path("/proc").iterdir():
+                if not entry.name.isdigit():
+                    continue
+                pid = int(entry.name)
+                if pid != os.getpid() and _pid_is_this_worker(pid):
+                    other_pids.add(pid)
+        except Exception:
+            pass
+    elif old_pid and old_pid != os.getpid() and _pid_is_this_worker(old_pid):
+        other_pids.add(old_pid)
+
+    if old_pid and old_pid != os.getpid() and _pid_is_this_worker(old_pid):
+        other_pids.add(old_pid)
+
+    for pid in sorted(other_pids):
+        print("[BotHub] Controlador antigo detectado (PID", pid,
+              "). Encerrando-o; esta instância continuará ativa.", flush=True)
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+
+    deadline = time.time() + 10
+    while other_pids and time.time() < deadline:
+        alive = set()
+        for pid in other_pids:
+            try:
+                os.kill(pid, 0)
+                alive.add(pid)
+            except OSError:
+                pass
+        other_pids = alive
+        if other_pids:
+            time.sleep(0.25)
+    for pid in other_pids:
+        try:
+            os.kill(pid, signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM)
+        except OSError:
+            pass
+
+    handle = open(lock_path, "a+", encoding="utf-8")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            if lock_path.stat().st_size == 0:
+                handle.write(" ")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, BlockingIOError):
+        handle.close()
+        # Se o processo antigo ainda está encerrando, tenta assumir o bloqueio por alguns segundos.
+        deadline = time.time() + 8
+        while time.time() < deadline:
+            time.sleep(0.25)
+            handle = open(lock_path, "a+", encoding="utf-8")
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except (OSError, BlockingIOError):
+                handle.close()
+                handle = None
+        if handle is None:
+            print("[BotHub] Não consegui assumir o controle: outro controlador ainda mantém o bloqueio.", flush=True)
+            return None
+
+    handle.seek(0)
+    handle.truncate()
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return handle
+
 def main():
+    global CURRENT_CFG, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN, LEASE_MISSES
     cfg=setup()
+    CURRENT_CFG=cfg
+    CURRENT_DEVICE_ID=cfg['device_id']
     v=ROOT/"venv";vp=v/("Scripts/python.exe" if os.name=="nt" else "bin/python")
     if not vp.exists():
         subprocess.check_call([sys.executable,"-m","venv",str(v)])
         subprocess.check_call([str(vp),"-m","pip","install","--upgrade","pip"])
         subprocess.check_call([str(vp),"-m","pip","install","requests","discord.py","aiohttp"])
         os.execv(str(vp),[str(vp),str(Path(__file__).resolve())])
+    lock_handle = acquire_worker_lock()
+    if lock_handle is None:
+        print("[BotHub] Já existe um controlador rodando nesta pasta. Este processo será encerrado para evitar bots duplicados.", flush=True)
+        return
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
+    atexit.register(cleanup_children)
+    kill_existing_bothub_bots()
+    kill_bot_processes_under_root()
+    print("[BotHub] Todos os main.py antigos desta instalação foram encerrados; iniciando os bots atribuídos.", flush=True)
     print("[BotHub] Worker iniciado sem pedir ID, e-mail ou senha.",flush=True)
     while True:
         try:
             t=token(cfg);did=urllib.parse.quote(cfg["device_id"],safe="")
+            LAST_TOKEN=t;LAST_DID=did;CURRENT_FIREBASE_TOKEN=t
+            # Verifica atualização antes do heartbeat: um erro no PUT de status
+            # não pode impedir que este worker receba a própria correção.
+            try:
+                if process_cluster_update(t):
+                    break
+            except Exception as update_error:
+                print("[BotHub] falha ao verificar atualização do cluster:",str(update_error)[:220],flush=True)
             fb("PUT","workers/"+did,t,stats(cfg))
             queue=fb("GET","workerTasks/"+did,t) or {}
+            LAST_QUEUE=queue if isinstance(queue,dict) else {}
             process_worker_commands(cfg,t,did,queue)
-            desired={sid(k):b for k,b in queue.items() if isinstance(b,dict) and b.get("enabled",True)}
+            # Uma conta Discord (token) só pode ter uma instância ativa neste worker.
+            # Se o painel atribuir o mesmo token a IDs/pastas diferentes, manter apenas a primeira.
+            desired={}
+            token_owner={}
+            duplicate_ids=set()
+            for raw_id,b in list(queue.items()):
+                if not isinstance(b,dict) or not b.get("enabled",True):
+                    continue
+                k=sid(raw_id)
+                # O cadastro principal é a fonte de verdade; uma fila antiga nunca pode
+                # ressuscitar um bot que o painel já marcou como OFF.
+                try:
+                    remote_bot = fb("GET","bots/"+urllib.parse.quote(k,safe=""),t) or {}
+                    if (not isinstance(remote_bot,dict) or remote_bot.get("enabled") is False
+                            or str(remote_bot.get("desiredState","on")).lower()=="off"):
+                        queue.pop(raw_id, None)
+                        queue.pop(k, None)
+                        stop(k)
+                        stop_bot_processes(k)
+                        try: release_bot_lease(k,cfg["device_id"],t)
+                        except Exception: pass
+                        try: fb("DELETE","workerTasks/"+did+"/"+urllib.parse.quote(k,safe=""),t)
+                        except Exception: pass
+                        print("[BotHub] bot OFF no cadastro; main.py encerrado e tarefa removida:",k,flush=True)
+                        continue
+                except Exception as status_error:
+                    print("[BotHub] não foi possível confirmar o estado do bot",k,str(status_error)[:120],flush=True)
+                    continue
+                secret=str(b.get("token") or "").strip()
+                if not secret:
+                    print("[BotHub] bot sem token ignorado:",k,flush=True)
+                    continue
+                if secret in token_owner:
+                    duplicate_ids.add(k)
+                    print("[BotHub] token duplicado detectado; não inicia a segunda pasta:",k,
+                          "(a conta já está atribuída a",token_owner[secret]+")",flush=True)
+                    continue
+                token_owner[secret]=k
+                desired[k]=b
+            leased={}
+            for k,bot_cfg in desired.items():
+                try:
+                    if claim_bot_lease(k,cfg['device_id'],t):
+                        leased[k]=bot_cfg
+                    else:
+                        print("[BotHub] bot pertence a outro worker; aguardando:",k,flush=True)
+                except Exception as lease_error:
+                    print("[BotHub] lease indisponível para",k,str(lease_error)[:140],flush=True)
             for k in list(PROCS):
-                if k not in desired:stop(k);print("[BotHub] parado",k,flush=True)
-            for k,b in desired.items():
-                if k not in PROCS or PROCS[k].poll() is not None:
-                    try:start(k,b)
-                    except Exception as e:print("[BotHub] falha no bot",k,str(e)[:220],flush=True)
-        except KeyboardInterrupt:break
-        except Exception as e:print("[BotHub] erro Firebase/worker:",str(e)[:300],flush=True)
-        time.sleep(max(10,int(os.getenv("BOTHUB_POLL_SECONDS","15"))))
-    for k in list(PROCS):stop(k)
+                if k not in leased or k in duplicate_ids:
+                    stop(k)
+                    try: sync_bot_state(k,'push',t,cfg['device_id'])
+                    except Exception: pass
+                    release_bot_lease(k,cfg['device_id'],t)
+                    if k not in leased:
+                        shutil.rmtree(ROOT/'bots'/sid(k),ignore_errors=True)
+                    print("[BotHub] bot parado/transferido:",k,flush=True)
+            # Propaga para o painel as comunidades liberadas pelo comando privado !allow.
+            for active_id in list(leased):
+                try:
+                    local_cfg_path=ROOT/"bots"/sid(active_id)/"config.json"
+                    if local_cfg_path.exists():
+                        local_cfg=json.loads(local_cfg_path.read_text(encoding="utf-8"))
+                        auth_cfg=local_cfg.get("bot_authorization") if isinstance(local_cfg,dict) else {}
+                        ids=auth_cfg.get("authorized_guild_ids",[]) if isinstance(auth_cfg,dict) else []
+                        ids=sorted({str(x) for x in ids if str(x).isdigit()})
+                        remote_ids=fb("GET","bots/"+sid(active_id)+"/authorizedGuildIds",t) or []
+                        remote_ids=sorted({str(x) for x in remote_ids if str(x).isdigit()}) if isinstance(remote_ids,list) else []
+                        if ids != remote_ids:
+                            fb("PUT","bots/"+sid(active_id)+"/authorizedGuildIds",t,ids)
+                except Exception as auth_sync_error:
+                    print("[BotHub] sincronização das comunidades autorizadas falhou:",active_id,str(auth_sync_error)[:140],flush=True)
+            # Reinicia apenas o bot cuja configuração de autorização mudou no painel.
+            for active_id,active_cfg in leased.items():
+                try:
+                    if active_id in PROCS and PROCS[active_id].poll() is None:
+                        local_path=ROOT/"bots"/sid(active_id)/"config.json"
+                        local=json.loads(local_path.read_text(encoding="utf-8")) if local_path.exists() else {}
+                        current=local.get("bot_authorization") if isinstance(local,dict) else {}
+                        current=current if isinstance(current,dict) else {}
+                        desired={
+                            "password_salt":str(active_cfg.get("allowPasswordSalt") or ""),
+                            "password_hash":str(active_cfg.get("allowPasswordHash") or ""),
+                            "allow_user_ids":sorted({str(x) for x in (active_cfg.get("allowUserIds") or []) if str(x).isdigit()}),
+                            "authorized_guild_ids":sorted({str(x) for x in (active_cfg.get("authorizedGuildIds") or []) if str(x).isdigit()}),
+                        }
+                        normalized={
+                            "password_salt":str(current.get("password_salt") or ""),
+                            "password_hash":str(current.get("password_hash") or ""),
+                            "allow_user_ids":sorted({str(x) for x in (current.get("allow_user_ids") or []) if str(x).isdigit()}),
+                            "authorized_guild_ids":sorted({str(x) for x in (current.get("authorized_guild_ids") or []) if str(x).isdigit()}),
+                        }
+                        if normalized != desired:
+                            stop(active_id)
+                            print("[BotHub] autorização alterada no painel; reiniciando bot:",active_id,flush=True)
+                except Exception as auth_restart_error:
+                    print("[BotHub] não foi possível conferir autorização:",active_id,str(auth_restart_error)[:120],flush=True)
+            for k,bot_cfg in leased.items():
+                try:
+                    if k not in PROCS or PROCS[k].poll() is not None:
+                        sync_bot_state(k,'pull',t,cfg['device_id'])
+                        sync_bot_state(k,'push',t,cfg['device_id'])
+                        auto_start=bot_cfg.get("autoStart",True) is not False
+                        start_requested=float(bot_cfg.get("startRequestedAt") or 0)
+                        if not auto_start and start_requested <= WORKER_STARTED*1000: continue
+                        start(k,bot_cfg)
+                except Exception as e: print("[BotHub] falha no bot",k,str(e)[:220],flush=True)
+            try: process_release_updates(t,queue)
+            except Exception as e: print("[BotHub] falha ao verificar atualização:",str(e)[:220],flush=True)
+        except KeyboardInterrupt: break
+        except Exception as e:
+            LEASE_MISSES += 1
+            print('[BotHub] erro Firebase/worker:',str(e)[:300],flush=True)
+            if LEASE_MISSES >= 3:
+                for active_id in list(PROCS): stop(active_id)
+                ACTIVE_LEASES.clear()
+        else:
+            LEASE_MISSES = 0
+        time.sleep(max(10,int(os.getenv('BOTHUB_POLL_SECONDS','15'))))
+    cleanup_children()
 
 if __name__=="__main__":
     try:main()
