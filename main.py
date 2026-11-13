@@ -9803,41 +9803,89 @@ async def bot_allow_command(ctx, *, senha: str = ""):
         await ctx.send("Todas as comunidades em que estou já estão autorizadas.")
         return
 
-    selected = None
-    if len(pending) == 1:
-        selected = pending[0]
-    else:
-        lines = ["Estou nestas comunidades. Qual devo selecionar como permitida?"]
-        lines.extend(f"{index}. {guild.name} — ID: {guild.id}" for index, guild in enumerate(pending, 1))
-        lines.append("Responda com o número da lista ou com o ID da comunidade. Esta escolha expira em 2 minutos.")
-        await ctx.send("\n".join(lines))
-        try:
-            answer = await bot.wait_for(
-                "message",
-                timeout=120,
-                check=lambda message: message.author.id == ctx.author.id
-                and isinstance(message.channel, discord.DMChannel)
-                and message.guild is None,
+    class SeletorComunidade(discord.ui.View):
+        def __init__(self, comunidades, autor_id):
+            super().__init__(timeout=120)
+            self.comunidades = comunidades
+            self.autor_id = autor_id
+            self.pagina = 0
+            self.seletor = discord.ui.Select(
+                placeholder="Escolha a comunidade que deseja autorizar",
+                min_values=1,
+                max_values=1,
+                options=[],
             )
-        except asyncio.TimeoutError:
-            await ctx.send("Seleção expirada. Envie !allow novamente no privado.")
-            return
-        choice = (answer.content or "").strip()
-        if choice.isdigit() and 1 <= int(choice) <= len(pending):
-            selected = pending[int(choice) - 1]
-        else:
-            selected = next((guild for guild in pending if str(guild.id) == choice), None)
-        if selected is None:
-            await ctx.send("Não reconheci essa comunidade. Envie !allow novamente e escolha um número ou ID válido.")
-            return
+            self.seletor.callback = self.selecionar
+            self.add_item(self.seletor)
+            self.atualizar_opcoes()
 
-    auth = _bot_auth_settings()
-    allowed = _bot_auth_guild_ids()
-    allowed.add(selected.id)
-    auth["authorized_guild_ids"] = sorted(allowed)
-    config["bot_authorization"] = auth
-    salvar_config(config)
-    await ctx.send(f"Comunidade **{selected.name}** autorizada com sucesso.")
+        def atualizar_opcoes(self):
+            inicio = self.pagina * 25
+            pagina = self.comunidades[inicio:inicio + 25]
+            self.seletor.options = [
+                discord.SelectOption(
+                    label=(guild.name or f"Comunidade {guild.id}")[:100],
+                    description=f"ID: {guild.id}",
+                    value=str(guild.id),
+                )
+                for guild in pagina
+            ]
+            self.anterior.disabled = self.pagina <= 0
+            self.proxima.disabled = (self.pagina + 1) * 25 >= len(self.comunidades)
+
+        async def interaction_check(self, interaction):
+            if interaction.user.id != self.autor_id:
+                await interaction.response.send_message(
+                    "Somente quem iniciou a autorização pode escolher a comunidade.",
+                    ephemeral=True,
+                )
+                return False
+            return True
+
+        async def selecionar(self, interaction):
+            guild_id = int(self.seletor.values[0])
+            selecionada = next((g for g in self.comunidades if g.id == guild_id), None)
+            if selecionada is None:
+                return await interaction.response.send_message(
+                    "Essa comunidade não está mais disponível. Envie !allow novamente.",
+                    ephemeral=True,
+                )
+            auth_atual = _bot_auth_settings()
+            permitidas = _bot_auth_guild_ids()
+            permitidas.add(selecionada.id)
+            auth_atual["authorized_guild_ids"] = sorted(permitidas)
+            config["bot_authorization"] = auth_atual
+            salvar_config(config)
+            for item in self.children:
+                item.disabled = True
+            await interaction.response.edit_message(
+                content=f"✅ Comunidade **{selecionada.name}** autorizada com sucesso!",
+                view=self,
+            )
+            self.stop()
+
+        @discord.ui.button(label="◀", style=discord.ButtonStyle.secondary)
+        async def anterior(self, interaction, button):
+            self.pagina = max(0, self.pagina - 1)
+            self.atualizar_opcoes()
+            await interaction.response.edit_message(view=self)
+
+        @discord.ui.button(label="▶", style=discord.ButtonStyle.secondary)
+        async def proxima(self, interaction, button):
+            self.pagina = min((len(self.comunidades) - 1) // 25, self.pagina + 1)
+            self.atualizar_opcoes()
+            await interaction.response.edit_message(view=self)
+
+    seletor = SeletorComunidade(pending, ctx.author.id)
+    total_paginas = (len(pending) + 24) // 25
+    await ctx.send(
+        f"🔐 **Senha confirmada!**\n"
+        f"Selecione abaixo a comunidade que deseja autorizar.\n"
+        f"Página 1/{total_paginas} • {len(pending)} comunidade(s) pendente(s). "
+        f"A seleção expira em 2 minutos.",
+        view=seletor,
+    )
+
 
 
 # Bloqueia também comandos de barra em comunidades que ainda não foram liberadas.
