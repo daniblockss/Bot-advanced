@@ -12,11 +12,11 @@
 <section class="grid"><div class="card"><div class="muted">Dispositivos online</div><div id="online" class="metric">0</div></div><div class="card"><div class="muted">Bots que todos os servidores ainda suportam</div><div id="capacity" class="metric">0</div></div><div class="card"><div class="muted">Bots realmente ligados</div><div id="active" class="metric">0</div></div><div class="card"><div class="muted">Na fila</div><div id="queued" class="metric">0</div></div><div class="card"><div class="muted">RAM disponível total</div><div id="ramFreeTotal" class="metric">—</div><div id="ramTotalLabel" class="hint">RAM total: —</div></div><div class="card"><div class="muted">Armazenamento livre total</div><div id="diskFreeTotal" class="metric">—</div><div id="diskTotalLabel" class="hint">Capacidade total: —</div></div><div class="card"><div class="muted">CPU média dos online</div><div id="cpuAvg" class="metric">—</div></div><div class="card"><div class="muted">Tempo online do worker mais antigo</div><div id="longestUptime" class="metric">—</div></div><div class="card"><div class="muted">Bateria média dos dispositivos</div><div id="batteryAvg" class="metric">—</div><div id="batteryCount" class="hint">Aguardando dados</div></div></section>
 <section class="card"><h2>🔋 Avisos de bateria</h2><div id="batteryAlerts" class="hint">Nenhum aviso de bateria.</div></section>
 <section class="layout"><div class="card"><h2>Dispositivos / workers</h2><div id="workers"><span class="muted">Aguardando workers…</span></div><p class="hint">Os dispositivos executam os bots. O painel calcula as vagas por worker usando RAM e disco livres, reservando 512 MiB para o sistema e estimando 300 MiB por bot. É uma estimativa conservadora; o consumo real varia conforme cada bot.</p></div>
-<div class="card"><h2>Cadastrar bot Discord</h2><label>Nome</label><input id="botName" maxlength="100" placeholder="Meu bot"><label>Token do bot</label><input id="botToken" type="password" autocomplete="off" placeholder="Token privado"><label>Senha individual para autorizar comunidades</label><input id="newBotAllowPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="Mínimo de 8 caracteres"><button id="createBot">Cadastrar e distribuir</button><div id="createMsg" class="hint"></div><p class="hint">O token é salvo no Firebase com regras privadas; ele não fica no código HTML. Use apenas bots que você controla.</p></div></section>
+<div class="card"><h2>Cadastrar bot Discord</h2><label>Nome</label><input id="botName" maxlength="100" placeholder="Meu bot"><label>Token do bot</label><input id="botToken" type="password" autocomplete="off" placeholder="Token privado"><button id="createBot">Cadastrar e distribuir</button><div id="createMsg" class="hint"></div><p class="hint">O token é salvo no Firebase com regras privadas; ele não fica no código HTML. Use apenas bots que você controla.</p></div></section>
 <section class="card"><h2>Bots cadastrados</h2><div id="bots"><span class="muted">Aguardando dados…</span></div><div id="queueMsg" class="hint"></div></section>
 <section class="card"><h2>Logs dos bots</h2><p class="hint">Veja as últimas mensagens de saída e erros do bot selecionado. O painel mostra até aproximadamente 18 KB de log recente.</p><div id="logsOutput" class="hint">Escolha “Ver logs” ao lado de um bot.</div><pre id="logsText" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto;background:#080d18;border:1px solid var(--line);padding:12px;border-radius:10px"></pre></section>
 <section class="card"><h2>Perfil do bot pelo painel</h2><p class="hint">O painel envia a alteração ao worker que executa o bot. O token nunca aparece nesta tela. A mudança depende dos limites e permissões da API do Discord.</p><label>Bot</label><select id="profileBot"><option value="">Selecione um bot</option></select><label>Novo nome (opcional)</label><input id="profileName" maxlength="32" placeholder="Nome do bot"><label>Nova descrição (opcional)</label><textarea id="profileDescription" maxlength="400" rows="3" placeholder="Descrição da aplicação (até 400 caracteres)"></textarea><label>Nova foto de perfil (PNG/JPEG, até 4 MB, opcional)</label><input id="profileAvatar" type="file" accept="image/png,image/jpeg"><button id="saveProfile">Aplicar perfil</button><div id="profileMsg" class="hint"></div></section>
-<section class="card"><h2>🔐 Autorização por comunidade</h2><p class="hint">Cada bot tem sua própria senha. O comando <code>!allow SENHA</code> só funciona no privado do bot. Em comunidades, a mensagem é apagada. A liberação exige o criador geral do BotHub ou um ID cadastrado abaixo.</p><label>Bot</label><select id="allowBot"><option value="">Selecione um bot</option></select><label>Nova senha (deixe vazia para manter a atual)</label><input id="allowPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="Mínimo de 8 caracteres"><label>IDs de usuários autorizados (um por linha ou separados por vírgula)</label><textarea id="allowUsers" rows="3" placeholder="123456789012345678"></textarea><div class="actions"><button id="saveAuthorization">Salvar autorização</button></div><div id="authorizationStatus" class="hint">Selecione um bot para consultar as comunidades já autorizadas.</div></section><section class="card"><h2>Gerenciador de arquivos do bot</h2><p class="hint">Navega somente dentro da pasta do bot escolhido neste worker. Permite ler, criar, editar e excluir arquivos de texto de até 256 KiB. Arquivos privados de configuração, tokens e logs são bloqueados. Não executa comandos de terminal.</p><label>Bot / pasta de trabalho</label><select id="fileBot"><option value="">Selecione um bot</option></select><div class="actions"><button id="loadFiles" class="secondary">Abrir pasta / atualizar</button><button id="restartFileBot" class="secondary">Reiniciar bot</button></div><div id="fileStatus" class="hint"></div><div id="fileList" style="margin-top:10px"></div><label>Arquivo selecionado</label><input id="filePath" placeholder="Ex.: main8.py"><label>Conteúdo UTF-8 (máximo 256 KiB)</label><textarea id="fileContent" rows="12" spellcheck="false" placeholder="Selecione um arquivo na lista ou informe um novo caminho permitido."></textarea><div class="actions"><button id="saveFile">Salvar / criar arquivo</button><button id="deleteFile" class="danger">Excluir arquivo</button></div></section>
+<section class="card" id="permissionsPanel"><h2>🔐 Permissões dos bots</h2><p class="hint">Controle pelo painel quais comunidades podem usar cada bot. Não depende do dono da comunidade nem do comando !allow. Informe os IDs dos servidores Discord, um por linha ou separados por vírgula. Comunidades fora da lista ficam bloqueadas.</p><label>Bot</label><select id="permissionBot"><option value="">Selecione um bot</option></select><label>IDs das comunidades autorizadas</label><textarea id="permissionGuildIds" rows="5" placeholder="123456789012345678&#10;987654321098765432"></textarea><div class="actions"><button id="savePermissions">Salvar permissões</button><button id="clearPermissions" class="danger">Bloquear todas</button></div><div id="permissionStatus" class="hint">Selecione um bot para carregar a política atual.</div></section><section class="card"><h2>Gerenciador de arquivos do bot</h2><p class="hint">Navega somente dentro da pasta do bot escolhido neste worker. Permite ler, criar, editar e excluir arquivos de texto de até 256 KiB. Arquivos privados de configuração, tokens e logs são bloqueados. Não executa comandos de terminal.</p><label>Bot / pasta de trabalho</label><select id="fileBot"><option value="">Selecione um bot</option></select><div class="actions"><button id="loadFiles" class="secondary">Abrir pasta / atualizar</button><button id="restartFileBot" class="secondary">Reiniciar bot</button></div><div id="fileStatus" class="hint"></div><div id="fileList" style="margin-top:10px"></div><label>Arquivo selecionado</label><input id="filePath" placeholder="Ex.: main8.py"><label>Conteúdo UTF-8 (máximo 256 KiB)</label><textarea id="fileContent" rows="12" spellcheck="false" placeholder="Selecione um arquivo na lista ou informe um novo caminho permitido."></textarea><div class="actions"><button id="saveFile">Salvar / criar arquivo</button><button id="deleteFile" class="danger">Excluir arquivo</button></div></section>
 <h2>Como adicionar um servidor ao cluster</h2>
 <p class="hint">O único ponto de entrada é <code>start.py</code>. Ele baixa/verifica o instalador e o worker, registra os detalhes em <code>start.log</code> e transfere o próprio processo ao instalador. Requer Python 3.10+ e internet.</p>
 <pre style="white-space:pre-wrap;overflow-wrap:anywhere;background:#080d19;padding:12px;border-radius:10px;color:#dbeafe">mkdir -p "teste 2" && cd "teste 2"
@@ -147,7 +147,7 @@ async function showBotLogs(id){
   }catch(e){out.className="error";out.textContent=e.message||String(e)}
 }
 async function rebalance(){if(busy)return;busy=true;try{const now=Date.now();const nodes=Object.entries(workerData).filter(([,w])=>eligible(w)).sort((a,b)=>capacity(b[1])-capacity(a[1]));const counts={};nodes.forEach(([id])=>counts[id]=0);const assignments={};const seenTokens=new Set();const enabled=Object.entries(botData).filter(([,b])=>b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off');for(const [bid,b] of enabled){const secret=String(b.token||'').trim();if(!secret||seenTokens.has(secret)){assignments[bid]=null;continue}seenTokens.add(secret);const previous=b.workerId||b.lastWorkerId||null;let target=previous;if(!target||!Object.prototype.hasOwnProperty.call(counts,target)||counts[target]>=capacity(workerData[target])){target=nodes.find(([id,w])=>counts[id]<capacity(w))?.[0]||previous}else if(!eligible(workerData[target])){target=nodes.find(([id,w])=>counts[id]<capacity(w))?.[0]||previous}if(target&&Object.prototype.hasOwnProperty.call(counts,target))counts[target]++;assignments[bid]=target}
-let signature=JSON.stringify({assignments,auth:Object.fromEntries(Object.entries(botData).map(([id,b])=>[id,[b.allowPasswordSalt||'',b.allowPasswordHash||'',b.allowUserIds||[],b.authorizedGuildIds||[]]]))});if(signature===lastAssignment){busy=false;return}lastAssignment=signature;
+let signature=JSON.stringify({assignments,auth:Object.fromEntries(Object.entries(botData).map(([id,b])=>[id,[b.config?.botHubGuildAccessMode||'required',b.config?.botHubAllowedGuildIds||b.authorizedGuildIds||[]]]))});if(signature===lastAssignment){busy=false;return}lastAssignment=signature;
 const updates={};for(const [bid,b] of Object.entries(botData)){const wid=b.enabled?assignments[bid]||null:null;if((b.workerId||null)!==wid)updates['bots/'+bid+'/workerId']=wid}
 if(Object.keys(updates).length)await update(ref(db),updates);
 const allWorkerIds=new Set([...Object.keys(workerData),...Object.values(botData).map(b=>b.workerId).filter(Boolean)]);for(const wid of allWorkerIds){const assigned={};for(const [bid,b] of Object.entries(botData)){if(b.enabled&&assignments[bid]===wid)assigned[bid]={name:b.name,token:b.token,config:b.config||{},allowPasswordSalt:b.allowPasswordSalt||'',allowPasswordHash:b.allowPasswordHash||'',allowUserIds:Array.isArray(b.allowUserIds)?b.allowUserIds:[],authorizedGuildIds:Array.isArray(b.authorizedGuildIds)?b.authorizedGuildIds:[],enabled:true,desiredState:'on',updatedAt:b.updatedAt||now}}await set(testRef('workerTasks/'+wid),assigned)}
@@ -193,7 +193,7 @@ async function removeWorker(id){const w=workerData[id];if(!w)return;if(online(w)
 
 let currentFilePath="";
 function populateManagementSelects(){
-  for(const selectId of ["profileBot","fileBot","allowBot"]){
+  for(const selectId of ["profileBot","fileBot","permissionBot"]){
     const el=$(selectId),previous=el.value;
     const options=['<option value="">Selecione um bot</option>'];
     for(const [id,b] of Object.entries(botData)){
@@ -244,37 +244,33 @@ function selectedBotAndWorker(selectId){
   if(!wid||!online(workerData[wid]))throw new Error("Este bot não está atribuído a um worker online.");
   return {id,b,wid};
 }
-$("saveAuthorization").onclick=async()=>{
-  const status=$("authorizationStatus");status.className="hint";status.textContent="Salvando…";
-  try{
-    const id=$("allowBot").value,b=botData[id];
-    if(!id||!b)throw new Error("Selecione um bot.");
-    const users=parseDiscordIds($("allowUsers").value);
-    const password=$("allowPassword").value;
-    const changes={allowUserIds:users,updatedAt:Date.now()};
-    if(password){
-      if(password.length<8||password.length>128)throw new Error("A senha deve ter entre 8 e 128 caracteres.");
-      const salt=Array.from(crypto.getRandomValues(new Uint8Array(16)),x=>x.toString(16).padStart(2,"0")).join("");
-      changes.allowPasswordSalt=salt;
-      changes.allowPasswordHash=await hashAllowPassword(password,salt);
-    }else if(!b.allowPasswordHash){
-      throw new Error("Defina uma senha para este bot.");
-    }
-    await update(testRef("bots/"+id),changes);
-    $("allowPassword").value="";
-    lastAssignment="";
-    await refreshData();
-    const latest=botData[id]||{};
-    const guilds=Array.isArray(latest.authorizedGuildIds)?latest.authorizedGuildIds:[];
-    status.textContent="Configuração salva. IDs autorizados: "+users.length+". Comunidades liberadas: "+(guilds.length?guilds.join(", "):"nenhuma ainda")+".";
-  }catch(e){status.className="error";status.textContent="Erro: "+e.message}
-};
-$("allowBot").onchange=()=>{
-  const id=$("allowBot").value,b=botData[id]||{};
-  $("allowUsers").value=Array.isArray(b.allowUserIds)?b.allowUserIds.join("\\n"):"";
-  const ids=Array.isArray(b.authorizedGuildIds)?b.authorizedGuildIds:[];
-  $("authorizationStatus").textContent="Comunidades autorizadas: "+(ids.length?ids.join(", "):"nenhuma")+". "+(b.allowPasswordHash?"Senha configurada.":"Senha ainda não configurada.");
-};
+function parseGuildIds(value){
+ const ids=String(value||"").split(/[\\s,;]+/).map(x=>x.trim()).filter(Boolean);
+ if(ids.some(x=>!/^\\d{15,22}$/.test(x)))throw new Error("Cada ID deve ter de 15 a 22 números.");
+ return [...new Set(ids)];
+}
+function loadPermissionPanel(){
+ const id=$("permissionBot").value,b=botData[id]||{},cfg=b.config&&typeof b.config==="object"?b.config:{};
+ const ids=Array.isArray(cfg.botHubAllowedGuildIds)?cfg.botHubAllowedGuildIds:(Array.isArray(b.authorizedGuildIds)?b.authorizedGuildIds:[]);
+ $("permissionGuildIds").value=ids.join("\\n");
+ $("permissionStatus").textContent="Comunidades liberadas: "+ids.length+".";
+}
+$("permissionBot").onchange=loadPermissionPanel;
+async function saveBotPermissions(clearAll){
+ const status=$("permissionStatus");status.className="hint";status.textContent="Salvando…";
+ try{
+  const id=$("permissionBot").value,b=botData[id];if(!id||!b)throw new Error("Selecione um bot.");
+  const ids=clearAll?[]:parseGuildIds($("permissionGuildIds").value);
+  if(ids.length>100)throw new Error("Limite de 100 comunidades por bot.");
+  const cfg=b.config&&typeof b.config==="object"?{...b.config}:{};
+  cfg.botHubGuildAccessMode="required";cfg.botHubAllowedGuildIds=ids;
+  await update(testRef("bots/"+id),{config:cfg,authorizedGuildIds:ids,updatedAt:Date.now()});
+  lastAssignment="";await refreshData();$("permissionGuildIds").value=ids.join("\\n");
+  status.className="ok";status.textContent=ids.length?ids.length+" comunidade(s) liberada(s); as demais ficam bloqueadas.":"Nenhuma comunidade liberada.";
+ }catch(e){status.className="error";status.textContent="Erro: "+e.message}
+}
+$("savePermissions").onclick=()=>saveBotPermissions(false);
+$("clearPermissions").onclick=()=>{if(confirm("Bloquear todas as comunidades deste bot?"))saveBotPermissions(true)};
 $("saveProfile").onclick=async()=>{
   const msg=$("profileMsg");msg.className="hint";msg.textContent="Enviando alteração…";
   try{
@@ -376,7 +372,7 @@ $('publishMainUpdate').onclick=async()=>{
 };
 $('loginBtn').onclick=async()=>{ const btn=$('loginBtn');btn.disabled=true;$('loginMsg').textContent='Conectando ao Firebase…';try{await signInWithEmailAndPassword(auth,$('email').value.trim(),$('password').value);$('loginMsg').textContent='Login aceito. Verificando autorização…'}catch(e){$('loginMsg').textContent='Login Firebase falhou ('+(e.code||'erro')+'): '+e.message}finally{btn.disabled=false}}; $('loginBtn').dataset.handlerReady='1';
 $('logout').onclick=()=>signOut(auth);
-$('createBot').onclick=async()=>{const name=$('botName').value.trim(),token=$('botToken').value.trim();if(!name||token.length<30){$('createMsg').textContent='Informe um nome e um token válido.';return}if($('newBotAllowPassword').value.length<8){$('createMsg').textContent='Defina uma senha individual com pelo menos 8 caracteres.';return}try{if(Object.values(botData).some(b=>String(b.token||'').trim()===token)){throw new Error('Esse token já está cadastrado. Uma conta Discord não pode ser executada duas vezes no cluster.')}const initialPassword=$('newBotAllowPassword').value;if(initialPassword.length<8||initialPassword.length>128)throw new Error('Defina uma senha individual de 8 a 128 caracteres para este bot.');const salt=Array.from(crypto.getRandomValues(new Uint8Array(16)),x=>x.toString(16).padStart(2,'0')).join('');const passwordHash=await hashAllowPassword(initialPassword,salt);const id=crypto.randomUUID().replaceAll('-','');await set(testRef('bots/'+id),{name,token,config:{},allowPasswordSalt:salt,allowPasswordHash:passwordHash,allowUserIds:[],authorizedGuildIds:[],enabled:true,desiredState:'on',workerId:null,createdAt:Date.now(),updatedAt:Date.now()});$('botName').value='';$('botToken').value='';$('newBotAllowPassword').value='';$('createMsg').textContent='Bot cadastrado; distribuição automática iniciada.';lastAssignment='';await refreshData()}catch(e){$('createMsg').textContent='Erro: '+e.message}};
+$('createBot').onclick=async()=>{const name=$('botName').value.trim(),token=$('botToken').value.trim();if(!name||token.length<30){$('createMsg').textContent='Informe um nome e um token válido.';return}try{if(Object.values(botData).some(b=>String(b.token||'').trim()===token)){throw new Error('Esse token já está cadastrado. Uma conta Discord não pode ser executada duas vezes no cluster.')}const id=crypto.randomUUID().replaceAll('-','');await set(testRef('bots/'+id),{name,token,config:{},allowUserIds:[],authorizedGuildIds:[],enabled:true,desiredState:'on',workerId:null,createdAt:Date.now(),updatedAt:Date.now()});$('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado; distribuição automática iniciada.';lastAssignment='';await refreshData()}catch(e){$('createMsg').textContent='Erro: '+e.message}};
 setInterval(()=>{if(auth.currentUser){cleanupStaleWorkers().then(()=>drawWorkers())}},60000);
 onAuthStateChanged(auth,async user=>{if(!user){stopSubs();$('dashboard').classList.add('hidden');$('login').classList.remove('hidden');$('logout').classList.add('hidden');$('email').value='daniblocks100@gmail.com';$('password').value='';$('connection').textContent='Desconectado';$('connection').className='badge off';return}try{let s=await get(ref(db,'admins/'+user.uid));if(s.val()!==true){const legacy=await get(ref(db,'teste2/admins/'+user.uid));if(legacy.val()===true){s=legacy}else{$('loginMsg').textContent='Login feito, mas este UID não está autorizado. Verifique se existe o valor booleano true em /admins/'+user.uid+' (ou no caminho antigo /teste2/admins/'+user.uid+').';await signOut(auth);return}}start()}catch(e){stopSubs();$('dashboard').classList.add('hidden');$('login').classList.remove('hidden');$('logout').classList.add('hidden');$('connection').textContent='Acesso negado';$('connection').className='badge off';$('loginMsg').textContent='O login entrou, mas o Firebase bloqueou a leitura de admins/'+user.uid+'. No Realtime Database > Dados, crie admins/'+user.uid+' com valor booleano true; não coloque esse UID na aba Regras. Detalhe: '+e.message;try{await signOut(auth)}catch(_){}}});
 </script></body></html>
