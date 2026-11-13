@@ -2,9 +2,10 @@
 # BotHub Firebase worker: auto-registers this device using Firebase Anonymous Auth.
 import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,signal,atexit,base64,hashlib,sqlite3,threading
 from pathlib import Path
+import re
 import requests
 
-WORKER_VERSION="2026.11.12.16"
+WORKER_VERSION="2026.11.12.17"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
