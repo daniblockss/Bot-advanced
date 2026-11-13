@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.13.2</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.13.3</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -581,6 +581,12 @@ python3 start.py</pre>
     </div>
 
     <div class="modal-body-content">
+      <div class="card" style="padding:10px;margin-bottom:10px">
+        <strong>➕ Adicionar bot ao servidor</strong>
+        <p class="hint" style="margin:5px 0">Gera um convite oficial do Discord para este bot.</p>
+        <button class="primary" onclick="generateBotInvite()">Gerar convite</button>
+        <div id="modalInviteStatus" class="hint" style="margin-top:7px"></div>
+      </div>
       <div class="modal-tabs">
         <button class="modal-tab-btn active" onclick="switchBotTab('files')">📁 Arquivos</button>
         <button class="modal-tab-btn" onclick="switchBotTab('logs')">📋 Logs</button>
@@ -1264,6 +1270,23 @@ window.fetchBotLogs = async function() {
     status.textContent = "Tamanho: " + bytes(data.size || 0);
   } catch(e) {
     status.className = "error"; status.textContent = e.message;
+  }
+};
+
+window.generateBotInvite = async function() {
+  const status = $('modalInviteStatus');
+  status.className = 'hint';
+  status.textContent = 'Consultando o Discord pelo worker…';
+  try {
+    const { id, wid } = getSelectedBotAndWorker();
+    const result = await sendWorkerCommand(wid, { operation: 'create_invite', botId: id });
+    const inviteUrl = String(result.inviteUrl || '');
+    if (!inviteUrl.startsWith('https://discord.com/oauth2/authorize?')) throw new Error('O Discord não retornou um convite válido.');
+    status.className = 'ok';
+    status.innerHTML = 'Convite gerado para a aplicação ' + esc(result.applicationId || '') + ': <a href="' + esc(inviteUrl) + '" target="_blank" rel="noopener noreferrer">Adicionar ao Discord</a>';
+  } catch(e) {
+    status.className = 'error';
+    status.textContent = e.message || String(e);
   }
 };
 
