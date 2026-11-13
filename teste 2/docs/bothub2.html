@@ -1009,15 +1009,19 @@ function statusChip(label,ok){
 function workerBotListHtml(workerId,w){
  const ids=w.runningBotIds, running=new Set(Array.isArray(ids)?ids.map(String):ids&&typeof ids==='object'?Object.keys(ids).map(String):[]);
  const ready=w.readyBotIds, confirmed=new Set(Array.isArray(ready)?ready.map(String):ready&&typeof ready==='object'?Object.keys(ready).map(String):[]);
- const items=Object.entries(botData).filter(([id,b])=>running.has(String(id))||((!running.size)&&String(b.workerId||'')===String(workerId)&&confirmed.has(String(id))));
- if(!items.length)return '<div class="hint" style="margin-top:7px">Nenhum bot em execução detectado.</div>';
- return '<details open style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Bots em execução ('+items.length+') · mostrar/ocultar</summary><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+items.map(([id,b])=>'<span title="'+esc(b.name||'Bot')+'" style="display:inline-flex;align-items:center;gap:5px;max-width:170px;padding:4px 7px;border:1px solid var(--line);border-radius:8px;font-size:11px"><img src="'+(b.avatarBase64||b.avatarUrl||'')+'" onerror="this.style.display=\'none\'" style="width:19px;height:19px;border-radius:50%;object-fit:cover;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||'Bot')+'</span></span>').join('')+'</div></details>';
+ const items=Object.entries(botData).filter(([id,b])=>running.has(String(id))||String(b.workerId||'')===String(workerId));
+ if(!items.length)return '<div class="hint" style="margin-top:7px">Nenhum bot atribuído a este Worker.</div>';
+ return '<details open style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Bots atribuídos ('+items.length+') · mostrar/ocultar</summary><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+items.map(([id,b])=>{const state=confirmed.has(String(id))?'Discord conectado':running.has(String(id))?'Conectando ao Discord':'Aguardando inicialização';return '<span title="'+esc((b.name||'Bot')+' · '+state)+'" style="display:inline-flex;align-items:center;gap:5px;max-width:210px;padding:4px 7px;border:1px solid var(--line);border-radius:8px;font-size:11px"><img src="'+(b.avatarBase64||b.avatarUrl||'')+'" onerror="this.style.display=\'none\'" style="width:19px;height:19px;border-radius:50%;object-fit:cover;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||'Bot')+' · '+state+'</span></span>';}).join('')+'</div></details>';
 }
 function clusterProgressHtml(id){
  const p=clusterUpdateProgress[id];if(!p||!p.status)return '';
+ const age=p.updatedAt?Math.max(0,Date.now()-Number(p.updatedAt)):0;
+ const stale=p.status==='restarting'&&age>180000;
  const labels={received:'Solicitação recebida',downloading:'Baixando arquivos',installing:'Preparando instalação',restarting:'Reiniciando worker',completed:'Atualizado',failed:'Falha na atualização'};
- const color=p.status==='completed'?'var(--green)':p.status==='failed'?'var(--red)':'var(--cyan)';
- return '<div class="hint" style="margin-top:7px;padding:8px 10px;border:1px solid '+color+'55;border-radius:9px"><strong style="color:'+color+'">Work · '+esc(labels[p.status]||p.status)+'</strong><div>'+esc(p.message||'')+'</div><div>Atualizado: '+(p.updatedAt?ageText(Date.now()-Number(p.updatedAt)):'—')+(p.reportedVersion?' · Versão: '+esc(p.reportedVersion):'')+'</div></div>';
+ const title=stale?'Reinício não confirmado':(labels[p.status]||p.status);
+ const message=stale?'O Worker não confirmou o retorno após a atualização. O estado abaixo é antigo; confira o log start.log no dispositivo.':(p.message||'');
+ const color=p.status==='completed'?'var(--green)':p.status==='failed'||stale?'var(--red)':'var(--cyan)';
+ return '<div class="hint" style="margin-top:7px;padding:8px 10px;border:1px solid '+color+'55;border-radius:9px"><strong style="color:'+color+'">Work · '+esc(title)+'</strong><div>'+esc(message)+'</div><div>Atualizado: '+(p.updatedAt?ageText(age):'—')+(p.reportedVersion?' · Versão: '+esc(p.reportedVersion):'')+'</div></div>';
 }
 function drawBotUpdateProgress(){
  const box=$('botUpdateProgress');if(!box)return;
