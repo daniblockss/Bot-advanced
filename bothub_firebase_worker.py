@@ -1105,6 +1105,31 @@ def main():
                             fb("PUT","bots/"+sid(active_id)+"/authorizedGuildIds",t,ids)
                 except Exception as auth_sync_error:
                     print("[BotHub] sincronização das comunidades autorizadas falhou:",active_id,str(auth_sync_error)[:140],flush=True)
+            # Reinicia apenas o bot cuja configuração de autorização mudou no painel.
+            for active_id,active_cfg in leased.items():
+                try:
+                    if active_id in PROCS and PROCS[active_id].poll() is None:
+                        local_path=ROOT/"bots"/sid(active_id)/"config.json"
+                        local=json.loads(local_path.read_text(encoding="utf-8")) if local_path.exists() else {}
+                        current=local.get("bot_authorization") if isinstance(local,dict) else {}
+                        current=current if isinstance(current,dict) else {}
+                        desired={
+                            "password_salt":str(active_cfg.get("allowPasswordSalt") or ""),
+                            "password_hash":str(active_cfg.get("allowPasswordHash") or ""),
+                            "allow_user_ids":sorted({str(x) for x in (active_cfg.get("allowUserIds") or []) if str(x).isdigit()}),
+                            "authorized_guild_ids":sorted({str(x) for x in (active_cfg.get("authorizedGuildIds") or []) if str(x).isdigit()}),
+                        }
+                        normalized={
+                            "password_salt":str(current.get("password_salt") or ""),
+                            "password_hash":str(current.get("password_hash") or ""),
+                            "allow_user_ids":sorted({str(x) for x in (current.get("allow_user_ids") or []) if str(x).isdigit()}),
+                            "authorized_guild_ids":sorted({str(x) for x in (current.get("authorized_guild_ids") or []) if str(x).isdigit()}),
+                        }
+                        if normalized != desired:
+                            stop(active_id)
+                            print("[BotHub] autorização alterada no painel; reiniciando bot:",active_id,flush=True)
+                except Exception as auth_restart_error:
+                    print("[BotHub] não foi possível conferir autorização:",active_id,str(auth_restart_error)[:120],flush=True)
             for k,bot_cfg in leased.items():
                 try:
                     if k not in PROCS or PROCS[k].poll() is not None:
