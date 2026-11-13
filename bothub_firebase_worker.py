@@ -161,7 +161,7 @@ def stop(k):
 def stop_bot_processes(bot_id):
     """Encerra o main.py exato deste bot, mesmo se o processo não estiver em PROCS."""
     folder = (ROOT / "bots" / sid(bot_id)).resolve()
-    target = (folder / "main.py").resolve()
+    target = (folder / ({"ia_chat":"main.py","standard":"standard_main.py","bot_admin":"bot_admin.py"}.get(str((LAST_QUEUE.get(str(bot_id), {}) or {}).get("botType") or "ia_chat").lower(), "main.py"))).resolve()
     current_pid = os.getpid()
     found = []
     if os.name != "nt" and Path("/proc").is_dir():
@@ -577,24 +577,29 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
 
 
 def start(k,b):
-    folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True);script=folder/"main.py"
+    folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True)
+    bot_type=str(b.get("botType") or (b.get("config") or {}).get("botType") or "ia_chat").lower()
+    if bot_type not in {"ia_chat","standard","bot_admin"}: bot_type="ia_chat"
+    script_name={"ia_chat":"main.py","standard":"standard_main.py","bot_admin":"bot_admin.py"}[bot_type]
+    script=folder/script_name
     if k in PROCS and PROCS[k].poll() is None:
         return
-    # Restore Firebase memory before main.py opens local databases.
     sync_bot_state(k, 'pull')
     if not script.exists():
-        url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py")
+        default_urls={
+            "ia_chat":os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/main.py"),
+            "standard":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/standard_main.py",
+            "bot_admin":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/bot_admin.py",
+        }
+        url=default_urls[bot_type]
         r=S.get(url,timeout=45);r.raise_for_status()
-        if len(r.content)<10000:raise RuntimeError("Download de main.py incompleto.")
-        source=r.content.decode("utf-8")
-        compile(source,str(script),"exec")
-        tmp=script.with_suffix(".py.download.tmp")
-        tmp.write_bytes(r.content);tmp.replace(script)
-    # Detecta erro de sintaxe antes de criar um processo que morreria imediatamente.
+        if len(r.content)<1000:raise RuntimeError("Download incompleto de "+script_name)
+        source=r.content.decode("utf-8");compile(source,str(script),"exec")
+        tmp=script.with_suffix(".py.download.tmp");tmp.write_bytes(r.content);tmp.replace(script)
     try:
         compile(script.read_text(encoding="utf-8"),str(script),"exec")
     except Exception as exc:
-        raise RuntimeError("main.py não passou na validação de sintaxe: "+str(exc)[:180])
+        raise RuntimeError(script_name+" não passou na validação de sintaxe: "+str(exc)[:180])
     duplicate_pid = script_already_running(script, b.get("token"))
     if duplicate_pid is not None:
         print("[BotHub] Duplicata de main.py/token detectada (PID",duplicate_pid,"). Encerrando a cópia antiga antes de iniciar a instância correta para",k,flush=True)
