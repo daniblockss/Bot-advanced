@@ -23,11 +23,17 @@ intents.message_content=True
 intents.members=True
 bot=commands.Bot(command_prefix=PREFIX,intents=intents,help_command=None)
 ticket_locks=set()
-def fb(method,path,value=None):
+def fb(method,path,value=None,_retried=False):
  global AUTH
  if not AUTH:
-  req=Request("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key="+API_KEY,data=b'{"returnSecureToken":true}',headers={"Content-Type":"application/json"},method="POST")
-  with urlopen(req,timeout=20) as r: AUTH=json.loads(r.read())["idToken"]
+  shared=os.getenv("BOTHUB_SHARED_STATE_DIR","").strip()
+  token_file=Path(shared)/"firebase-worker-token.json" if shared else None
+  if token_file and token_file.is_file():
+   try: AUTH=str(json.loads(token_file.read_text(encoding="utf-8")).get("idToken") or "") or None
+   except Exception: AUTH=None
+  if not AUTH:
+   req=Request("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key="+API_KEY,data=b'{"returnSecureToken":true}',headers={"Content-Type":"application/json"},method="POST")
+   with urlopen(req,timeout=20) as r: AUTH=json.loads(r.read())["idToken"]
  url=DB+"/"+path.strip("/")+".json?auth="+AUTH
  data=None if value is None else json.dumps(value,ensure_ascii=False).encode()
  try:
