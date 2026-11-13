@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.12"
+WORKER_VERSION="2026.11.12.13"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -1091,9 +1091,13 @@ def process_worker_commands(cfg,tok,did,queue):
                 if not secret: raise ValueError("O bot não está atribuído a este worker ou não tem token.")
                 candidate=str(cmd.get("token") or "").strip()
                 active_token=candidate or secret
-                old_identity=discord_bot_avatar(secret)
+                try:
+                    old_identity=discord_bot_avatar(secret)
+                    expected_bot_id=str(old_identity.get("avatarDiscordId") or "")
+                except Exception:
+                    expected_bot_id=str(bot_cfg.get("avatarDiscordId") or "")
                 identity=discord_bot_avatar(active_token)
-                if identity.get("avatarDiscordId") != old_identity.get("avatarDiscordId"):
+                if expected_bot_id and identity.get("avatarDiscordId") != expected_bot_id:
                     raise ValueError("O novo token precisa pertencer à mesma conta de bot.")
                 name=str(cmd.get("name") or "").strip()
                 if not name or len(name)>32: raise ValueError("O nome deve ter de 1 a 32 caracteres.")
