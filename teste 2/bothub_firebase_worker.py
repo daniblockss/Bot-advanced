@@ -13,7 +13,7 @@ DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 PROCS={};LOGS={};CLEAN_EXITED={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 
-WORKER_VERSION="2026.11.13.4"
+WORKER_VERSION="2026.11.13.5"
 
 def runtime_environment():
     """Identifica Android/Termux por caminhos antigos e atuais do Android."""
