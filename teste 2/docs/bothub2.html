@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.9</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.10</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -1021,8 +1021,9 @@ function drawBots(){
 
   $('bots').innerHTML=bots.length ? `<div class="bot-card-grid">` + bots.map(([id,b])=>{
     const isRunning=running.has(id);
-    const avatarHtml = b.avatarBase64 
-      ? `<img class="bot-avatar-lg" src="${b.avatarBase64}" alt="Avatar">` 
+    const botAvatar = b.avatarBase64 || b.avatarUrl || '';
+    const avatarHtml = botAvatar
+      ? `<img class="bot-avatar-lg" src="${esc(botAvatar)}" alt="Avatar do bot" onerror="this.outerHTML='<div class=&quot;bot-avatar-lg&quot;>🤖</div>'">`
       : `<div class="bot-avatar-lg">🤖</div>`;
     
     return `
