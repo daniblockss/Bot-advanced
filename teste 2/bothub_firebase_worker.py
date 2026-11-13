@@ -183,7 +183,7 @@ def stats(cfg):
     ready=[k for k in running if (ROOT/"bots"/sid(k)/".bothub_discord_ready").is_file()]
     runtime, battery_command=runtime_environment()
     x={"deviceId":cfg["device_id"],"uid":cfg.get("uid",""),"hostname":socket.gethostname(),
-       "label":socket.gethostname(),"platform":platform.platform(),"runtimeType":runtime,"runtimeDetectedAt":int(time.time()*1000),
+       "label":socket.gethostname(),"platform":platform.platform(),"runtimeType":runtime,
        "termuxApiInstalled":bool(battery_command) if runtime=="Termux" else None,
        "workerVersion":WORKER_VERSION,"architecture":platform.machine(),
        "pythonVersion":platform.python_version(),"diskFreeBytes":d.free,
