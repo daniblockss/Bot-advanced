@@ -5638,6 +5638,22 @@ def _bothub_fb(method, path, value=None, etag=False, match=None):
         raise
 
 
+def _bothub_user_api_keys(provedor, user_id):
+    if not user_id:
+        return []
+    bot_id = os.getenv("BOTHUB_BOT_ID", "").strip()
+    if not bot_id:
+        return []
+    try:
+        item = _bothub_fb("GET", f"botHubUserApis/{user_id}/{bot_id}")[0] or {}
+        if isinstance(item, dict) and item.get("enabled") and str(item.get("provider", "")).lower() == provedor:
+            key = str(item.get("key") or "").strip()
+            return [key] if key else []
+    except Exception as error:
+        log_console(f"AVISO: não foi possível carregar API pessoal ({type(error).__name__}).")
+    return []
+
+
 def _bothub_global_api_keys(provedor, user_id):
     import hashlib
     if not user_id:
@@ -5717,7 +5733,7 @@ def obter_chaves_provedor(provedor, user_id=None):
     ]
     chaves = list(dict.fromkeys(
         chave.strip()
-        for chave in [*chaves, *env_keys, *_bothub_global_api_keys(provedor, user_id)]
+        for chave in [*chaves, *env_keys, *_bothub_user_api_keys(provedor, user_id), *_bothub_global_api_keys(provedor, user_id)]
         if isinstance(chave, str) and chave.strip()
     ))
     if provedor == "llm7":
