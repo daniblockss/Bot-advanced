@@ -898,27 +898,43 @@ def process_worker_commands(cfg,tok,did,queue):
         except Exception as e:
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
-def latest_main_bytes():
-    # A atualização dos bots IA CHAT usa a versão publicada dentro de teste 2/.
-    url=os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py")
+def bot_script_info(bot_type):
+    kind=str(bot_type or "ia_chat").lower()
+    if kind=="ia_chat":
+        return "main.py",os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"),10000
+    if kind=="bot_admin":
+        return "bot_admin.py",os.getenv("BOTHUB_ADMIN_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot_admin.py"),5000
+    if kind=="standard":
+        return "standard_main.py",os.getenv("BOTHUB_STANDARD_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/standard_main.py"),1000
+    raise RuntimeError("Tipo de bot não suportado para atualização: "+kind)
+
+def latest_bot_script_bytes(bot_type):
+    name,url,minimum=bot_script_info(bot_type)
     response=S.get(url,timeout=45);response.raise_for_status()
     data=response.content
-    if len(data)<10000: raise RuntimeError("main.py baixado está incompleto.")
-    compile(data.decode("utf-8"),"main.py (versão publicada)","exec")
+    if len(data)<minimum:raise RuntimeError(name+" baixado está incompleto.")
+    compile(data.decode("utf-8"),name+" (versão publicada)","exec")
     return data
 
-def download_latest_main(folder):
-    data=latest_main_bytes()
-    target=folder/"main.py";tmp=folder/"main.py.update.tmp"
-    backup=folder/".main.py.last-good"
+def download_latest_bot_script(folder,bot_type):
+    name,_,_=bot_script_info(bot_type)
+    data=latest_bot_script_bytes(bot_type)
+    target=folder/name;tmp=folder/(name+".update.tmp")
+    backup=folder/("."+name+".last-good")
     if target.exists():
         old=target.read_bytes()
-        if len(old)>=10000:
-            compile(old.decode("utf-8"),"main.py (versão anterior)","exec")
+        if len(old)>=1000:
+            compile(old.decode("utf-8"),name+" (versão anterior)","exec")
             backup_tmp=backup.with_suffix(".tmp")
             backup_tmp.write_bytes(old);backup_tmp.replace(backup)
     tmp.write_bytes(data);tmp.replace(target)
     return len(data)
+
+def latest_main_bytes():
+    return latest_bot_script_bytes("ia_chat")
+
+def download_latest_main(folder):
+    return download_latest_bot_script(folder,"ia_chat")
 
 def notify_update(bot_id, bot_cfg, update, notification_state):
     token_value=bot_cfg.get("token")
@@ -963,8 +979,6 @@ def process_release_updates(tok, queue):
     for raw_id,bot_cfg in list(queue.items()):
         if not isinstance(bot_cfg,dict) or not bot_cfg.get("enabled",True):
             continue
-        if str(bot_cfg.get("botType") or "ia_chat").lower() != "ia_chat":
-            continue
         bid=sid(raw_id)
         folder=ROOT/"bots"/bid
         if not folder.exists():
@@ -978,24 +992,27 @@ def process_release_updates(tok, queue):
             state={}
         if state.get("updateId")!=update_id:
             state={"updateId":update_id,"announced":False,"updated":False,"attempts":0}
-        # Uma publicação nova pode apontar para o mesmo main.py já instalado.
-        # Nesse caso, confirma a versão sem mandar DM nem reiniciar o bot.
+        bot_type=str(bot_cfg.get("botType") or (bot_cfg.get("config") or {}).get("botType") or "ia_chat").lower()
+        if bot_type not in {"ia_chat","standard","bot_admin"}:continue
+        script_name,_,_=bot_script_info(bot_type)
+        # Se o arquivo já corresponde à publicação, marca como atualizado sem reiniciar.
         if not state.get("updated"):
             try:
-                installed=folder/"main.py"
-                published=latest_main_bytes()
+                installed=folder/script_name
+                published=latest_bot_script_bytes(bot_type)
                 if installed.is_file() and installed.read_bytes()==published:
-                    state.update(updateId=update_id,announced=True,updated=True,
+                    state.update(updateId=update_id,announced=bool(mandatory or state.get("announced")),updated=True,
                                  updatedAt=int(time.time()*1000),bytes=len(published),
                                  retryAfter=0,lastError="",alreadyCurrent=True)
                     save_json(state_file,state)
-                    print("[BotHub] bot já está na versão publicada; atualização ignorada sem reiniciar:",raw_id,flush=True)
+                    print("[BotHub] bot já está na versão publicada; atualização ignorada sem reiniciar:",raw_id,script_name,flush=True)
                     continue
             except Exception as compare_error:
                 print("[BotHub] não foi possível comparar a versão instalada de",raw_id,":",str(compare_error)[:160],flush=True)
         if state.get("updated"):
             continue
-        if not state.get("announced"):
+        # Atualizações obrigatórias são silenciosas: não enviam DM e não pedem !update.
+        if not mandatory and not state.get("announced"):
             announced=notify_update(raw_id,bot_cfg,release,notification_state)
             state["announced"]=bool(announced)
             save_json(state_file,state)
@@ -1015,7 +1032,7 @@ def process_release_updates(tok, queue):
             continue
         try:
             stop(bid)
-            size=download_latest_main(folder)
+            size=download_latest_bot_script(folder,bot_type)
             start(bid,bot_cfg)
             state.update(updateId=update_id,announced=True,updated=True,
                          updatedAt=int(time.time()*1000),bytes=size,
@@ -1037,11 +1054,11 @@ def process_release_updates(tok, queue):
                   "- próxima tentativa em",delay,"segundos.",flush=True)
             # Restaura a versão anterior, mas não reinicia em ciclo apertado.
             try:
-                backup=folder/".main.py.last-good"
+                backup=folder/("."+script_name+".last-good")
                 if backup.is_file():
-                    restored=folder/"main.py.restore.tmp"
+                    restored=folder/(script_name+".restore.tmp")
                     restored.write_bytes(backup.read_bytes())
-                    restored.replace(folder/"main.py")
+                    restored.replace(folder/script_name)
                     print("[BotHub] versão anterior restaurada para",raw_id,flush=True)
                     if bid not in PROCS or PROCS[bid].poll() is not None:
                         start(bid,bot_cfg)
