@@ -159,9 +159,9 @@ def stop(k):
         except Exception:pass
 
 def stop_bot_processes(bot_id):
-    """Encerra o main.py exato deste bot, mesmo se o processo não estiver em PROCS."""
+    """Encerra o script exato deste bot (IA, Standard ou Admin), mesmo se estiver órfão."""
     folder = (ROOT / "bots" / sid(bot_id)).resolve()
-    target = (folder / ({"ia_chat":"main.py","standard":"standard_main.py","bot_admin":"bot_admin.py"}.get(str((LAST_QUEUE.get(str(bot_id), {}) or {}).get("botType") or "ia_chat").lower(), "main.py"))).resolve()
+    targets = {(folder / name).resolve() for name in ("main.py", "standard_main.py", "bot_admin.py")}
     current_pid = os.getpid()
     found = []
     if os.name != "nt" and Path("/proc").is_dir():
@@ -171,7 +171,7 @@ def stop_bot_processes(bot_id):
             try:
                 raw = (entry / "cmdline").read_bytes()
                 args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\0") if part]
-                if any(arg.endswith(".py") and Path(arg).resolve() == target for arg in args[1:]):
+                if any(arg.endswith(".py") and Path(arg).resolve() in targets for arg in args[1:]):
                     found.append(int(entry.name))
             except (OSError, ValueError, RuntimeError):
                 continue
@@ -190,7 +190,7 @@ def stop_bot_processes(bot_id):
                     except (OSError, ValueError, RuntimeError):
                         continue
         except Exception as e:
-            print("[BotHub] Não foi possível localizar o main.py do bot", bot_id, str(e)[:140], flush=True)
+            print("[BotHub] Não foi possível localizar o processo do bot", bot_id, str(e)[:140], flush=True)
     for pid in sorted(set(found)):
         try:
             os.kill(pid, signal.SIGTERM)
@@ -208,7 +208,7 @@ def stop_bot_processes(bot_id):
         except OSError:
             pass
     if found:
-        print("[BotHub] main.py do bot", bot_id, "encerrado; PID(s):", ", ".join(map(str, sorted(set(found)))), flush=True)
+        print("[BotHub] processo do bot", bot_id, "encerrado; PID(s):", ", ".join(map(str, sorted(set(found)))), flush=True)
     return bool(found)
 
 def child_parent_death_signal():
