@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.7"
+WORKER_VERSION="2026.11.12.8"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -12,6 +12,7 @@ TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 PROCS={};LOGS={};LOG_OFFSETS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
+AVATAR_SYNC_CACHE={}
 LOG_THROTTLE={}
 
 def log_throttled(key, interval, *parts):
@@ -1010,6 +1011,46 @@ def process_bot_deletions(tok, device_id):
             print("[BotHub] falha ao aplicar exclusão de", bid, ":", str(e)[:180], flush=True)
 
 
+def discord_bot_avatar(token_value):
+    """Obtém a identidade e a URL pública do avatar atual da conta bot."""
+    user=discord_api(token_value,"GET","/users/@me",None)
+    user_id=str(user.get("id") or "")
+    if not user_id:
+        raise RuntimeError("Discord não retornou o ID do bot.")
+    avatar=user.get("avatar")
+    if avatar:
+        ext="gif" if str(avatar).startswith("a_") else "png"
+        url="https://cdn.discordapp.com/avatars/"+user_id+"/"+str(avatar)+"."+ext+"?size=256"
+    else:
+        try: index=(int(user_id)>>22)%6
+        except Exception: index=0
+        url="https://cdn.discordapp.com/embed/avatars/"+str(index)+".png"
+    return {"avatarUrl":url,"avatarDiscordId":user_id,"avatarDiscordName":user.get("username") or ""}
+
+
+def sync_missing_bot_avatars(queue,tok):
+    """Ao cadastrar um bot, busca seu avatar no Discord e salva no cadastro do painel."""
+    now=time.time()
+    for bid,bot_cfg in (queue.items() if isinstance(queue,dict) else []):
+        if not isinstance(bot_cfg,dict) or not bot_cfg.get("token"):
+            continue
+        if bot_cfg.get("avatarUrl") or bot_cfg.get("avatarBase64"):
+            continue
+        last=AVATAR_SYNC_CACHE.get(str(bid),0)
+        if now-last<600:
+            continue
+        AVATAR_SYNC_CACHE[str(bid)]=now
+        try:
+            avatar=discord_bot_avatar(bot_cfg["token"])
+            fb("PATCH","bots/"+urllib.parse.quote(str(bid),safe=""),tok,{
+                **avatar,"avatarFetchedAt":int(time.time()*1000)
+            })
+            bot_cfg.update(avatar)
+            log_throttled("avatar-sync:"+str(bid),3600,"[BotHub] Avatar do bot sincronizado com o painel:",str(bid))
+        except Exception as exc:
+            log_throttled("avatar-sync-error:"+str(bid),600,"[BotHub] Não foi possível obter avatar do bot",str(bid),str(exc)[:120])
+
+
 def process_worker_commands(cfg,tok,did,queue):
     commands=fb("GET","workerCommands/"+did,tok) or {}
     if not isinstance(commands,dict): return
@@ -1021,7 +1062,17 @@ def process_worker_commands(cfg,tok,did,queue):
             fb("PATCH",command_path,tok,{"status":"received","receivedAt":int(time.time()*1000),"workerId":cfg.get("device_id")})
             fb("PATCH",command_path,tok,{"status":"running","startedAt":int(time.time()*1000)})
             op=cmd.get("operation")
-            if op=="profile":
+            if op=="fetch_avatar":
+                bid=str(cmd.get("botId",""))
+                bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
+                secret=bot_cfg.get("token") if isinstance(bot_cfg,dict) else None
+                if not secret: raise ValueError("O bot não está atribuído a este worker ou não tem token.")
+                avatar=discord_bot_avatar(secret)
+                avatar["avatarFetchedAt"]=int(time.time()*1000)
+                fb("PATCH","bots/"+urllib.parse.quote(bid,safe=""),tok,avatar)
+                bot_cfg.update(avatar)
+                result.update(status="ok",message="Avatar atual do Discord obtido e salvo no painel.",**avatar)
+            elif op=="profile":
                 bid=str(cmd.get("botId",""))
                 bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
                 secret=bot_cfg.get("token") if isinstance(bot_cfg,dict) else None
@@ -1193,6 +1244,9 @@ def load_worker_queue(tok, device_id):
             "enabled": enabled,
             "desiredState": "on" if enabled else "off",
             "updatedAt": record.get("updatedAt") or record.get("createdAt") or 0,
+            "avatarUrl": record.get("avatarUrl") or "",
+            "avatarBase64": record.get("avatarBase64") or "",
+            "avatarDiscordId": record.get("avatarDiscordId") or "",
         }
         if item["token"]:
             queue[bot_id] = item
@@ -1591,6 +1645,7 @@ def main():
             process_bot_deletions(t, cfg["device_id"])
             queue=load_worker_queue(t, cfg["device_id"]) or {}
             LAST_QUEUE=queue if isinstance(queue,dict) else {}
+            sync_missing_bot_avatars(queue,t)
             process_worker_commands(cfg,t,did,queue)
             # Uma conta Discord (token) só pode ter uma instância ativa neste worker.
             # Se o painel atribuir o mesmo token a IDs/pastas diferentes, manter apenas a primeira.
