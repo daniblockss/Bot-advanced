@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.4"
+WORKER_VERSION="2026.11.12.5"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -1269,6 +1269,20 @@ CLUSTER_UPDATE_URLS={
     "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bothub_firebase_worker.py",
 }
 
+def wake_screen_for_cluster_update():
+    """Pede ao Android para acender a tela antes de instalar uma atualização do cluster."""
+    if not TERMUX_CONSOLE:
+        return
+    command=shutil.which("input") or "/system/bin/input"
+    try:
+        result=subprocess.run([command,"keyevent","224"],capture_output=True,text=True,timeout=8)
+        if result.returncode==0:
+            print("[BotHub] Tela acordada para aplicar atualização.",flush=True)
+        else:
+            log_throttled("wake_screen_update",60,"[BotHub] Android não permitiu acender a tela para atualização.")
+    except (OSError,subprocess.TimeoutExpired) as exc:
+        log_throttled("wake_screen_update_error",60,"[BotHub] Não foi possível solicitar tela ativa:",str(exc)[:120])
+
 def process_cluster_update(tok):
     """Em atualização obrigatória, baixa o instalador e o worker diretamente do GitHub."""
     release=fb("GET","botHubClusterUpdates/current",tok)
@@ -1280,6 +1294,8 @@ def process_cluster_update(tok):
     except Exception: state={}
     if state.get("updateId")==update_id and state.get("status") in ("applied","installing"):
         return False
+
+    wake_screen_for_cluster_update()
 
     requested=release.get("files",[])
     if isinstance(requested,dict):
