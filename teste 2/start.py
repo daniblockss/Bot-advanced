@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
-SUPERVISOR_VERSION = "2026.11.12.4"
+SUPERVISOR_VERSION = "2026.11.12.5"
 ROOT = Path(__file__).resolve().parent
 LOG_FILE = ROOT / "start.log"
 INSTALLER = ROOT / "add_cluster_server.py"
