@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import requests
 
-WORKER_VERSION="2026.11.13.7"
+WORKER_VERSION="2026.11.13.8"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -168,6 +168,17 @@ def termux_diagnostics():
     TERMUX_DIAGNOSTICS_CACHE.update({"at":now,"data":data})
     return dict(data)
 
+def read_component_version(filename, variable):
+    path=ROOT/filename
+    try:
+        for line in path.read_text(encoding="utf-8",errors="replace").splitlines()[:35]:
+            if line.strip().startswith(variable) and "=" in line:
+                return line.split("=",1)[1].strip().strip(chr(34)+chr(39))
+    except Exception:
+        pass
+    return "desconhecida"
+
+
 def stats(cfg):
     d=shutil.disk_usage(str(ROOT))
     running=[k for k,p in PROCS.items() if p.poll() is None]
@@ -182,7 +193,7 @@ def stats(cfg):
         except Exception: pass
     x={"deviceId":cfg["device_id"],"uid":cfg.get("uid",""),"hostname":socket.gethostname(),
        "label":socket.gethostname(),"platform":platform.platform(),"diskFreeBytes":d.free,
-       "diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"workerVersion":WORKER_VERSION,
+       "diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"workerVersion":WORKER_VERSION,"serverFileVersions":{"start.py":read_component_version("start.py","SUPERVISOR_VERSION"),"add_cluster_server.py":read_component_version("add_cluster_server.py","INSTALLER_VERSION"),"bothub_firebase_worker.py":WORKER_VERSION},
        "runningBots":len(running),"runningBotIds":running,"readyBotIds":ready,
        "lastSeen":int(time.time()*1000),"online":True,"status":"online",
        "uptimeSeconds":int(time.time()-WORKER_STARTED),
