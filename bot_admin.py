@@ -198,11 +198,11 @@ async def on_message(message):
   return
  if message.guild and str(getattr(message.channel,"topic","") or "").startswith("bothub-ticket:") and not message.content.startswith("!"):
   text=message.content.lower()
-  if any(term in text for term in ("painel de api","gerenciar api","adicionar api","configurar api")):
+  if "api" in text and any(term in text for term in ("abrir","adicion","gerenciar","configur","painel","minhas")):
    await message.channel.send(embed=emb("Painel de APIs","Escolha em qual bot configurar suas APIs."),view=ApiView(message.author.id));return
   if any(term in text for term in ("meus bots","configurar bot","configurações dos bots","painel dos bots")):
    await message.channel.send(embed=emb("Configurações dos seus bots","Selecione um bot para consultar estado e convite."),view=ConfigView(message.author.id));return
-  if any(term in text for term in ("quantos pontos","meus pontos","saldo de pontos")):
+  if any(term in text for term in ("quantos pontos","meus pontos","saldo de pontos","ver pontos","consultar pontos")):
    await message.channel.send(f"Você tem **{points(message.author.id)} pontos**.");return
   if "comprar pontos" in text or "quero pontos" in text:
    await message.channel.send("Use !comprar-pontos quantidade para registrar sua solicitação. A equipe confirma o pagamento antes de adicionar.");return
