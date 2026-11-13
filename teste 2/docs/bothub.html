@@ -165,10 +165,11 @@ async function toggleBot(id,enabled){
     }
     await update(testRef('bots/'+id),changes);
     lastAssignment='';
-    await refreshData();
+    // Envia a parada ao worker original antes de recalcular a distribuição.
     if(!enabled&&workerId&&online(workerData[workerId])){
       await sendWorkerCommand(workerId,{operation:"stop",botId:id});
     }
+    await refreshData();
   }catch(e){alert('Não foi possível alterar/parar o bot: '+e.message)}
 }
 async function deleteBot(id){
