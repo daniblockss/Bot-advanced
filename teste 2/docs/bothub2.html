@@ -1280,17 +1280,34 @@ window.fetchBotLogs = async function() {
   }
 };
 
+async function botTokenFingerprint(token) {
+  const bytes = new TextEncoder().encode(String(token || ''));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+}
+function showBotInvite(status, inviteUrl, appId, cached) {
+  if (!inviteUrl.startsWith('https://discord.com/oauth2/authorize?')) throw new Error('O Discord não retornou um convite válido.');
+  status.className = 'ok';
+  status.innerHTML = (cached ? 'Convite salvo no Firebase' : 'Convite atualizado e salvo no Firebase') + ' para a aplicação ' + esc(appId || '') + ': <a href="' + esc(inviteUrl) + '" target="_blank" rel="noopener noreferrer">Adicionar ao Discord</a>';
+}
 window.generateBotInvite = async function() {
   const status = $('modalInviteStatus');
   status.className = 'hint';
-  status.textContent = 'Consultando o Discord pelo worker…';
+  status.textContent = 'Verificando convite salvo…';
   try {
     const { id, wid } = getSelectedBotAndWorker();
+    const bot = botData[id] || {};
+    const fingerprint = await botTokenFingerprint(bot.token);
+    const cache = bot.inviteCache || {};
+    if (cache.tokenFingerprint === fingerprint && String(cache.inviteUrl || '').startsWith('https://discord.com/oauth2/authorize?')) {
+      showBotInvite(status, cache.inviteUrl, cache.applicationId, true);
+      return;
+    }
+    status.textContent = 'Token novo ou convite ausente. Consultando o Discord uma vez…';
     const result = await sendWorkerCommand(wid, { operation: 'create_invite', botId: id });
     const inviteUrl = String(result.inviteUrl || '');
-    if (!inviteUrl.startsWith('https://discord.com/oauth2/authorize?')) throw new Error('O Discord não retornou um convite válido.');
-    status.className = 'ok';
-    status.innerHTML = 'Convite gerado para a aplicação ' + esc(result.applicationId || '') + ': <a href="' + esc(inviteUrl) + '" target="_blank" rel="noopener noreferrer">Adicionar ao Discord</a>';
+    showBotInvite(status, inviteUrl, result.applicationId, !!result.cached);
+    if (botData[id]) botData[id].inviteCache = { tokenFingerprint: fingerprint, applicationId: result.applicationId, inviteUrl, updatedAt: Date.now() };
   } catch(e) {
     status.className = 'error';
     status.textContent = e.message || String(e);
