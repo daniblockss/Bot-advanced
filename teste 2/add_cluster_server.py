@@ -5,7 +5,7 @@ from __future__ import annotations
 import os, platform, shutil, subprocess, sys, urllib.request, shlex, time, json, zipfile, io
 from pathlib import Path
 
-INSTALLER_VERSION = "2026.11.12.5"
+INSTALLER_VERSION = "2026.11.12.6"
 GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 INSTALLER_URL = GITHUB_RAW + "/add_cluster_server.py"
 WORKER_URL = GITHUB_RAW + "/bothub_firebase_worker.py"
@@ -202,13 +202,26 @@ def configure_termux_boot():
                 print("[BotHub Installer] Abra a instalação e confirme Termux:Boot no Android.",
                       flush=True)
                 subprocess.Popen([opener, str(apk)])
-                print("[BotHub Installer] Aguardando o Android concluir a instalação (até 3 minutos)...",
+                print("[BotHub Installer] Quando terminar de instalar no Android, volte ao Termux.", flush=True)
+                print("[BotHub Installer] Pressione ENTER aqui para continuar (ou Ctrl+C para cancelar).",
                       flush=True)
-                if wait_for_termux_boot(True, 180):
-                    installed = True
+                try:
+                    input()
+                except EOFError:
+                    raise RuntimeError(
+                        "Não foi possível ler a confirmação no Termux. "
+                        "Volte ao Termux e execute start.py em um terminal interativo."
+                    )
+                # A consulta via pm/cmd pode ser bloqueada em alguns Androids.
+                # Após a confirmação explícita do usuário, não manter o instalador preso
+                # esperando um resultado que o sistema pode não disponibilizar.
+                if termux_package_installed("com.termux.boot"):
                     print("[BotHub Installer] Termux:Boot instalado e detectado.", flush=True)
-                    break
-                raise RuntimeError("O Android não confirmou a instalação dentro do prazo.")
+                else:
+                    print("[BotHub Installer] Confirmação manual recebida. A verificação automática "
+                          "do pacote está bloqueada; continuando com a configuração.", flush=True)
+                installed = True
+                break
             except Exception as exc:
                 print(f"[BotHub Installer] Tentativa {attempt}/2 falhou: {str(exc)[:220]}",
                       flush=True)
