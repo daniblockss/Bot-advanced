@@ -14,7 +14,7 @@ PROCS={};LOGS={};CLEAN_EXITED={};S=requests.Session();WORKER_STARTED=time.time()
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
 LAST_SAVED_RUNTIME=None;RUNTIME_STATE_LOADED=False
 
-WORKER_VERSION="2026.11.13.6"
+WORKER_VERSION="2026.11.13.7"
 
 def runtime_environment():
     """Identifica Android/Termux por caminhos antigos e atuais do Android."""
@@ -305,7 +305,7 @@ def stop(k):
 def stop_bot_processes(bot_id):
     """Encerra o script exato deste bot (IA, Standard ou Admin), mesmo se estiver órfão."""
     folder = (ROOT / "bots" / sid(bot_id)).resolve()
-    targets = {(folder / name).resolve() for name in ("main.py", "standard_main.py", "bot_admin.py")}
+    targets = {(folder / name).resolve() for name in ("bot-ia.py", "bot-standard.py", "bot-adm.py", "main.py", "standard_main.py", "bot_admin.py")}
     current_pid = os.getpid()
     found = []
     if os.name != "nt" and Path("/proc").is_dir():
@@ -389,7 +389,7 @@ def kill_bot_processes_under_root():
                     if not arg.endswith(".py"):
                         continue
                     script = Path(arg).resolve()
-                    if script.name in {"main.py","standard_main.py","bot_admin.py"} and bots_root in script.parents:
+                    if script.name in {"bot-ia.py","bot-standard.py","bot-adm.py","main.py","standard_main.py","bot_admin.py"} and bots_root in script.parents:
                         candidates.append(pid)
                         break
             except (OSError, ValueError, RuntimeError):
@@ -404,7 +404,7 @@ def kill_bot_processes_under_root():
                 for arg in (proc.info.get("cmdline") or [])[1:]:
                     try:
                         script = Path(arg).resolve()
-                        if script.name in {"main.py","standard_main.py","bot_admin.py"} and bots_root in script.parents:
+                        if script.name in {"bot-ia.py","bot-standard.py","bot-adm.py","main.py","standard_main.py","bot_admin.py"} and bots_root in script.parents:
                             candidates.append(pid)
                             break
                     except (OSError, ValueError, RuntimeError):
@@ -501,7 +501,7 @@ def script_already_running(script, token_value=None):
                         running_script = Path(arg).resolve()
                     except Exception:
                         continue
-                    if running_script.name != "main.py":
+                    if running_script.name not in {"bot-ia.py","bot-standard.py","bot-adm.py","main.py","standard_main.py","bot_admin.py"}:
                         continue
                     if str(running_script) == target:
                         return int(entry.name)
@@ -528,7 +528,7 @@ def script_already_running(script, token_value=None):
                         running_script = Path(arg).resolve()
                     except Exception:
                         continue
-                    if not str(arg).endswith(".py") or running_script.name != "main.py":
+                    if not str(arg).endswith(".py") or running_script.name not in {"bot-ia.py","bot-standard.py","bot-adm.py","main.py","standard_main.py","bot_admin.py"}:
                         continue
                     if str(running_script) == target:
                         return proc.info["pid"]
@@ -729,16 +729,16 @@ def start(k,b):
         return
     bot_type=str(b.get("botType") or (b.get("config") or {}).get("botType") or "ia_chat").lower()
     if bot_type not in {"ia_chat","standard","bot_admin"}: bot_type="ia_chat"
-    script_name={"ia_chat":"main.py","standard":"standard_main.py","bot_admin":"bot_admin.py"}[bot_type]
+    script_name={"ia_chat":"bot-ia.py","standard":"bot-standard.py","bot_admin":"bot-adm.py"}[bot_type]
     script=folder/script_name
     if k in PROCS and PROCS[k].poll() is None:
         return
     sync_bot_state(k, 'pull')
     if not script.exists():
         default_urls={
-            "ia_chat":os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"),
-            "standard":os.getenv("BOTHUB_STANDARD_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/standard_main.py"),
-            "bot_admin":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot_admin.py",
+            "ia_chat":os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-ia.py"),
+            "standard":os.getenv("BOTHUB_STANDARD_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-standard.py"),
+            "bot_admin":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-adm.py",
         }
         url=default_urls[bot_type]
         r=S.get(url,timeout=45);r.raise_for_status()
@@ -1001,11 +1001,11 @@ def process_worker_commands(cfg,tok,did,queue):
 def bot_script_info(bot_type):
     kind=str(bot_type or "ia_chat").lower()
     if kind=="ia_chat":
-        return "main.py",os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"),10000
+        return "bot-ia.py",os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-ia.py"),10000
     if kind=="bot_admin":
-        return "bot_admin.py",os.getenv("BOTHUB_ADMIN_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot_admin.py"),5000
+        return "bot-adm.py",os.getenv("BOTHUB_ADMIN_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-adm.py"),5000
     if kind=="standard":
-        return "standard_main.py",os.getenv("BOTHUB_STANDARD_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/standard_main.py"),1000
+        return "bot-standard.py",os.getenv("BOTHUB_STANDARD_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-standard.py"),1000
     raise RuntimeError("Tipo de bot não suportado para atualização: "+kind)
 
 def latest_bot_script_bytes(bot_type):
