@@ -1105,33 +1105,35 @@ def _pid_is_this_worker(pid):
         return False
 
 def acquire_worker_lock():
-    """Garante exclusividade pelo lock do sistema operacional, sem matar outros workers."""
+    """Adquire exclusividade sem aguardar indefinidamente por outra instância."""
     lock_path = ROOT / ".bothub_worker.lock"
     handle = open(lock_path, "a+", encoding="utf-8")
-    warned = False
-    while True:
-        try:
-            if os.name == "nt":
-                import msvcrt
-                handle.seek(0)
-                if lock_path.stat().st_size == 0:
-                    handle.write(" ")
-                    handle.flush()
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        if os.name == "nt":
+            import msvcrt
             handle.seek(0)
-            handle.truncate()
-            handle.write(str(os.getpid()))
-            handle.flush()
-            return handle
-        except (OSError, BlockingIOError):
-            if not warned:
-                print("[BotHub] Outra instância desta instalação já está ativa; aguardando o lock sem encerrar nenhum processo.", flush=True)
-                warned = True
-            time.sleep(2)
+            if lock_path.stat().st_size == 0:
+                handle.write(" ")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        handle.seek(0)
+        handle.truncate()
+        handle.write(str(os.getpid()))
+        handle.flush()
+        return handle
+    except (OSError, BlockingIOError):
+        try:
+            handle.seek(0)
+            owner = handle.read().strip() or "PID desconhecido"
+        except Exception:
+            owner = "PID desconhecido"
+        print(f"[BotHub] Lock já está em uso por outra instância (PID {owner}). Este Worker duplicado será encerrado.", flush=True)
+        handle.close()
+        return None
 
 def main():
     global CURRENT_CFG, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN, LEASE_MISSES
@@ -1146,8 +1148,9 @@ def main():
         os.execv(str(vp),[str(vp),str(Path(__file__).resolve())])
     lock_handle = acquire_worker_lock()
     if lock_handle is None:
-        print("[BotHub] Já existe um controlador rodando nesta pasta. Este processo será encerrado para evitar bots duplicados.", flush=True)
-        return
+        # Código 73 informa ao start.py que esta é uma segunda instância
+        # e que ele deve encerrar seu supervisor, sem reiniciar em loop.
+        raise SystemExit(73)
     signal.signal(signal.SIGTERM, handle_shutdown_signal)
     signal.signal(signal.SIGINT, handle_shutdown_signal)
     atexit.register(cleanup_children)
