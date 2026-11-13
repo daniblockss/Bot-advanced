@@ -2740,10 +2740,14 @@ def is_creator(user_or_message):
     user = getattr(user_or_message, "author", user_or_message)
     if not user:
         return False
-    # O dono só ganha poderes administrativos dentro da própria comunidade.
+    # O dono da comunidade e o criador do token podem administrar somente a comunidade atual.
     guild = getattr(user_or_message, "guild", None) or getattr(user, "guild", None)
-    if guild and getattr(guild, "owner_id", None) == user.id:
-        return True
+    if guild:
+        if getattr(guild, "owner_id", None) == user.id:
+            return True
+        locais = config.get("criadores_supremos_guild", {})
+        if isinstance(locais, dict) and str(locais.get(str(guild.id), "")) == str(user.id):
+            return True
     return user.id in obter_ids_criadores()
 
 
@@ -10101,7 +10105,7 @@ async def prefix_allow_comunidade(ctx):
     except (discord.HTTPException, discord.Forbidden):
         pass
     await ctx.reply(
-        f"✅ Comunidade **{ctx.guild.name}** autorizada. O dono desta comunidade (<@{ctx.guild.owner_id}>) agora tem acesso administrativo local; isso não concede acesso global nem altera outros servidores.",
+        f"✅ Comunidade **{ctx.guild.name}** autorizada. Você foi registrado como administrador local desta comunidade; isso não concede acesso global nem altera outros servidores.",
         allowed_mentions=NO_MENTIONS,
     )
 
