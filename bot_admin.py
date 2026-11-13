@@ -163,7 +163,14 @@ class BotSelect(discord.ui.Select):
   bid=self.values[0]
   if bid=="none":return await i.response.send_message("Você ainda não cadastrou bots.",ephemeral=True)
   item=get("bots/"+bid) or {}
-  await i.response.send_message(f"**{item.get('name','Bot')}** | tipo: {item.get('botType','ia_chat')} | estado: {'ON' if item.get('enabled') else 'OFF'}. ID: `{bid}`. Use o painel para convite e permissões.",ephemeral=True)
+  invite="Convite indisponível."
+  try:
+   req=Request("https://discord.com/api/v10/users/@me",headers={"Authorization":"Bot "+str(item.get("token") or "")})
+   with urlopen(req,timeout=12) as r: profile=json.loads(r.read())
+   permissions=117840 if item.get("botType")=="bot_admin" else 0
+   invite=f"https://discord.com/oauth2/authorize?client_id={profile['id']}&scope=bot%20applications.commands&permissions={permissions}"
+  except Exception:pass
+  await i.response.send_message(f"**{item.get('name','Bot')}** | tipo: {item.get('botType','ia_chat')} | estado: {'ON' if item.get('enabled') else 'OFF'}\nID: {bid}\nConvite: {invite}",ephemeral=True)
 class ConfigView(discord.ui.View):
  def __init__(self,uid):super().__init__(timeout=180);self.add_item(BotSelect(uid))
 @bot.event
