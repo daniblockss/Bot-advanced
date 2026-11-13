@@ -4,7 +4,7 @@ import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,sign
 from pathlib import Path
 import requests
 
-WORKER_VERSION="2026.11.12.14"
+WORKER_VERSION="2026.11.12.15"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -1029,7 +1029,20 @@ def discord_bot_avatar(token_value):
         try: index=(int(user_id)>>22)%6
         except Exception: index=0
         url="https://cdn.discordapp.com/embed/avatars/"+str(index)+".png"
-    return {"avatarUrl":url,"avatarDiscordId":user_id,"avatarDiscordName":user.get("username") or ""}
+    image_response=S.get(url,timeout=15)
+    image_response.raise_for_status()
+    content_type=str(image_response.headers.get("Content-Type") or "image/png").split(";",1)[0].lower()
+    if not content_type.startswith("image/"):
+        raise RuntimeError("O CDN do Discord não retornou um arquivo de imagem.")
+    image_b64=base64.b64encode(image_response.content).decode("ascii")
+    if len(image_b64)>2*1024*1024:
+        raise RuntimeError("A imagem do avatar excedeu o limite de armazenamento.")
+    return {
+        "avatarUrl":url,
+        "avatarBase64":"data:"+content_type+";base64,"+image_b64,
+        "avatarDiscordId":user_id,
+        "avatarDiscordName":user.get("username") or ""
+    }
 
 
 def sync_missing_bot_avatars(queue,tok):
@@ -1041,9 +1054,7 @@ def sync_missing_bot_avatars(queue,tok):
         # O usuário pode desativar a sincronização automática no perfil.
         if bot_cfg.get("avatarAutoUpdate") is False:
             continue
-        # Uma imagem enviada manualmente pelo usuário tem prioridade e não deve ser sobrescrita.
-        if bot_cfg.get("avatarBase64"):
-            continue
+        # Em modo automático, atualizar também o arquivo Base64 salvo no Firebase.
         key=str(bid)
         last=AVATAR_SYNC_CACHE.get(key,0)
         # Primeira tentativa é imediata; depois atualiza a cada 90 segundos para refletir
@@ -1137,7 +1148,7 @@ def process_worker_commands(cfg,tok,did,queue):
                     "avatarDiscordName":fresh.get("avatarDiscordName",""),
                     "avatarFetchedAt":int(time.time()*1000),
                     "avatarAutoUpdate":auto_update,
-                    "avatarBase64":"" if auto_update else (avatar or bot_cfg.get("avatarBase64") or ""),
+                    "avatarBase64":fresh.get("avatarBase64","") if auto_update else (avatar or bot_cfg.get("avatarBase64") or ""),
                 }
                 if candidate:
                     updates["token"]=candidate
