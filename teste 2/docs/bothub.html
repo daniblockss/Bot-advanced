@@ -245,14 +245,14 @@ function selectedBotAndWorker(selectId){
   return {id,b,wid};
 }
 function parseGuildIds(value){
- const ids=String(value||"").split(/[\\s,;]+/).map(x=>x.trim()).filter(Boolean);
- if(ids.some(x=>!/^\\d{15,22}$/.test(x)))throw new Error("Cada ID deve ter de 15 a 22 números.");
+ const ids=String(value||"").split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
+ if(ids.some(x=>!/^\d{15,22}$/.test(x)))throw new Error("Cada ID deve ter de 15 a 22 números.");
  return [...new Set(ids)];
 }
 function loadPermissionPanel(){
  const id=$("permissionBot").value,b=botData[id]||{},cfg=b.config&&typeof b.config==="object"?b.config:{};
  const ids=Array.isArray(cfg.botHubAllowedGuildIds)?cfg.botHubAllowedGuildIds:(Array.isArray(b.authorizedGuildIds)?b.authorizedGuildIds:[]);
- $("permissionGuildIds").value=ids.join("\\n");
+ $("permissionGuildIds").value=ids.join("\n");
  $("permissionStatus").textContent="Comunidades liberadas: "+ids.length+".";
 }
 $("permissionBot").onchange=loadPermissionPanel;
