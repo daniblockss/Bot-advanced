@@ -12702,7 +12702,7 @@ def classify_provider_failure(error):
         category, delay = "autenticacao", 3600
     elif status in {400, 404, 422}:
         category, delay = "configuracao", 3600
-    elif status == 429 and any(word in text for word in ("daily", "per day", "diária", "daily_limit", "rpd")):
+    elif status == 429 and any(word in text for word in ("daily", "per day", "per-day", "diária", "daily_limit", "daily quota", "day quota", "rpd")):
         category, delay = "quota_diaria", 86400
     elif status == 429 and any(word in text for word in ("insufficient_quota", "billing", "credits")):
         category, delay = "quota_conta", 3600
@@ -12710,7 +12710,7 @@ def classify_provider_failure(error):
         category, delay = "limite_temporario", 60
     else:
         category, delay = "indisponibilidade", 30
-    return category, error.retry_after or delay
+    return category, 86400 if category == "quota_diaria" else (error.retry_after or delay)
 
 
 _provider_request_original = requisitar_provedor
