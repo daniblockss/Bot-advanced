@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import requests
 
-WORKER_VERSION="2026.11.13.9"
+WORKER_VERSION="2026.11.13.10"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -193,7 +193,7 @@ def stats(cfg):
         except Exception: pass
     x={"deviceId":cfg["device_id"],"uid":cfg.get("uid",""),"hostname":socket.gethostname(),
        "label":socket.gethostname(),"platform":platform.platform(),"diskFreeBytes":d.free,
-       "diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"workerVersion":WORKER_VERSION,"serverFileVersions":{"start.py":read_component_version("start.py","SUPERVISOR_VERSION"),"add_cluster_server.py":read_component_version("add_cluster_server.py","INSTALLER_VERSION"),"bothub_firebase_worker.py":WORKER_VERSION},
+       "diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"workerVersion":WORKER_VERSION,"serverFileVersions":{"start_py":read_component_version("start.py","SUPERVISOR_VERSION"),"add_cluster_server_py":read_component_version("add_cluster_server.py","INSTALLER_VERSION"),"bothub_firebase_worker_py":WORKER_VERSION},
        "runningBots":len(running),"runningBotIds":running,"readyBotIds":ready,
        "lastSeen":int(time.time()*1000),"online":True,"status":"online",
        "uptimeSeconds":int(time.time()-WORKER_STARTED),
