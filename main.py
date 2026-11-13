@@ -5675,7 +5675,9 @@ def _bothub_global_api_keys(provedor, user_id):
                 if not isinstance(item, dict) or not item.get("enabled", True):
                     continue
                 if item.get("available") is False:
-                    continue
+                    until_ms = int(item.get("availableUntil") or 0)
+                    if not until_ms or until_ms > int(time.time() * 1000):
+                        continue
                 if str(item.get("provider", "")).lower() != provedor:
                     continue
                 key = str(item.get("key") or "").strip()
@@ -5695,6 +5697,40 @@ def _bothub_is_global_key(provedor, chave):
     return key_hash in _BOTHUB_GLOBAL_API_CACHE.get("key_ids", {})
 
 
+def _bothub_cluster_cooldown_get(shared_key):
+    cache = _BOTHUB_GLOBAL_API_CACHE.setdefault("cooldowns", {})
+    now = time.monotonic()
+    cached = cache.get(shared_key)
+    if cached and now - cached[0] < 15:
+        return cached[1]
+    try:
+        item = _bothub_fb("GET", "botHubProviderCooldowns/" + shared_key) or {}
+        until_ms = int(item.get("untilEpochMs") or 0) if isinstance(item, dict) else 0
+        remaining = max(0, int(until_ms / 1000 - time.time() + 0.999))
+        result = (remaining, str(item.get("category") or "limite")) if remaining else None
+        cache[shared_key] = (now, result)
+        return result
+    except Exception:
+        return None
+
+def _bothub_cluster_cooldown_set(shared_key, category, delay):
+    try:
+        until_ms = int((time.time() + max(1, int(delay))) * 1000)
+        _bothub_fb("PUT", "botHubProviderCooldowns/" + shared_key, {"untilEpochMs": until_ms, "category": str(category)[:80], "updatedAt": int(time.time() * 1000)})
+        _BOTHUB_GLOBAL_API_CACHE.setdefault("cooldowns", {})[shared_key] = (time.monotonic(), (int(delay), str(category)))
+    except Exception:
+        pass
+
+def _bothub_update_global_api_status(provedor, chave, available, category="", delay=0):
+    import hashlib
+    digest = hashlib.sha256((provedor + ":" + (chave or "")).encode()).hexdigest()
+    api_id = _BOTHUB_GLOBAL_API_CACHE.get("key_ids", {}).get(digest)
+    if not api_id:
+        return
+    try:
+        _bothub_fb("PATCH", "botHubGlobalApis/" + str(api_id), {"available": bool(available), "status": ("Disponível" if available else str(category or "Indisponível"))[:80], "availableUntil": (int(time.time() * 1000) + max(0, int(delay)) * 1000) if not available and delay else 0, "lastCheckedAt": int(time.time() * 1000)})
+    except Exception:
+        pass
 def _bothub_consume_global_point(user_id):
     path = "botHubPoints/" + str(user_id)
     for _ in range(3):
@@ -12719,7 +12755,8 @@ async def requisitar_provedor_monitorado(provedor, chave, mensagens, img_url=Non
     key = (provedor, credential)
     shared_key = hashlib.sha256((provedor + ":" + credential).encode()).hexdigest()
     async with PROVIDER_LOCKS.setdefault(key, asyncio.Lock()):
-        shared_wait = _shared_provider_cooldown_get(shared_key)
+        cluster_wait = _bothub_cluster_cooldown_get(shared_key)
+        shared_wait = cluster_wait or _shared_provider_cooldown_get(shared_key)
         if shared_wait:
             delay, category = shared_wait
             PROVIDER_UNAVAILABLE[key] = (time.monotonic() + delay, category)
@@ -12730,12 +12767,17 @@ async def requisitar_provedor_monitorado(provedor, chave, mensagens, img_url=Non
         try:
             response = await _provider_request_original(provedor, chave, mensagens, img_url, modelo_override)
             PROVIDER_UNAVAILABLE.pop(key, None)
+            if _bothub_is_global_key(provedor, chave):
+                _bothub_update_global_api_status(provedor, chave, True, "Disponível", 0)
             safe_event("ia", f"Provedor {provedor}: resposta recebida; rota elegível funcionou.")
             return response
         except FalhaProvedor as error:
             category, delay = classify_provider_failure(error)
             PROVIDER_UNAVAILABLE[key] = (time.monotonic() + delay, category)
             _shared_provider_cooldown_set(shared_key, category, delay)
+            _bothub_cluster_cooldown_set(shared_key, category, delay)
+            if _bothub_is_global_key(provedor, chave):
+                _bothub_update_global_api_status(provedor, chave, False, category, delay)
             error.retry_after = delay
             safe_event("ia", f"Provedor {provedor}: {category}; espera compartilhada de {delay}s; tentando próximo fallback elegível.", logging.WARNING)
             raise
