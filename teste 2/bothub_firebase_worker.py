@@ -44,9 +44,20 @@ def battery_stats(command):
     result={"batteryPresent":False,"batteryPercent":None,"batteryStatus":"unknown",
             "batteryPlugged":False,"batteryPluggedType":None,"batteryTemperatureC":None,
             "batteryHealth":None,"batteryVoltageMv":None,"batteryCurrentUa":None}
-    if not command:return result
+    if not command:
+        try:
+            import psutil
+            battery=psutil.sensors_battery()
+            if battery is not None and battery.percent is not None:
+                plugged=bool(battery.power_plugged)
+                result.update(batteryPresent=True,batteryPercent=round(float(battery.percent),1),
+                              batteryStatus=("charging" if plugged else "discharging"),
+                              batteryPlugged=plugged,
+                              batteryPluggedType=("PLUGGED_AC" if plugged else "UNPLUGGED"))
+            return result
+        except Exception:return result
     try:
-        proc=subprocess.run([command],capture_output=True,text=True,timeout=6,
+        proc=subprocess.run([command],capture_output=True,text=True,timeout=3,
                             stdin=subprocess.DEVNULL)
         if proc.returncode!=0:return result
         raw=json.loads(proc.stdout or "{}")
@@ -56,11 +67,12 @@ def battery_stats(command):
         status=str(raw.get("status") or "unknown").strip().lower().replace(" ","_")
         status_map={"charging":"charging","discharging":"discharging","full":"full",
                     "not_charging":"not_charging","unknown":"unknown"}
-        plugged_type=str(raw.get("plugged") or "").strip().upper() or None
+        plugged_raw=raw.get("plugged")
+        plugged_type=(str(plugged_raw).strip().upper() if plugged_raw is not None and not isinstance(plugged_raw,bool) else None)
         plugged=(plugged_type not in (None,"UNPLUGGED","NONE","UNKNOWN"))
-        if isinstance(raw.get("plugged"),bool):plugged=raw["plugged"]
-        elif isinstance(raw.get("plugged"),str) and raw["plugged"].upper() in ("TRUE","FALSE"):
-            plugged=raw["plugged"].upper()=="TRUE"
+        if isinstance(plugged_raw,bool):plugged=plugged_raw
+        elif isinstance(plugged_raw,str) and plugged_raw.upper() in ("TRUE","FALSE"):
+            plugged=plugged_raw.upper()=="TRUE";plugged_type=None
         result.update(batteryPresent=True,batteryPercent=round(pct,1),
                       batteryStatus=status_map.get(status,"unknown"),
                       batteryPlugged=plugged,batteryPluggedType=plugged_type,
