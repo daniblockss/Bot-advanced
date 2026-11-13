@@ -71,12 +71,13 @@ const allWorkerIds=new Set([...Object.keys(workerData),...Object.values(botData)
 async function toggleBot(id,enabled){
   try{
     const bot=botData[id]||{},workerId=bot.workerId||bot.lastWorkerId||null;
-    await update(ref(db,'bots/'+id),{enabled,updatedAt:Date.now(),lastWorkerId:!enabled?(workerId||null):(bot.lastWorkerId||null),workerId:enabled?(workerId||null):null});
+    await update(ref(db,'bots/'+id),{enabled,desiredState:enabled?'on':'off',updatedAt:Date.now(),lastWorkerId:!enabled?(workerId||null):(bot.lastWorkerId||null),workerId:enabled?(workerId||null):null});
     lastAssignment='';
-    await refreshData();
+    // Envia o comando ao worker original antes de atualizar a distribuição do painel.
     if(!enabled&&workerId&&online(workerData[workerId])){
       await sendWorkerCommand(workerId,{operation:"stop",botId:id});
     }
+    await refreshData();
   }catch(e){alert('Não foi possível alterar/parar o bot: '+e.message)}
 }
 async function deleteBot(id){if(!confirm('Excluir este bot?'))return;try{await remove(ref(db,'bots/'+id));await remove(ref(db,'workerTasks/'+(botData[id]?.workerId||'_')+'/'+id));lastAssignment='';await refreshData()}catch(e){alert('Não foi possível excluir: '+e.message)}}
