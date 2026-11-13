@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.12</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.13</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -859,7 +859,7 @@ const firebaseConfig={apiKey:'AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE',authDomai
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getDatabase(app);
 const testRef=path=>ref(db,path);
 
-let workerData={},botData={},stopListeners=[],busy=false,lastAssignment='';
+let workerData={},botData={},clusterUpdateProgress={},stopListeners=[],busy=false,lastAssignment='';
 let currentModalBotId = null;
 
 const bytes=n=>{let v=Number(n)||0,u=['B','KB','MB','GB','TB'],i=0;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i?1:0)+' '+u[i]};
