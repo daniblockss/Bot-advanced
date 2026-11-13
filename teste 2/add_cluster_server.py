@@ -5,7 +5,7 @@ from __future__ import annotations
 import os, platform, shutil, subprocess, sys, urllib.request, shlex, time, json, zipfile, io
 from pathlib import Path
 
-INSTALLER_VERSION = "2026.11.12.6"
+INSTALLER_VERSION = "2026.11.12.7"
 GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 INSTALLER_URL = GITHUB_RAW + "/add_cluster_server.py"
 WORKER_URL = GITHUB_RAW + "/bothub_firebase_worker.py"
@@ -69,23 +69,39 @@ def ensure_termux_api():
 
 
 def termux_package_installed(package_name):
-    """Detecta o pacote usando os comandos Android disponíveis no Termux."""
-    commands = []
-    for binary in (shutil.which("cmd"), "/system/bin/cmd",
-                   shutil.which("pm"), "/system/bin/pm"):
+    """Retorna True/False quando Android permite consultar; None se a consulta foi bloqueada."""
+    candidates = []
+    for binary in (shutil.which("cmd"), "/system/bin/cmd"):
         if binary and Path(binary).exists():
-            commands.append([binary, "package", "path", package_name]
-                            if Path(binary).name == "cmd"
-                            else [binary, "path", package_name])
-    for command in commands:
+            candidates.extend([
+                [binary, "package", "list", "packages", package_name],
+                [binary, "package", "path", package_name],
+            ])
+    for binary in (shutil.which("pm"), "/system/bin/pm"):
+        if binary and Path(binary).exists():
+            candidates.extend([
+                [binary, "list", "packages", package_name],
+                [binary, "path", package_name],
+            ])
+
+    had_successful_query = False
+    for command in candidates:
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=12)
-            output = (result.stdout or "") + "\\n" + (result.stderr or "")
-            if result.returncode == 0 and "package:" in output:
+            output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
+            if result.returncode != 0:
+                continue
+            had_successful_query = True
+            if ("package:" + package_name) in output or ("package:" + package_name + "\\n") in output:
                 return True
+            # list packages retorna sucesso e lista vazia quando o pacote não existe.
+            if "list" in command and package_name not in output:
+                return False
+            if "path" in command and "package:" not in output:
+                return False
         except (OSError, subprocess.TimeoutExpired):
             continue
-    return False
+    return False if had_successful_query else None
 
 
 def latest_termux_boot_apk():
@@ -181,7 +197,15 @@ def configure_termux_boot():
         remove_termux_boot_script()
         return False
 
-    if not termux_package_installed("com.termux.boot"):
+    boot_status = termux_package_installed("com.termux.boot")
+    if boot_status is None:
+        raise RuntimeError(
+            "O Android bloqueou a consulta para saber se Termux:Boot está instalado. "
+            "Por segurança, não vou abrir outra instalação nem reinstalar por engano. "
+            "Verifique se Termux:Boot aparece na lista de aplicativos do Android e tente novamente."
+        )
+
+    if boot_status is False:
         pkg = shutil.which("pkg")
         if not pkg:
             raise RuntimeError("Termux:Boot não está instalado e o comando pkg não está disponível.")
@@ -215,11 +239,13 @@ def configure_termux_boot():
                 # A consulta via pm/cmd pode ser bloqueada em alguns Androids.
                 # Após a confirmação explícita do usuário, não manter o instalador preso
                 # esperando um resultado que o sistema pode não disponibilizar.
-                if termux_package_installed("com.termux.boot"):
-                    print("[BotHub Installer] Termux:Boot instalado e detectado.", flush=True)
-                else:
-                    print("[BotHub Installer] Confirmação manual recebida. A verificação automática "
-                          "do pacote está bloqueada; continuando com a configuração.", flush=True)
+                final_status = termux_package_installed("com.termux.boot")
+                if final_status is not True:
+                    raise RuntimeError(
+                        "Você confirmou a tela, mas o Android ainda não informa Termux:Boot como instalado. "
+                        "Não vou marcar a instalação como concluída."
+                    )
+                print("[BotHub Installer] Termux:Boot instalado e confirmado pelo Android.", flush=True)
                 installed = True
                 break
             except Exception as exc:
