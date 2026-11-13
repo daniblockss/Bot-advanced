@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
-SUPERVISOR_VERSION = "2026.11.12.5"
+SUPERVISOR_VERSION = "2026.11.13.1"
 ROOT = Path(__file__).resolve().parent
 LOG_FILE = ROOT / "start.log"
 INSTALLER = ROOT / "add_cluster_server.py"
@@ -68,6 +68,7 @@ def setup_logger():
     return logger
 
 log = setup_logger()
+_CPU_WAKELOCK_ACTIVE = False
 
 
 def termux_command(name: str) -> str | None:
@@ -80,9 +81,16 @@ def termux_command(name: str) -> str | None:
     return str(candidate) if candidate and candidate.is_file() else None
 
 def manage_cpu_wakelock(enable: bool) -> None:
-    """Mantém a CPU acordada enquanto start.py supervisiona o worker no Termux."""
+    """Altera o wakelock somente quando o estado solicitado difere do estado conhecido."""
+    global _CPU_WAKELOCK_ACTIVE
     if not (os.environ.get("PREFIX", "").startswith("/data/data/com.termux")
             or "ANDROID_ROOT" in os.environ):
+        return
+    if enable and _CPU_WAKELOCK_ACTIVE:
+        log.debug("Wakelock já está ativo; nenhuma nova chamada será feita.")
+        return
+    if not enable and not _CPU_WAKELOCK_ACTIVE:
+        log.debug("Wakelock já está liberado; nenhuma nova chamada será feita.")
         return
     command = termux_command("termux-wake-lock" if enable else "termux-wake-unlock")
     if not command:
@@ -92,6 +100,7 @@ def manage_cpu_wakelock(enable: bool) -> None:
         result = subprocess.run([command], stdout=subprocess.DEVNULL,
                                 stderr=subprocess.PIPE, text=True, timeout=10)
         if result.returncode == 0:
+            _CPU_WAKELOCK_ACTIVE = bool(enable)
             log.info("Bloqueio de suspensão da CPU %s.",
                      "ativado" if enable else "liberado")
         else:
