@@ -5668,6 +5668,10 @@ def _bothub_global_api_keys(provedor, user_id):
         if not isinstance(opt_in, dict) or not opt_in.get("enabled"):
             _BOTHUB_GLOBAL_API_CACHE["items"][cache_key] = (now, {})
             return []
+        point_data = _bothub_fb("GET", "botHubPoints/" + str(user_id)) or {}
+        if not isinstance(point_data, dict) or int(point_data.get("balance", 0)) < 1:
+            _BOTHUB_GLOBAL_API_CACHE["items"][cache_key] = (now, {})
+            return []
         data = _bothub_fb("GET", "botHubGlobalApis") or {}
         by_provider = {}
         if isinstance(data, dict):
