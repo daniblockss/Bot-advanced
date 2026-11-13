@@ -145,7 +145,13 @@ def call_ai(uid,text):
  order=ai_cfg.get("fallback_order") if isinstance(ai_cfg.get("fallback_order"),list) else ["chatgpt","openrouter","groq","llm7","blockrun"]
  pool=[]
  personal=get(f"botHubUserApis/{uid}/{BOT_ID}") or {}
- # Mantém a ordem de provedores configurada no IA CHAT.
+ # APIs globais seguem a ativação por usuário/bot e o saldo do IA CHAT.
+ opt=get(f"botHubGlobalOptIn/{uid}/{BOT_ID}") or {}
+ points_data=get("botHubPoints/"+str(uid)) or {}
+ has_points=isinstance(points_data,dict) and int(points_data.get("balance",0))>0
+ global_items=get("botHubGlobalApis") or {}
+ use_global=bool(isinstance(opt,dict) and opt.get("enabled") and has_points and isinstance(global_items,dict))
+ # Ordem por provedor: chaves locais, API pessoal, APIs globais e próximo provedor.
  for provider in order:
   provider=str(provider).lower()
   if provider not in {"chatgpt","openrouter","groq","llm7","blockrun"}:continue
@@ -159,21 +165,14 @@ def call_ai(uid,text):
              "groq":("GROQ_API_KEYS","GROQ_API_KEY"),
              "llm7":("LLM7_API_KEYS","LLM7_API_KEY")}.get(provider,())
   for env_name in env_names:
-   keys.extend([part.strip() for part in os.getenv(env_name,"").replace("\n",",").replace(";",",").split(",") if part.strip()])
+   keys.extend([part.strip() for part in os.getenv(env_name,"").replace("\\n",",").replace(";",",").split(",") if part.strip()])
   if isinstance(keys,list):
    for key in keys:
     if isinstance(key,str) and key.strip() and key.strip()!="auto-generated":
      pool.append(({"provider":provider,"key":key.strip()},False))
   if isinstance(personal,dict) and personal.get("enabled") and personal.get("key") and str(personal.get("provider","")).lower()==provider:
    pool.append((personal,False))
- # APIs globais seguem exatamente a ativação por usuário/bot e o saldo do IA CHAT.
- opt=get(f"botHubGlobalOptIn/{uid}/{BOT_ID}") or {}
- points_data=get("botHubPoints/"+str(uid)) or {}
- has_points=isinstance(points_data,dict) and int(points_data.get("balance",0))>0
- global_items=get("botHubGlobalApis") or {}
- if isinstance(opt,dict) and opt.get("enabled") and has_points and isinstance(global_items,dict):
-  for provider in order:
-   provider=str(provider).lower()
+  if use_global:
    for item in global_items.values():
     if not isinstance(item,dict) or str(item.get("provider","")).lower()!=provider:continue
     if not item.get("enabled",True) or not item.get("key"):continue
