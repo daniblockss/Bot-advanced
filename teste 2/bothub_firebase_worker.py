@@ -716,7 +716,7 @@ def start(k,b):
     if not script.exists():
         default_urls={
             "ia_chat":os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"),
-            "standard":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/standard_main.py",
+            "standard":os.getenv("BOTHUB_STANDARD_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/standard_main.py"),
             "bot_admin":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot_admin.py",
         }
         url=default_urls[bot_type]
@@ -984,7 +984,7 @@ def bot_script_info(bot_type):
     if kind=="bot_admin":
         return "bot_admin.py",os.getenv("BOTHUB_ADMIN_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot_admin.py"),5000
     if kind=="standard":
-        return "standard_main.py",os.getenv("BOTHUB_STANDARD_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/standard_main.py"),1000
+        return "standard_main.py",os.getenv("BOTHUB_STANDARD_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/standard_main.py"),1000
     raise RuntimeError("Tipo de bot não suportado para atualização: "+kind)
 
 def latest_bot_script_bytes(bot_type):
