@@ -1594,6 +1594,7 @@ function start(){
   watch('workers',v=>{workerData=v;cleanupStaleWorkers();drawWorkers();drawClusterProgress();rebalance().then(drawBots)});
   watch('botHubClusterUpdates/progress',v=>{clusterUpdateProgress=v||{};drawClusterProgress();drawWorkers()});watch('botHubBotVersions',v=>{botVersionData=v||{};drawBotUpdateProgress();drawBots()});
   watch('bots',v=>{botData=v;drawBots();rebalance()});
+  watch('botHubGlobalApis',()=>renderGlobalApis());
   $('connection').textContent='Conectado';$('connection').className='badge';
   initRealtimeChart();
   startTypewriterOnce();
@@ -1607,7 +1608,7 @@ async function renderGlobalApis(){
   try{
     const snap=await get(testRef('botHubGlobalApis'));const items=snap.val()||{};
     const rows=Object.entries(items);
-    box.innerHTML=rows.length?rows.map(([id,a])=>`<div class="row" style="align-items:flex-start"><div style="min-width:0;flex:1"><b>${esc(a.provider||'API')}</b> <span class="badge ${a.enabled?'':'off'}">${a.enabled?'Ativa':'Pausada'}</span><div class="small muted">Modelo: ${esc(a.model||'padrão')} · Chave: ${maskApiKey(a.key)}</div><div class="small muted">Adicionada por Discord ID: ${esc(a.addedBy||'Admin do painel')}</div><div class="small muted">Disponibilidade: ${esc(a.status||'Não verificada')}</div></div><div style="display:flex;gap:5px;flex-wrap:wrap"><button class="secondary" data-global-toggle="${esc(id)}">${a.enabled?'Pausar':'Ativar'}</button><button class="danger" data-global-delete="${esc(id)}">Remover</button></div></div>`).join(''):'Nenhuma API global cadastrada.';
+    box.innerHTML=rows.length?rows.map(([id,a])=>`<div class="row" style="align-items:flex-start"><div style="min-width:0;flex:1"><b>${esc(a.provider||'API')}</b> <span class="badge ${a.enabled?'':'off'}">${a.enabled?'Ativa':'Pausada'}</span><div class="small muted">Modelo: ${esc(a.model||'padrão')} · Chave: ${maskApiKey(a.key)}</div><div class="small muted">Adicionada por Discord ID: ${esc(a.addedByName||a.addedBy||'Admin do painel')}</div><div class="small muted">Disponibilidade: ${esc(a.status||'Não verificada')}</div></div><div style="display:flex;gap:5px;flex-wrap:wrap"><button class="secondary" data-global-toggle="${esc(id)}">${a.enabled?'Pausar':'Ativar'}</button><button class="danger" data-global-delete="${esc(id)}">Remover</button></div></div>`).join(''):'Nenhuma API global cadastrada.';
     box.querySelectorAll('[data-global-toggle]').forEach(b=>b.onclick=async()=>{const id=b.dataset.globalToggle,a=items[id];await update(testRef('botHubGlobalApis/'+id),{enabled:!a.enabled,updatedAt:Date.now()});await renderGlobalApis()});
     box.querySelectorAll('[data-global-delete]').forEach(b=>b.onclick=async()=>{const id=b.dataset.globalDelete;if(!confirm('Remover esta API global?'))return;await remove(testRef('botHubGlobalApis/'+id));await renderGlobalApis()});
   }catch(e){box.textContent='Erro ao carregar APIs: '+e.message}
