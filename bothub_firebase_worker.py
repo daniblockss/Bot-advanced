@@ -137,9 +137,22 @@ def sid(v):
 def stop(k):
     p=PROCS.pop(k,None);l=LOGS.pop(k,None)
     if p and p.poll() is None:
-        try:p.terminate();p.wait(timeout=5)
+        try:
+            if os.name != "nt" and p.pid:
+                os.killpg(p.pid, signal.SIGTERM)
+            else:
+                p.terminate()
+            p.wait(timeout=5)
         except Exception:
-            try:p.kill()
+            try:
+                if os.name != "nt" and p.pid:
+                    os.killpg(p.pid, getattr(signal,"SIGKILL",signal.SIGTERM))
+                else:
+                    p.kill()
+            except Exception:
+                try:p.kill()
+                except Exception:pass
+            try:p.wait(timeout=2)
             except Exception:pass
     if l:
         try:l.close()
@@ -703,7 +716,21 @@ def process_worker_commands(cfg,tok,did,queue):
         result={"id":request_id,"updatedAt":int(time.time()*1000)}
         try:
             op=cmd.get("operation")
-            if op=="profile":
+            if op=="stop":
+                bid=sid(cmd.get("botId",""))
+                if bid not in PROCS:
+                    result.update(status="ok",message="O bot já não tinha processo ativo neste worker.",stopped=False)
+                else:
+                    stop(bid)
+                    try: sync_bot_state(bid,"push",tok,cfg.get("device_id"))
+                    except Exception as state_error:
+                        print("[BotHub] estado final não sincronizado ao parar",bid,str(state_error)[:140],flush=True)
+                    try: release_bot_lease(bid,cfg.get("device_id"),tok)
+                    except Exception as lease_error:
+                        print("[BotHub] lease não liberado ao parar",bid,str(lease_error)[:140],flush=True)
+                    print("[BotHub] parada explícita confirmada:",bid,flush=True)
+                    result.update(status="ok",message="Processo do bot encerrado neste worker.",stopped=True)
+            elif op=="profile":
                 bid=str(cmd.get("botId",""))
                 bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
                 secret=bot_cfg.get("token") if isinstance(bot_cfg,dict) else None
