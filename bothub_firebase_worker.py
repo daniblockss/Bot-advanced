@@ -269,7 +269,7 @@ def handle_shutdown_signal(signum, frame):
         return
     SHUTDOWN_IN_PROGRESS = True
     reason = "SIGINT (interrupção manual)" if signum == signal.SIGINT else "SIGTERM (servidor encerrado)"
-    print("[BotHub] Controlador sendo desligado; avisando criadores e publicando status...", flush=True)
+    print("[BotHub] Controlador sendo desligado; publicando status e encerrando processos...", flush=True)
     publish_shutdown_status(reason)
     cleanup_children()
     raise SystemExit(0)
