@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import requests
 
-WORKER_VERSION="2026.11.13.2"
+WORKER_VERSION="2026.11.13.3"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
@@ -757,6 +757,8 @@ def start(k,b):
     sync_bot_state(k, 'pull')
     try:
         size=download_latest_main(folder)
+        installed_label=main_display_version(script.read_bytes())
+        publish_bot_update(k,"running","Bot iniciado; versão carregada.",installed_label)
         print("[BotHub] main.py sincronizado com o GitHub:",k,"bytes:",size,flush=True)
     except Exception as exc:
         if not script.exists():
@@ -1329,6 +1331,15 @@ def fetch_latest_main():
 def main_file_version(data):
     return hashlib.sha256(data).hexdigest()[:12]
 
+def main_display_version(data):
+    try:
+        for line in data.decode('utf-8',errors='replace').splitlines()[:8]:
+            if line.strip().startswith('BOTHUB_MAIN_VERSION') and '=' in line:
+                return line.split('=',1)[1].strip().strip(chr(34)+chr(39))
+    except Exception:
+        pass
+    return main_file_version(data)
+
 def download_latest_main(folder):
     data=fetch_latest_main()
     target=folder/"main.py";tmp=folder/"main.py.update.tmp"
@@ -1397,13 +1408,16 @@ def process_release_updates(tok, queue):
             try:
                 latest_data=fetch_latest_main()
                 latest_version=main_file_version(latest_data)
+                latest_display_version=main_display_version(latest_data)
                 installed_data=(folder/"main.py").read_bytes() if (folder/"main.py").is_file() else b""
                 installed_version=main_file_version(installed_data) if installed_data else "ausente"
             except Exception as version_error:
                 print("[BotHub] Comparação de versões falhou para",raw_id,":",str(version_error)[:150],flush=True)
-                latest_version="indisponível";installed_version="desconhecida"
+                latest_version="indisponível";latest_display_version="indisponível";installed_version="desconhecida"
             state={"updateId":update_id,"announced":False,"updated":installed_version==latest_version,
-                   "currentVersion":installed_version,"latestVersion":latest_version}
+                   "currentVersion":installed_version,"latestVersion":latest_version,
+                   "currentDisplayVersion":main_display_version(installed_data) if installed_data else "desconhecida",
+                   "latestDisplayVersion":latest_display_version}
             if installed_version!=latest_version:
                 notify_update(raw_id,bot_cfg,dict(release,currentVersion=installed_version,latestVersion=latest_version))
                 state["announced"]=True
@@ -1411,9 +1425,9 @@ def process_release_updates(tok, queue):
                 print("[BotHub] Atualização já aplicada em",raw_id,"(versão",latest_version+"); aviso ignorado.",flush=True)
             save_json(state_file,state)
             if installed_version==latest_version:
-                publish_bot_update(bid,"completed","Bot já está na versão mais recente.",installed_version,update_id)
+                publish_bot_update(bid,"completed","Bot já está na versão mais recente.",state.get("latestDisplayVersion"),update_id)
             else:
-                publish_bot_update(bid,"received","Nova versão disponível; aguardando instalação.",installed_version,update_id)
+                publish_bot_update(bid,"received","Nova versão disponível; aguardando instalação.",state.get("currentDisplayVersion"),update_id)
         request_file=folder/".bothub_update_request"
         mandatory=release.get("type")=="mandatory"
         accepted=request_file.exists()
@@ -1422,7 +1436,7 @@ def process_release_updates(tok, queue):
         backup=folder/"main.py.update.backup"
         had_old=(folder/"main.py").is_file()
         try:
-            publish_bot_update(bid,"updating","Baixando e instalando a nova versão.",state.get("latestVersion"),update_id)
+            publish_bot_update(bid,"updating","Baixando e instalando a nova versão.",state.get("latestDisplayVersion"),update_id)
             stop(bid)
             if had_old:
                 shutil.copy2(folder/"main.py", backup)
@@ -1430,13 +1444,13 @@ def process_release_updates(tok, queue):
             start(bid,bot_cfg)
             state.update(updateId=update_id,announced=True,updated=True,updatedAt=int(time.time()*1000),bytes=size)
             save_json(state_file,state)
-            publish_bot_update(bid,"completed","Bot atualizado e reiniciado com sucesso.",state.get("latestVersion"),update_id)
+            publish_bot_update(bid,"completed","Bot atualizado e reiniciado com sucesso.",state.get("latestDisplayVersion"),update_id)
             if request_file.exists():request_file.unlink()
             try: backup.unlink(missing_ok=True)
             except Exception: pass
             print("[BotHub] bot atualizado e reiniciado:",raw_id,"bytes:",size,flush=True)
         except Exception as e:
-            publish_bot_update(bid,"failed","Falha ao atualizar: "+str(e)[:180],state.get("currentVersion"),update_id)
+            publish_bot_update(bid,"failed","Falha ao atualizar: "+str(e)[:180],state.get("currentDisplayVersion"),update_id)
             print("[BotHub] falha ao atualizar/reiniciar",raw_id,":",str(e)[:220],flush=True)
             # Se a versão nova não inicializar, restaura a anterior e tenta ligar o bot.
             try:
