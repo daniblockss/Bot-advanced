@@ -158,6 +158,59 @@ def stop(k):
         try:l.close()
         except Exception:pass
 
+def stop_bot_processes(bot_id):
+    """Encerra o main.py exato deste bot, mesmo se o processo não estiver em PROCS."""
+    folder = (ROOT / "bots" / sid(bot_id)).resolve()
+    target = (folder / "main.py").resolve()
+    current_pid = os.getpid()
+    found = []
+    if os.name != "nt" and Path("/proc").is_dir():
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit() or int(entry.name) == current_pid:
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes()
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
+                if any(arg.endswith(".py") and Path(arg).resolve() == target for arg in args[1:]):
+                    found.append(int(entry.name))
+            except (OSError, ValueError, RuntimeError):
+                continue
+    else:
+        try:
+            import psutil
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                pid = proc.info.get("pid")
+                if not pid or pid == current_pid:
+                    continue
+                for arg in (proc.info.get("cmdline") or [])[1:]:
+                    try:
+                        if arg.endswith(".py") and Path(arg).resolve() == target:
+                            found.append(pid)
+                            break
+                    except (OSError, ValueError, RuntimeError):
+                        continue
+        except Exception as e:
+            print("[BotHub] Não foi possível localizar o main.py do bot", bot_id, str(e)[:140], flush=True)
+    for pid in sorted(set(found)):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    deadline = time.time() + 4
+    remaining = set(found)
+    while remaining and time.time() < deadline:
+        remaining = {pid for pid in remaining if Path("/proc").exists() and Path("/proc", str(pid)).exists()}
+        if remaining:
+            time.sleep(0.2)
+    for pid in remaining:
+        try:
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+        except OSError:
+            pass
+    if found:
+        print("[BotHub] main.py do bot", bot_id, "encerrado; PID(s):", ", ".join(map(str, sorted(set(found)))), flush=True)
+    return bool(found)
+
 def child_parent_death_signal():
     """Linux: encerra o bot se o controlador morrer abruptamente."""
     if not sys.platform.startswith("linux"):
@@ -718,18 +771,25 @@ def process_worker_commands(cfg,tok,did,queue):
             op=cmd.get("operation")
             if op=="stop":
                 bid=sid(cmd.get("botId",""))
-                if bid not in PROCS:
-                    result.update(status="ok",message="O bot já não tinha processo ativo neste worker.",stopped=False)
-                else:
-                    stop(bid)
-                    try: sync_bot_state(bid,"push",tok,cfg.get("device_id"))
-                    except Exception as state_error:
-                        print("[BotHub] estado final não sincronizado ao parar",bid,str(state_error)[:140],flush=True)
-                    try: release_bot_lease(bid,cfg.get("device_id"),tok)
-                    except Exception as lease_error:
-                        print("[BotHub] lease não liberado ao parar",bid,str(lease_error)[:140],flush=True)
-                    print("[BotHub] parada explícita confirmada:",bid,flush=True)
-                    result.update(status="ok",message="Processo do bot encerrado neste worker.",stopped=True)
+                tracked = bid in PROCS
+                stop(bid)
+                orphan_stopped = stop_bot_processes(bid)
+                # Impede que a cópia da fila lida antes do comando reinicie o bot neste ciclo.
+                if isinstance(queue, dict):
+                    queue.pop(bid, None)
+                try:
+                    fb("DELETE","workerTasks/"+did+"/"+urllib.parse.quote(bid,safe=""),tok)
+                except Exception as queue_error:
+                    print("[BotHub] não foi possível remover a tarefa do bot parado:",bid,str(queue_error)[:140],flush=True)
+                try: sync_bot_state(bid,"push",tok,cfg.get("device_id"))
+                except Exception as state_error:
+                    print("[BotHub] estado final não sincronizado ao parar",bid,str(state_error)[:140],flush=True)
+                try: release_bot_lease(bid,cfg.get("device_id"),tok)
+                except Exception as lease_error:
+                    print("[BotHub] lease não liberado ao parar",bid,str(lease_error)[:140],flush=True)
+                stopped = tracked or orphan_stopped
+                print("[BotHub] parada explícita confirmada:",bid,"processo encerrado:",stopped,flush=True)
+                result.update(status="ok",message="main.py do bot encerrado neste worker.",stopped=stopped)
             elif op=="profile":
                 bid=str(cmd.get("botId",""))
                 bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
@@ -1076,10 +1136,29 @@ def main():
             desired={}
             token_owner={}
             duplicate_ids=set()
-            for raw_id,b in queue.items():
+            for raw_id,b in list(queue.items()):
                 if not isinstance(b,dict) or not b.get("enabled",True):
                     continue
                 k=sid(raw_id)
+                # O cadastro principal é a fonte de verdade; uma fila antiga nunca pode
+                # ressuscitar um bot que o painel já marcou como OFF.
+                try:
+                    remote_bot = fb("GET","bots/"+urllib.parse.quote(k,safe=""),t) or {}
+                    if (not isinstance(remote_bot,dict) or remote_bot.get("enabled") is False
+                            or str(remote_bot.get("desiredState","on")).lower()=="off"):
+                        queue.pop(raw_id, None)
+                        queue.pop(k, None)
+                        stop(k)
+                        stop_bot_processes(k)
+                        try: release_bot_lease(k,cfg["device_id"],t)
+                        except Exception: pass
+                        try: fb("DELETE","workerTasks/"+did+"/"+urllib.parse.quote(k,safe=""),t)
+                        except Exception: pass
+                        print("[BotHub] bot OFF no cadastro; main.py encerrado e tarefa removida:",k,flush=True)
+                        continue
+                except Exception as status_error:
+                    print("[BotHub] não foi possível confirmar o estado do bot",k,str(status_error)[:120],flush=True)
+                    continue
                 secret=str(b.get("token") or "").strip()
                 if not secret:
                     print("[BotHub] bot sem token ignorado:",k,flush=True)
