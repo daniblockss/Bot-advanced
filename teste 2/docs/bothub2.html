@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.5</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.6</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -777,22 +777,37 @@ const pageInfo = {
 };
 
 function navigate(p){
+  const target=document.getElementById('page-'+p);
+  if(!target||!pageInfo[p]){
+    console.error('[BotHub] Página não encontrada:',p);
+    return;
+  }
+  document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));
+  target.classList.remove('hidden');
+  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.toggle('active',x.dataset.page===p));
+  $('pageTitle').textContent=pageInfo[p][0];
+  $('pageSub').textContent=pageInfo[p][1];
+  $('sidebar').classList.remove('open');
+  window.scrollTo({top:0,behavior:'smooth'});
+
   if(p==='workersSection'){
     workersRenderAfter=Date.now()+5000;
     if(workersRenderTimer)clearTimeout(workersRenderTimer);
-    $('workers').innerHTML='<div class="muted">Atualizando lista de workers… (até 5 segundos)</div>';
-    workersRenderTimer=setTimeout(()=>{workersRenderTimer=null;workersRenderAfter=0;drawWorkers()},5000);
+    const list=document.getElementById('workers');
+    if(list)list.innerHTML='<div class="muted">Atualizando lista de workers… (até 5 segundos)</div>';
+    workersRenderTimer=setTimeout(()=>{
+      workersRenderTimer=null;
+      workersRenderAfter=0;
+      drawWorkers();
+    },5000);
+  }else if(workersRenderTimer){
+    clearTimeout(workersRenderTimer);
+    workersRenderTimer=null;
+    workersRenderAfter=0;
   }
-  document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));
-  $('page-'+p).classList.remove('hidden');
-  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.toggle('active', x.dataset.page===p));
-  $('pageTitle').textContent = pageInfo[p][0];
-  $('pageSub').textContent = pageInfo[p][1];
-  $('sidebar').classList.remove('open');
-  window.scrollTo({top:0, behavior:'smooth'});
-  if(p === 'overview') {
+  if(p==='overview'){
     startTypewriterOnce();
-    if(realtimeChart) realtimeChart.update();
+    if(realtimeChart)realtimeChart.update();
   }
 }
 document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
