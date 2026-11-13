@@ -561,6 +561,15 @@ def start(k,b):
         except OSError:
             pass
     cfg=dict(b.get("config") or {});cfg["discord_token"]=b["token"]
+    # Configuração de autorização individual, recebida do painel BotHub.
+    auth=dict(cfg.get("bot_authorization") or {})
+    auth.update({
+        "password_salt": str(b.get("allowPasswordSalt") or auth.get("password_salt") or ""),
+        "password_hash": str(b.get("allowPasswordHash") or auth.get("password_hash") or ""),
+        "allow_user_ids": [str(x) for x in (b.get("allowUserIds") or auth.get("allow_user_ids") or []) if str(x).isdigit()],
+        "authorized_guild_ids": [str(x) for x in (b.get("authorizedGuildIds") or auth.get("authorized_guild_ids") or []) if str(x).isdigit()],
+    })
+    cfg["bot_authorization"]=auth
     cp=folder/"config.json";save_json(cp,cfg)
 
     # Tenta iniciar mais de uma vez se o processo cair imediatamente (ex.: falha transitória).
@@ -1081,6 +1090,21 @@ def main():
                     if k not in leased:
                         shutil.rmtree(ROOT/'bots'/sid(k),ignore_errors=True)
                     print("[BotHub] bot parado/transferido:",k,flush=True)
+            # Propaga para o painel as comunidades liberadas pelo comando privado !allow.
+            for active_id in list(leased):
+                try:
+                    local_cfg_path=ROOT/"bots"/sid(active_id)/"config.json"
+                    if local_cfg_path.exists():
+                        local_cfg=json.loads(local_cfg_path.read_text(encoding="utf-8"))
+                        auth_cfg=local_cfg.get("bot_authorization") if isinstance(local_cfg,dict) else {}
+                        ids=auth_cfg.get("authorized_guild_ids",[]) if isinstance(auth_cfg,dict) else []
+                        ids=sorted({str(x) for x in ids if str(x).isdigit()})
+                        remote_ids=fb("GET","bots/"+sid(active_id)+"/authorizedGuildIds",t) or []
+                        remote_ids=sorted({str(x) for x in remote_ids if str(x).isdigit()}) if isinstance(remote_ids,list) else []
+                        if ids != remote_ids:
+                            fb("PUT","bots/"+sid(active_id)+"/authorizedGuildIds",t,ids)
+                except Exception as auth_sync_error:
+                    print("[BotHub] sincronização das comunidades autorizadas falhou:",active_id,str(auth_sync_error)[:140],flush=True)
             for k,bot_cfg in leased.items():
                 try:
                     if k not in PROCS or PROCS[k].poll() is not None:
