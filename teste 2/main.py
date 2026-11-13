@@ -1,4 +1,4 @@
-BOTHUB_MAIN_VERSION = "2026.11.13.4"
+BOTHUB_MAIN_VERSION = "2026.11.13.5"
 
 import discord
 from discord.ext import commands, tasks
@@ -10209,6 +10209,104 @@ async def solicitar_atualizacao_bot(ctx):
         await ctx.reply("⚠️ Não consegui registrar o pedido de atualização. Tente novamente mais tarde.", mention_author=False)
 
 
+# Solicitações de autorização de comunidades: uma notificação por servidor enquanto estiver pendente.
+PENDING_GUILD_APPROVALS = {}
+
+class GuildApprovalView(discord.ui.View):
+    def __init__(self, guild_id, guild_name, allowed_user_ids):
+        super().__init__(timeout=600)
+        self.guild_id = int(guild_id)
+        self.guild_name = str(guild_name)
+        self.allowed_user_ids = {int(value) for value in allowed_user_ids}
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id not in self.allowed_user_ids:
+            await private_reply(interaction, "Esta solicitação é restrita aos criadores do bot.")
+            return False
+        if comunidade_autorizada(self.guild_id):
+            await private_reply(interaction, "Esta comunidade já está autorizada.")
+            return False
+        return True
+
+    @discord.ui.button(label="Permitir comunidade", style=discord.ButtonStyle.success, emoji="✅")
+    async def allow_community(self, interaction, button):
+        guild_id = self.guild_id
+        allowed = config.setdefault("botHubAllowedGuildIds", [])
+        if not isinstance(allowed, list):
+            allowed = config["botHubAllowedGuildIds"] = []
+        if str(guild_id) not in {str(value) for value in allowed}:
+            allowed.append(str(guild_id))
+        legacy = config.setdefault("comunidades_autorizadas", [])
+        if not isinstance(legacy, list):
+            legacy = config["comunidades_autorizadas"] = []
+        if guild_id not in {int(value) for value in legacy if str(value).isdigit()}:
+            legacy.append(guild_id)
+        config.setdefault("criadores_supremos_guild", {})[str(guild_id)] = 0
+        salvar_config(config)
+        PENDING_GUILD_APPROVALS.pop(guild_id, None)
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content=f"✅ Comunidade **{self.guild_name}** ({guild_id}) autorizada. O bot já pode responder nela.",
+            embed=None, view=self
+        )
+
+    @discord.ui.button(label="Negar", style=discord.ButtonStyle.danger, emoji="⛔")
+    async def deny_community(self, interaction, button):
+        PENDING_GUILD_APPROVALS[self.guild_id] = time.monotonic() + 1800
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content=f"Solicitação negada para **{self.guild_name}** ({self.guild_id}). O bot continuará ignorando mensagens dessa comunidade.",
+            embed=None, view=self
+        )
+
+async def notificar_solicitacao_comunidade(message):
+    guild = message.guild
+    if guild is None or comunidade_autorizada(guild.id):
+        return
+    now = time.monotonic()
+    until = PENDING_GUILD_APPROVALS.get(int(guild.id), 0)
+    if until > now:
+        return
+    PENDING_GUILD_APPROVALS[int(guild.id)] = now + 600
+    recipients = {}
+    try:
+        app_info = await bot.application_info()
+        owner = getattr(app_info, "owner", None)
+        if owner is not None and getattr(owner, "id", None) and hasattr(owner, "send"):
+            recipients[int(owner.id)] = owner
+    except Exception:
+        pass
+    for creator_id in obter_ids_criadores():
+        try:
+            creator = await bot.fetch_user(int(creator_id))
+            recipients[int(creator.id)] = creator
+        except Exception:
+            continue
+    if not recipients:
+        log_console(f"Solicitação de comunidade {guild.id} sem destinatário de notificação.")
+        return
+    embed = discord.Embed(
+        title="🔔 Solicitação para autorizar comunidade",
+        description="Uma pessoa enviou mensagem ao bot em uma comunidade ainda não autorizada.",
+        color=discord.Color.orange()
+    )
+    embed.add_field(name="Usuário", value=f"{message.author} (ID: {message.author.id})", inline=False)
+    embed.add_field(name="Comunidade", value=f"{guild.name} (ID: {guild.id})", inline=False)
+    embed.add_field(name="Canal", value=f"#{getattr(message.channel, 'name', 'desconhecido')}", inline=False)
+    embed.set_footer(text="A solicitação expira em 10 minutos. O conteúdo da mensagem não é compartilhado.")
+    view = GuildApprovalView(guild.id, guild.name, set(obter_ids_criadores()) | set(recipients))
+    delivered = False
+    for recipient in recipients.values():
+        try:
+            await recipient.send(embed=embed, view=view)
+            delivered = True
+        except Exception:
+            continue
+    if not delivered:
+        log_console(f"Não foi possível enviar a solicitação de autorização da comunidade {guild.id} por DM.")
+
 # ==========================
 # Evento Principal (On Message)
 # ==========================
@@ -10221,6 +10319,7 @@ async def on_message(message):
     # Em servidor fora da allowlist, não responda, não processe IA,
     # não registre mensagens e não execute comandos. Exceção: !allow do criador global.
     if message.guild is not None and not comunidade_autorizada(message.guild.id):
+        await notificar_solicitacao_comunidade(message)
         comando_pendente = (message.content or "").strip().split(maxsplit=1)
         if (comando_pendente and comando_pendente[0].lower() == "!allow"
                 and is_creator(message)):
