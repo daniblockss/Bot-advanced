@@ -160,6 +160,7 @@ def call_ai(uid,text):
    pool.append(({"provider":"llm7","model":"fast","key":"auto-generated"},False))
   keys=configured.get(provider,[]) if provider!="blockrun" else []
   if isinstance(keys,str):keys=[keys]
+  if not isinstance(keys,list):keys=[]
   env_names={"chatgpt":("CHATGPT_API_KEYS","CHATGPT_API_KEY","OPENAI_API_KEY"),
              "openrouter":("OPENROUTER_API_KEYS","OPENROUTER_API_KEY"),
              "groq":("GROQ_API_KEYS","GROQ_API_KEY"),
