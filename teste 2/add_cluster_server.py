@@ -5,7 +5,7 @@ from __future__ import annotations
 import os, platform, shutil, subprocess, sys, urllib.request, shlex, time, json, zipfile, io
 from pathlib import Path
 
-INSTALLER_VERSION = "2026.11.12.9"
+INSTALLER_VERSION = "2026.11.12.10"
 GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 INSTALLER_URL = GITHUB_RAW + "/add_cluster_server.py"
 WORKER_URL = GITHUB_RAW + "/bothub_firebase_worker.py"
@@ -105,10 +105,10 @@ def termux_package_installed(package_name):
 
 
 def latest_termux_boot_apk():
-    """Usa o APK oficial do F-Droid indicado para o Termux:Boot."""
+    """Usa o APK oficial do GitHub indicado pelo usuário."""
     return (
-        "https://f-droid.org/repo/com.termux.boot_1000.apk",
-        "com.termux.boot_1000.apk",
+        "https://github.com/termux/termux-boot/releases/download/v0.8.1/termux-boot-app_v0.8.1+github.debug.apk",
+        "termux-boot-app_v0.8.1+github.debug.apk",
     )
 
 
@@ -215,11 +215,26 @@ def configure_termux_boot():
                 # Baixa sempre uma cópia nova e valida a estrutura ZIP do APK.
                 apk.unlink(missing_ok=True)
                 download_termux_boot_apk(apk)
-                print("[BotHub Installer] Abra a instalação e confirme Termux:Boot no Android.",
+                # O Package Installer do Android pode não conseguir ler APKs
+                # dentro da pasta privada do Termux. Copiamos para Downloads,
+                # onde o Android consegue conceder acesso ao instalador.
+                shared_downloads = Path.home() / "storage" / "downloads"
+                if not shared_downloads.is_dir():
+                    raise RuntimeError(
+                        "A pasta compartilhada Downloads não está disponível. "
+                        "Execute 'termux-setup-storage', permita o acesso aos arquivos "
+                        "e rode start.py novamente."
+                    )
+                shared_apk = shared_downloads / "termux-boot.apk"
+                shutil.copy2(apk, shared_apk)
+                print("[BotHub Installer] APK copiado para Downloads compartilhados do Android.",
                       flush=True)
-                subprocess.Popen([opener, str(apk)])
-                print("[BotHub Installer] Confirme a instalação na tela do Android. "
-                      "O instalador vai verificar automaticamente, sem precisar pressionar ENTER.",
+                print("[BotHub Installer] Abrindo o APK em Downloads. "
+                      "Se aparecer um seletor, escolha Instalador de pacote e confirme.",
+                      flush=True)
+                subprocess.Popen([opener, str(shared_apk)])
+                print("[BotHub Installer] O instalador vai verificar automaticamente "
+                      "se Termux:Boot foi instalado, sem precisar pressionar ENTER.",
                       flush=True)
                 # start.py chama este instalador com stdin=DEVNULL; portanto não podemos
                 # usar input(). Aguardar a confirmação observando o Package Manager.
