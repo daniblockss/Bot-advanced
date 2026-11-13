@@ -1129,6 +1129,8 @@ def main():
     while True:
         try:
             t=token(cfg);did=urllib.parse.quote(cfg["device_id"],safe="")
+            shared_auth_dir=ROOT/".bothub_shared";shared_auth_dir.mkdir(parents=True,exist_ok=True)
+            save_json(shared_auth_dir/"firebase-worker-token.json",{"idToken":t,"uid":str(cfg.get("uid") or ""),"updatedAt":int(time.time()*1000)})
             LAST_TOKEN=t;LAST_DID=did;CURRENT_FIREBASE_TOKEN=t
             # Verifica atualização antes do heartbeat: um erro no PUT de status
             # não pode impedir que este worker receba a própria correção.
