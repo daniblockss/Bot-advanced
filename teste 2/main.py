@@ -7099,6 +7099,7 @@ async def prefix_allow_comunidade(ctx):
     if guild_id not in {int(value) for value in bot_allowlist if str(value).isdigit()}:
         bot_allowlist.append(guild_id)
     config.setdefault("criadores_supremos_guild", {})[str(guild_id)] = int(ctx.guild.owner_id)
+    salvar_comunidades_persistidas()
     salvar_config(config)
     try:
         await bot.tree.sync(guild=ctx.guild)
@@ -7628,20 +7629,33 @@ async def garantir_personalidade_inicial():
             perfil["description"] = str(getattr(app, "description", "") or "")[:500]
         except Exception:
             pass
+        # Reutiliza a descrição já salva por atualizar_memoria_foto_perfil().
+        # Assim a primeira inicialização não paga duas análises de visão do mesmo avatar.
         try:
-            def baixar_avatar():
-                req = Request(perfil["avatar_url"], headers={"User-Agent": "BotHub-Profile/1.0"})
-                with urlopen(req, timeout=20) as response:
-                    return response.read(8_000_000), response.headers.get("Content-Type", "image/png")
-            image_bytes, mime = await asyncio.to_thread(baixar_avatar)
-            descricao = await asyncio.to_thread(
-                analisar_imagem_sync, image_bytes, mime,
-                "Descreva objetivamente o avatar deste bot: elementos visuais, cores, expressão e impressão de personalidade que a imagem sugere. Separe claramente o que é visível do que é apenas uma impressão. Não identifique pessoas reais.",
-                None,
-            )
-            perfil["visual_description"] = str(descricao or "")[:1600]
+            foto_path = os.path.join(BASE_DIR, "foto de perfil.txt")
+            if os.path.isfile(foto_path):
+                foto_txt = ler_txt(foto_path)
+                if foto_txt.startswith("AVATAR_URL: " + str(bot.user.display_avatar.with_size(1024).url) + "\\n"):
+                    marcador_visual = "DESCRICAO_VISUAL_PARA_IA:"
+                    if marcador_visual in foto_txt:
+                        perfil["visual_description"] = foto_txt.split(marcador_visual, 1)[1].strip()[:1600]
         except Exception as error:
-            log_console(f"Perfil visual inicial indisponível ({type(error).__name__}); usando metadados do bot.")
+            log_console(f"Não foi possível reutilizar a descrição visual salva ({type(error).__name__}).")
+        if not perfil["visual_description"]:
+            try:
+                def baixar_avatar():
+                    req = Request(perfil["avatar_url"], headers={"User-Agent": "BotHub-Profile/1.0"})
+                    with urlopen(req, timeout=20) as response:
+                        return response.read(8_000_000), response.headers.get("Content-Type", "image/png")
+                image_bytes, mime = await asyncio.to_thread(baixar_avatar)
+                descricao = await asyncio.to_thread(
+                    analisar_imagem_sync, image_bytes, mime,
+                    "Descreva objetivamente o avatar deste bot: elementos visuais, cores, expressão e impressão de personalidade que a imagem sugere. Separe claramente o que é visível do que é apenas uma impressão. Não identifique pessoas reais.",
+                    None,
+                )
+                perfil["visual_description"] = str(descricao or "")[:1600]
+            except Exception as error:
+                log_console(f"Perfil visual inicial indisponível ({type(error).__name__}); usando metadados do bot.")
         prompt_personalidade = (
             "Crie uma personalidade e regras iniciais para este bot Discord com base apenas no nome, "
             "descrição e avatar. A imagem pode inspirar um estilo alegre, misterioso, assustador, calmo, "
