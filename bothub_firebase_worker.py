@@ -170,7 +170,7 @@ def stop_bot_processes(bot_id):
                 continue
             try:
                 raw = (entry / "cmdline").read_bytes()
-                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\0") if part]
                 if any(arg.endswith(".py") and Path(arg).resolve() == target for arg in args[1:]):
                     found.append(int(entry.name))
             except (OSError, ValueError, RuntimeError):
