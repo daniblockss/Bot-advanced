@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.17</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.13.1</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -545,7 +545,7 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
           <label>Descrição</label>
           <textarea id="mainUpdateDescription" rows="2" maxlength="1500" placeholder="Descreva as melhorias"></textarea>
           <button id="publishMainUpdate" class="primary" style="margin-top:10px">Publicar atualização</button>
-          <div id="mainUpdateMsg" class="hint"></div>
+          <div id="mainUpdateMsg" class="hint"></div><div id="botUpdateProgress" class="hint" style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px">Nenhuma atualização de bot recebida ainda.</div>
         </div>
 
         <div class="card">
@@ -870,7 +870,7 @@ const firebaseConfig={apiKey:'AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE',authDomai
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getDatabase(app);
 const testRef=path=>ref(db,path);
 
-let workerData={},botData={},clusterUpdateProgress={},stopListeners=[],busy=false,lastAssignment='';
+let workerData={},botData={},clusterUpdateProgress={},botVersionData={},stopListeners=[],busy=false,lastAssignment='';
 let currentModalBotId = null;
 
 const bytes=n=>{let v=Number(n)||0,u=['B','KB','MB','GB','TB'],i=0;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i?1:0)+' '+u[i]};
@@ -973,6 +973,14 @@ function clusterProgressHtml(id){
  const color=p.status==='completed'?'var(--green)':p.status==='failed'?'var(--red)':'var(--cyan)';
  return '<div class="hint" style="margin-top:7px;padding:8px 10px;border:1px solid '+color+'55;border-radius:9px"><strong style="color:'+color+'">Work · '+esc(labels[p.status]||p.status)+'</strong><div>'+esc(p.message||'')+'</div><div>Atualizado: '+(p.updatedAt?ageText(Date.now()-Number(p.updatedAt)):'—')+(p.reportedVersion?' · Versão: '+esc(p.reportedVersion):'')+'</div></div>';
 }
+function drawBotUpdateProgress(){
+ const box=$('botUpdateProgress');if(!box)return;
+ const rows=Object.entries(botVersionData).filter(([,p])=>p&&p.updateId);
+ if(!rows.length){box.textContent='Nenhuma atualização de bot recebida ainda.';return;}
+ const labels={received:'Solicitação recebida',updating:'Atualizando',running:'Em execução',starting:'Iniciando',completed:'Atualizado',failed:'Falha na atualização'};
+ box.innerHTML='<strong>Andamento dos bots</strong>'+rows.map(([id,p])=>{const b=botData[id]||{};const color=p.status==='completed'||p.status==='running'?'var(--green)':p.status==='failed'?'var(--red)':'var(--cyan)';return '<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(b.name||id)+'</strong> · <span style="color:'+color+'">'+esc(labels[p.status]||p.status)+'</span><div>'+esc(p.message||'')+'</div><div class="small muted">Versão: '+esc(p.installedVersion||'não informada')+' · '+(p.updatedAt?ageText(Date.now()-Number(p.updatedAt)):'')+'</div></div>';}).join('');
+}
+
 function drawClusterProgress(){
  const box=$('clusterUpdateProgress');if(!box)return;
  const rows=Object.entries(clusterUpdateProgress).filter(([,p])=>p&&p.updateId);
@@ -1068,7 +1076,7 @@ function drawBots(){
         </div>
         <div class="small muted" style="line-height:1.4">
           <div><b>Status:</b> ${botStatus(id,b,running,processes)}</div>
-          <div><b>Worker:</b> ${esc(b.workerId || b.lastWorkerId || 'Na fila')}</div>
+          <div><b>Worker:</b> ${esc(b.workerId || b.lastWorkerId || 'Na fila')}</div><div><b>Versão:</b> ${esc((botVersionData[id]&&botVersionData[id].installedVersion)||'Aguardando worker')}</div><div><b>Atualização:</b> ${esc(({received:'Solicitação recebida',updating:'Atualizando',completed:'Atualizado',failed:'Falha'})[(botVersionData[id]||{}).status]||'Sem atualização recente')}</div>
         </div>
         <div style="display:flex;gap:6px;margin-top:auto;padding-top:6px;flex-wrap:wrap">
           <button class="primary" style="flex:1;padding:6px;font-size:11.5px" data-open-bot="${esc(id)}">⚙️ Painel</button>
@@ -1505,7 +1513,7 @@ function start(){
   $('dashboard').classList.remove('hidden');
   $('connection').textContent='Conectando…';$('connection').className='badge';
   watch('workers',v=>{workerData=v;cleanupStaleWorkers();drawWorkers();rebalance().then(drawBots)});
-  watch('botHubClusterUpdates/progress',v=>{clusterUpdateProgress=v||{};drawClusterProgress();drawWorkers()});
+  watch('botHubClusterUpdates/progress',v=>{clusterUpdateProgress=v||{};drawClusterProgress();drawWorkers()});watch('botHubBotVersions',v=>{botVersionData=v||{};drawBotUpdateProgress();drawBots()});
   watch('bots',v=>{botData=v;drawBots();rebalance()});
   $('connection').textContent='Conectado';$('connection').className='badge';
   initRealtimeChart();
