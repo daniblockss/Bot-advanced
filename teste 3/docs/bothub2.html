@@ -1,0 +1,1539 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#070a12">
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.17</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{
+  --bg: #070a12;
+  --panel: #0d1322;
+  --panel-solid: #111a2e;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-hover: rgba(56, 189, 248, 0.3);
+  --muted: #94a3b8;
+  --text: #f1f5f9;
+  --blue: #3b82f6;
+  --cyan: #38bdf8;
+  --purple: #a855f7;
+  --green: #10b981;
+  --red: #f43f5e;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  --radius: 16px;
+}
+
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--cyan) transparent}
+*::-webkit-scrollbar{width:4px;height:4px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:var(--cyan);border-radius:10px}
+
+body{
+  margin:0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+#matrixCanvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.06;
+}
+
+button, input, select, textarea{font:inherit}
+button{cursor:pointer;border:0;background:none;color:inherit}
+.hidden{display:none!important}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.page{animation:fadeIn .3s cubic-bezier(0.16, 1, 0.3, 1)}
+
+/* Tela de Login */
+.login-wrap{
+  min-height:100vh;
+  display:grid;
+  place-items:center;
+  padding:16px;
+  position:relative;
+  z-index:2;
+}
+.login-card{
+  width:min(420px, 100%);
+  padding:32px 24px;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  background:var(--panel);
+  box-shadow:var(--shadow);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;letter-spacing:-0.5px}
+.logo{
+  height:36px;width:36px;
+  border-radius:10px;
+  display:grid;place-items:center;
+  background:linear-gradient(135deg, var(--blue), var(--purple));
+  box-shadow:0 4px 15px rgba(59,130,246,0.3);
+  font-size:17px;
+}
+.login-card .brand{justify-content:center;margin-bottom:20px}
+.login-card h1{text-align:center;font-size:24px;letter-spacing:-0.5px;margin:0 0 6px}
+.login-card>p{text-align:center;color:var(--muted);margin:0 0 22px;font-size:13px}
+
+label{display:block;margin:12px 0 6px;color:var(--muted);font-size:12.5px;font-weight:500}
+input,select,textarea{
+  width:100%;padding:11px 12px;
+  border-radius:10px;
+  border:1px solid var(--line);
+  background:var(--panel-solid);
+  color:var(--text);
+  font:inherit;
+  outline:none;
+  transition:border-color .2s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--cyan)}
+textarea{resize:vertical;line-height:1.45}
+select{min-height:42px}
+
+.auth-btn{
+  width:100%;height:46px;
+  border-radius:12px;
+  background:var(--cyan);
+  color:#070a12;
+  font-weight:700;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  margin-top:16px;
+  transition:all .2s ease;
+  box-shadow:0 4px 15px rgba(56,189,248,0.25);
+}
+.auth-btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.login-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.5;margin-top:18px}
+
+/* App Layout & Sidebar Vertical Optimizada */
+.app{display:grid;grid-template-columns:260px 1fr;min-height:100vh;position:relative;z-index:2}
+.sidebar{
+  border-right:1px solid var(--line);
+  background:var(--panel);
+  padding:16px 12px;
+  display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh;
+  overflow-y:auto;
+  z-index:40;
+  transition:transform .3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sidebar::-webkit-scrollbar{width:3px}
+.sidebar .brand{padding:2px 6px 20px}
+.nav-label{font-size:10px;color:var(--cyan);text-transform:uppercase;letter-spacing:1.2px;padding:12px 8px 4px;font-weight:700}
+
+.nav-btn{
+  width:100%;display:flex;align-items:center;gap:10px;
+  padding:11px 12px;
+  border-radius:10px;
+  background:transparent;
+  color:var(--muted);
+  text-align:left;
+  margin:3px 0;
+  transition:all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight:500;
+  font-size:13.5px;
+  position:relative;
+  overflow:hidden;
+}
+
+.nav-btn.active{
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.15), rgba(59, 130, 246, 0.05));
+  color: #fff;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  box-shadow: inset 0 0 12px rgba(56, 189, 248, 0.08), 0 4px 12px rgba(0, 0, 0, 0.2);
+  font-weight: 600;
+}
+.nav-ico{width:18px;text-align:center;font-size:15px}
+
+.side-bottom{margin-top:auto;padding-top:10px}
+.user-mini{
+  display:flex;align-items:center;gap:8px;
+  padding:8px 10px;
+  border-top:1px solid var(--line);
+  background:rgba(255,255,255,0.01);
+  border-radius:12px;
+}
+.avatar{
+  height:32px;width:32px;border-radius:9px;
+  background:linear-gradient(135deg,var(--blue),var(--purple));
+  display:grid;place-items:center;
+  font-weight:700;font-size:13px;
+  object-fit:cover;
+}
+
+.main{
+  min-width:0;
+  padding:16px 20px 40px;
+  max-width:1400px;
+  width:100%;
+  margin:0 auto;
+}
+.topbar{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:20px;gap:10px;
+}
+.page-title{font-size:19px;font-weight:800;letter-spacing:-0.5px;margin:0}
+.page-sub{color:var(--muted);font-size:12px;margin-top:2px}
+.top-actions{display:flex;align-items:center;gap:10px}
+
+.icon-btn{
+  height:36px;width:36px;
+  border-radius:10px;
+  background:var(--panel-solid);
+  border:1px solid var(--line);
+  color:var(--text);
+  display:grid;place-items:center;
+  transition:all .2s ease;
+}
+.icon-btn:hover{border-color:var(--cyan);background:var(--panel)}
+
+button.primary, .primary{
+  background:linear-gradient(135deg, var(--blue), var(--cyan));
+  color:#070a12;
+  padding:10px 16px;
+  border-radius:10px;
+  font-weight:700;
+  box-shadow:0 4px 15px rgba(56,189,248,0.25);
+  transition:all .2s ease;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  font-size:13.5px;
+  cursor:pointer;
+  border:0;
+  width: 100%;
+}
+@media(min-width: 600px) { button.primary, .primary { width: auto; } }
+
+button.secondary, .secondary{
+  background:rgba(255,255,255,0.04);
+  border:1px solid var(--line);
+  padding:9px 14px;
+  border-radius:10px;
+  color:var(--text);
+  font-weight:600;
+  transition:all .2s ease;
+  font-size:13px;
+  cursor:pointer;
+}
+button.secondary:hover{background:rgba(56, 189, 248, 0.08);border-color:var(--line-hover)}
+
+button.danger, .danger{
+  background:rgba(244,63,94,0.12);
+  color:#fb7185;
+  border:1px solid rgba(244,63,94,0.25);
+  padding:8px 12px;
+  border-radius:8px;
+  font-weight:600;
+  transition:all .2s ease;
+  font-size:13px;
+  cursor:pointer;
+}
+button.danger:hover{background:rgba(244,63,94,0.22)}
+
+.grid{display:grid;gap:12px}
+.stats{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:14px}
+@media(min-width: 768px){.stats{grid-template-columns:repeat(4,minmax(0,1fr));}}
+
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:16px;
+  box-shadow:var(--shadow);
+  min-width:0;
+  margin-bottom:12px;
+}
+.stat-top{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:11.5px;font-weight:500}
+.stat-ico{
+  height:30px;width:30px;border-radius:8px;
+  display:grid;place-items:center;
+  background:rgba(56,189,248,0.1);
+  color:var(--cyan);
+  font-size:13px;
+}
+.stat-num{font-size:22px;font-weight:800;letter-spacing:-0.5px;margin:6px 0 2px;color:#fff}
+.stat-foot{font-size:10.5px;color:var(--muted)}
+
+.two-col{grid-template-columns:1fr}
+@media(min-width: 900px){.two-col{grid-template-columns:1fr 1fr}}
+
+/* Banner ASCII com Animação Cyber */
+@keyframes subtlePulse {
+  0%, 100% { opacity: 0.88; }
+  50% { opacity: 1; text-shadow: 0 0 10px rgba(56, 189, 248, 0.35); }
+}
+.ascii-card{
+  background: #050810;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-family: 'Fira Code', monospace;
+  font-size: 10px;
+  color: var(--cyan);
+  margin-bottom: 14px;
+  overflow-x: auto;
+}
+.ascii-card.loop-active { animation: subtlePulse 5s ease-in-out infinite; }
+.ascii-header{
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px; color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.05);
+  padding-bottom: 4px; font-size: 9.5px;
+}
+.ascii-dots { display: flex; gap: 4px; }
+.ascii-dot { width: 6px; height: 6px; border-radius: 50%; }
+.dot-r { background: var(--red); }
+.dot-y { background: #f59e0b; }
+.dot-g { background: var(--green); }
+pre.ascii-content{margin: 0;line-height: 1.15;white-space: pre;}
+.typing-cursor {
+  display: inline-block; width: 5px; height: 11px; background-color: var(--cyan);
+  vertical-align: middle; margin-left: 2px; animation: blinkCursor 0.8s infinite;
+}
+@keyframes blinkCursor{0%,100%{opacity:1}50%{opacity:0}}
+
+.badge{font-size:11px;padding:4px 9px;border-radius:20px;background:rgba(16, 185, 129, 0.12);color:#34d399;font-weight:600;border:1px solid rgba(16,185,129,0.25);white-space:nowrap}
+.badge.off{background:rgba(244,63,94,0.12);color:#fb7185;border-color:rgba(244,63,94,0.25)}
+.badge.shared{background:rgba(56,189,248,0.12);color:#7dd3fc;border:1px solid rgba(56,189,248,0.28)}
+
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+
+/* Cards de Bots */
+.bot-card-grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 10px; }
+@media(min-width: 600px){.bot-card-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }}
+
+.bot-detailed-card {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.2s;
+}
+.bot-detailed-card:hover { border-color: var(--cyan); background: rgba(56,189,248,0.03); }
+.bot-card-header { display: flex; align-items: center; gap: 10px; }
+.bot-avatar-lg { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; background: linear-gradient(135deg, var(--blue), var(--purple)); display: grid; place-items: center; font-size: 18px; font-weight: 700; color: #fff; }
+
+/* Modal Individual Imersivo (Aparece como um "novo html" elegante) */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(3, 6, 12, 0.88); backdrop-filter: blur(8px);
+  z-index: 100; display: grid; place-items: center; padding: 12px;
+}
+.modal-box {
+  background: var(--panel); border: 1px solid var(--cyan); border-radius: var(--radius);
+  width: 100%; max-width: 680px; height: 92vh; max-height: 720px; display: flex; flex-direction: column;
+  box-shadow: var(--shadow); overflow: hidden; animation: fadeIn .25s ease;
+}
+.modal-header-bar {
+  padding: 16px 20px; background: var(--panel-solid); border-bottom: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.modal-body-content { padding: 16px; overflow-y: auto; flex: 1; }
+
+.modal-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin-bottom: 14px; padding-bottom: 8px; overflow-x: auto; }
+.modal-tab-btn { background: rgba(255,255,255,0.03); border: 1px solid var(--line); padding: 7px 12px; border-radius: 8px; color: var(--muted); font-weight: 600; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.modal-tab-btn.active { background: rgba(56, 189, 248, 0.15); color: var(--cyan); border-color: var(--cyan); }
+
+.chart-container { position: relative; width: 100%; height: 190px; margin-top: 8px; }
+
+code{font-family:'Fira Code',monospace;color:#c4b5fd;background:rgba(255,255,255,0.04);padding:2px 6px;border-radius:4px;font-size:11.5px}
+pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;border:1px solid var(--line);padding:12px;border-radius:10px;color:#dbeafe;font-family:'Fira Code',monospace;font-size:11.5px}
+
+.error{color:#fda4af;white-space:pre-wrap;margin-top:6px;font-size:12px}
+.ok{color:#6ee7b7;white-space:pre-wrap;margin-top:6px;font-size:12px}
+.hint{color:var(--muted);font-size:12px;line-height:1.45}
+
+.mobile-menu{display:none}
+
+@media(max-width:768px){
+  .app{grid-template-columns:1fr}
+  .sidebar{
+    position:fixed; z-index:100; left:-280px; width:260px; height:100vh;
+    transition:left .25s cubic-bezier(0.16, 1, 0.3, 1); box-shadow:var(--shadow);
+  }
+  .sidebar.open{left:0}
+  .main{padding:14px 10px 40px}
+  .mobile-menu{display:grid}
+}
+</style>
+</head>
+<body>
+
+<canvas id="matrixCanvas"></canvas>
+
+<!-- Tela de Login Firebase -->
+<div id="login" class="login-wrap">
+  <div class="login-card">
+    <div class="brand"><div class="logo">🤖</div>BotHub</div>
+    <h1>Entrar no BotHub</h1>
+    <p>Painel central de controle e cluster Firebase Realtime Database.</p>
+    <label>E-mail administrador</label>
+    <input id="email" type="email" autocomplete="username" value="daniblocks100@gmail.com">
+    <label>Senha do Firebase</label>
+    <input id="password" type="password" autocomplete="current-password" placeholder="Senha da conta Firebase">
+    <button id="loginBtn" class="auth-btn">Entrar no painel</button>
+    <div id="loginMsg" class="error"></div>
+    <div class="login-note">Acesso restrito a administradores autorizados no Firebase. 🛡️</div>
+  </div>
+</div>
+
+<!-- Aplicação Principal -->
+<div id="dashboard" class="app hidden">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="logo">🤖</div>BotHub</div>
+    <div class="nav-label">🚀 Painel Principal</div>
+    <button class="nav-btn active" data-page="overview"><span class="nav-ico">📊</span>Visão geral</button>
+    <button class="nav-btn" data-page="workersSection"><span class="nav-ico">🖥️</span>Workers & Cluster</button>
+    <button class="nav-btn" data-page="botsSection"><span class="nav-ico">🤖</span>Gerenciar Bots</button>
+    <button class="nav-btn" data-page="updatesSection"><span class="nav-ico">🔄</span>Atualizações & Sistema</button>
+    <button class="nav-btn" data-page="setupSection"><span class="nav-ico">📖</span>Adicionar Servidor</button>
+    <div class="side-bottom">
+      <div class="user-mini">
+        <div class="avatar">⚡</div>
+        <div style="min-width:0;flex:1">
+          <div style="font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis">Admin BotHub</div>
+          <div class="small muted"><span class="badge" style="font-size:9.5px;padding:2px 5px">Conectado</span></div>
+        </div>
+        <button class="icon-btn" id="logout" style="height:28px;width:28px" title="Sair">🚪</button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="icon-btn mobile-menu" onclick="toggleSidebar()">☰</button>
+        <div>
+          <h1 class="page-title" id="pageTitle">Visão geral do Cluster</h1>
+          <div class="page-sub" id="pageSub">Monitoramento em tempo real dos workers e bots.</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span id="connection" class="badge off">Desconectado</span>
+      </div>
+    </header>
+
+    <!-- Seção Visão Geral -->
+    <div id="page-overview" class="page">
+      <div class="ascii-card" id="asciiCard">
+        <div class="ascii-header">
+          <div class="ascii-dots">
+            <div class="ascii-dot dot-r"></div>
+            <div class="ascii-dot dot-y"></div>
+            <div class="ascii-dot dot-g"></div>
+          </div>
+          <span>bothub-cluster://core-v3.8</span>
+          <span>🟢 LIVE SYNC</span>
+        </div>
+        <pre class="ascii-content"><span id="asciiTyped"></span><span class="typing-cursor" id="asciiCursor"></span></pre>
+      </div>
+
+      <div class="grid stats">
+        <div class="card" style="margin-bottom:0">
+          <div class="stat-top">Online <span class="stat-ico">💻</span></div>
+          <div id="online" class="stat-num">0</div>
+          <div class="stat-foot">Workers conectados</div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="stat-top">Bots que todos os servidores ainda suportam <span class="stat-ico">⚡</span></div>
+          <div id="capacity" class="stat-num">0</div>
+          <div class="stat-foot">Vagas adicionais estimadas no conjunto</div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="stat-top">Ligados <span class="stat-ico">🤖</span></div>
+          <div id="active" class="stat-num">0</div>
+          <div class="stat-foot">Em execução</div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="stat-top">Na fila <span class="stat-ico">⏳</span></div>
+          <div id="queued" class="stat-num">0</div>
+          <div class="stat-foot">Aguardando vaga</div>
+        </div>
+      </div>
+
+      <div class="grid stats" style="grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));margin-top:10px">
+        <div class="card" style="margin-bottom:0">
+          <div class="muted small">RAM livre</div>
+          <div id="ramFreeTotal" class="stat-num" style="font-size:16px">—</div>
+          <div id="ramTotalLabel" class="hint" style="font-size:10px">RAM: —</div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="muted small">Disco livre</div>
+          <div id="diskFreeTotal" class="stat-num" style="font-size:16px">—</div>
+          <div id="diskTotalLabel" class="hint" style="font-size:10px">Total: —</div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="muted small">CPU média</div>
+          <div id="cpuAvg" class="stat-num" style="font-size:16px">—</div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="muted small">Uptime Max</div>
+          <div id="longestUptime" class="stat-num" style="font-size:16px">—</div>
+        </div>
+      </div>
+
+      <div class="grid two-col" style="margin-top:12px">
+        <div class="card">
+          <div class="section-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h2 style="font-size:15px;margin:0">📈 Desempenho</h2>
+            <span class="small muted">Tempo real</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="realtimeChart"></canvas>
+          </div>
+        </div>
+        <div class="card">
+          <h2 style="font-size:15px;margin:0 0 8px">📡 Ações do Cluster</h2>
+          <div id="actionLog" class="hint" style="max-height:165px;overflow-y:auto;font-size:11.5px">Nenhuma ação registrada.</div><h3 style="font-size:13px;margin:12px 0 5px">🔋 Avisos de bateria</h3><div id="batteryAlerts" class="hint">Nenhum aviso de bateria.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seção Workers & Cluster -->
+    <div id="page-workersSection" class="page hidden">
+      <div class="card">
+        <h2>Dispositivos / workers conectados</h2>
+        <div id="workers"><span class="muted">Aguardando workers…</span></div>
+        <p class="hint" style="margin-top:10px">Cada worker recebe uma quantidade dinâmica de bots conforme a RAM e o disco livres, mantendo uma reserva para o sistema.</p>
+      </div>
+    </div>
+
+    <!-- Seção Gerenciar Bots -->
+    <div id="page-botsSection" class="page hidden">
+      <div class="card" style="margin-bottom: 14px;">
+        <h2>Cadastrar bot Discord</h2>
+        <label>Nome do bot</label>
+        <input id="botName" maxlength="100" placeholder="Meu bot">
+        <label>Token do bot</label>
+        <input id="botToken" type="password" autocomplete="off" placeholder="Token privado">
+        <button id="createBot" class="primary" style="margin-top:10px">Cadastrar e distribuir</button>
+        <div id="createMsg" class="hint"></div>
+      </div>
+
+      <div class="card">
+        <h2>Bots cadastrados</h2>
+        <p class="hint">Clique em <b>"Painel Individual"</b> em qualquer bot para abrir a central isolada de arquivos e logs.</p>
+        <div id="bots" style="margin-top:10px"><span class="muted">Aguardando dados…</span></div>
+        <div id="queueMsg" class="hint" style="margin-top: 8px;"></div>
+      </div>
+    </div>
+
+    <!-- Seção Atualizações & Sistema (Separada corretamente) -->
+    <div id="page-updatesSection" class="page hidden">
+      <div class="grid two-col">
+        <div class="card">
+          <h2>Atualizar main.py (Bots)</h2>
+          <p class="hint">Publica atualização para os bots individuais do cluster.</p>
+          <label>Tipo de atualização</label>
+          <select id="mainUpdateType">
+            <option value="optional">Opcional — o criador decide</option>
+            <option value="mandatory">Obrigatória — instalar automaticamente</option>
+          </select>
+          <label>Descrição</label>
+          <textarea id="mainUpdateDescription" rows="2" maxlength="1500" placeholder="Descreva as melhorias"></textarea>
+          <button id="publishMainUpdate" class="primary" style="margin-top:10px">Publicar atualização</button>
+          <div id="mainUpdateMsg" class="hint"></div>
+        </div>
+
+        <div class="card">
+          <h2>Controlador do Cluster (Workers)</h2>
+          <p class="hint">Atualiza os scripts do repositório em todos os workers conectados.</p>
+          <div style="margin-top: 24px;"></div>
+          <button id="updateCluster" class="primary">Atualizar arquivos do Cefilu</button>
+          <div id="clusterUpdateMsg" class="hint" style="margin-top: 10px;"></div>
+          <div id="clusterUpdateProgress" class="hint" style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px">Nenhuma atualização em andamento.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seção Como Adicionar Servidor -->
+    <div id="page-setupSection" class="page hidden">
+      <div class="card">
+        <h2>Adicionar servidor ao cluster</h2>
+        <p class="hint">Execute no terminal da máquina desejada (Python 3.10+):</p>
+        <pre class="code-block">mkdir -p "teste 2" && cd "teste 2"
+curl -fL https://raw.githubusercontent.com/daniblockss/Bot-advanced/teste-2/teste%202/start.py -o start.py
+python3 start.py</pre>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Painel Individual do Bot (Estilo "Novo HTML" Imersivo para Celular/Vertical) -->
+<div id="botModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-header-bar">
+      <h3 id="modalBotTitle" style="margin:0; font-size:16px; color:var(--cyan)">Painel Individual</h3>
+      <button class="icon-btn" onclick="closeBotModal()" style="height:30px;width:30px">✕</button>
+    </div>
+
+    <div class="modal-body-content">
+      <div class="modal-tabs">
+        <button class="modal-tab-btn active" onclick="switchBotTab('files')">📁 Arquivos</button>
+        <button class="modal-tab-btn" onclick="switchBotTab('logs')">📋 Logs</button>
+        <button class="modal-tab-btn" onclick="switchBotTab('profile')">👤 Perfil & Config</button>
+      </div>
+
+      <!-- Aba de Arquivos -->
+      <div id="botTabFiles" class="bot-tab-content">
+        <div style="display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap">
+          <button class="secondary" onclick="loadBotFiles()">📂 Atualizar</button>
+          <button class="secondary" onclick="restartSelectedBot()">🔄 Reiniciar</button>
+        </div>
+        <div id="modalFileStatus" class="hint"></div>
+        <div id="modalFileList" style="margin:8px 0; max-height:130px; overflow-y:auto"></div>
+        <label>Arquivo selecionado</label>
+        <input id="modalFilePath" placeholder="Ex.: utils.py ou config.json">
+        <label>Conteúdo UTF-8</label>
+        <textarea id="modalFileContent" rows="7" spellcheck="false" placeholder="Selecione um arquivo..."></textarea>
+        <div style="display:flex; gap:6px; margin-top:8px">
+          <button class="primary" onclick="saveBotFile()">💾 Salvar</button>
+          <button class="danger" onclick="deleteBotFile()">🗑️ Excluir</button>
+        </div>
+      </div>
+
+      <!-- Aba de Logs -->
+      <div id="botTabLogs" class="bot-tab-content hidden">
+        <button class="secondary" onclick="fetchBotLogs()" style="margin-bottom:8px">🔄 Atualizar Logs</button>
+        <div id="modalLogsStatus" class="hint"></div>
+        <pre id="modalLogsText" class="code-block" style="max-height:240px; overflow:auto; margin-top:4px"></pre>
+      </div>
+
+      <!-- Aba de Perfil & Config (Com compressão Base64 client-side) -->
+      <div id="botTabProfile" class="bot-tab-content hidden">
+        <label>Nome do Bot</label>
+        <input id="modalProfileName" maxlength="32" placeholder="Nome">
+        <label>Descrição do aplicativo</label>
+        <textarea id="modalProfileDesc" rows="2" maxlength="400" placeholder="Descrição"></textarea>
+        <label>Token do bot (deixe vazio para manter o atual)</label>
+        <input id="modalProfileToken" type="password" autocomplete="new-password" placeholder="Novo token do mesmo bot">
+        <div class="small muted">O novo token será validado e precisa pertencer à mesma conta Discord. Ele não será exibido novamente no painel.</div>
+        <label>Permissão de servidores</label>
+        <select id="modalGuildAccessMode">
+          <option value="required">Obrigatório: somente IDs autorizados</option>
+          <option value="optional">Opcional: permitir todos os servidores</option>
+        </select>
+        <label>IDs dos servidores autorizados (um por linha)</label>
+        <textarea id="modalGuildAllowlist" rows="3" maxlength="5000" placeholder="123456789012345678"></textarea>
+        <div class="small muted">No modo obrigatório, apenas estes servidores podem usar os comandos. Também é possível autorizar pelo Discord com <b>!allow</b> (somente criador global).</div>
+        <label>Foto de Perfil (aplicada ao Discord e sincronizada)</label>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px">
+          <input id="modalAvatarAutoUpdate" type="checkbox" style="width:auto">
+          Foto de perfil automática (atualizar ao entrar no painel)
+        </label>
+        <div class="small muted">Quando ativada, o painel consulta o Discord usando o token do bot sempre que você fizer login.</div>
+        <input id="modalProfileAvatarFile" type="file" accept="image/png,image/jpeg" onchange="handleAvatarCompress(event)">
+        <input id="modalProfileAvatarBase64" type="hidden">
+        <div style="display:flex; align-items:center; gap:10px; margin-top:8px">
+          <img id="modalAvatarPreview" src="" alt="" style="width:40px;height:40px;border-radius:10px;object-fit:cover;display:none">
+          <span class="small muted">Prévia da imagem / avatar atual do Discord</span>
+        </div>
+        <button class="secondary" onclick="fetchCurrentBotAvatar()" style="margin-top:9px">↻ Pegar imagem atual do bot</button>
+        <button class="primary" onclick="saveBotProfileOnlySite()" style="margin-top:12px">💾 Salvar Perfil (Sincronizado)</button>
+        <div id="modalProfileMsg" class="hint"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Script UI, Sons & Matrix -->
+<script>
+const $ = id => document.getElementById(id);
+
+/* Efeitos sonoros em puro JS com Web Audio API */
+function playClickSound() {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(700, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(250, audioCtx.currentTime + 0.04);
+    gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.04);
+  } catch(e) {}
+}
+
+document.addEventListener('click', e => {
+  if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+    playClickSound();
+  }
+});
+
+/* Fundo Matrix Cyber */
+const canvas = document.getElementById('matrixCanvas');
+const ctx = canvas.getContext('2d');
+function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+const chars = '01BOT_HUB_CLUSTER_WORKER_AI_SYNAPSE_';
+const fontSize = 14;
+const columns = Math.floor(canvas.width / fontSize);
+const drops = [];
+for (let i = 0; i < columns; i++) { drops[i] = 1; }
+
+function drawMatrix() {
+  ctx.fillStyle = 'rgba(7, 10, 18, 0.15)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#38bdf8';
+  ctx.font = fontSize + 'px "Fira Code", monospace';
+  for (let i = 0; i < drops.length; i++) {
+    const text = chars.charAt(Math.floor(Math.random() * chars.length));
+    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) { drops[i] = 0; }
+    drops[i]++;
+  }
+}
+setInterval(drawMatrix, 50);
+
+/* Animação ASCII com Glitch & Typewriter */
+const asciiArtTarget = ` ____        _   _     _      _     
+| __ )  ___ | |_| |__ | |  _ | |__  
+|  _ \\ / _ \\| __| '_ \\| | | || '_ \\ 
+| |_) | (_) | |_| | | | |_| || |_) |
+|____/ \\___/ \\__|_| |_|\\____/ \\___/ 
+
+           [ CLOUD, BOTS & AI 24/7 ]
+`;
+const randomGlitchChars = '01?!*@&$#%.,•_~|\\';
+let asciiAnimated = false;
+
+function renderAsciiArray(arr) {
+  const el = $('asciiTyped');
+  if(!el) return;
+  el.innerHTML = arr.join('').replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+}
+
+function startRandomCharacterGlitch() {
+  const asciiArray = asciiArtTarget.split('');
+  const glitchSymbols = ['I', '\\', '|', '.', ',', '-', '_', '#', '/', '(', ')'];
+  function triggerGlitch() {
+    let indicesToGlitch = [];
+    while(indicesToGlitch.length < Math.floor(Math.random() * 3) + 1) {
+      let idx = Math.floor(Math.random() * asciiArray.length);
+      if (asciiArray[idx] !== '\n' && asciiArray[idx] !== ' ' && !indicesToGlitch.includes(idx)) {
+        indicesToGlitch.push(idx);
+      }
+    }
+    let originalChars = indicesToGlitch.map(idx => ({ idx, char: asciiArray[idx] }));
+    indicesToGlitch.forEach(idx => {
+      asciiArray[idx] = glitchSymbols[Math.floor(Math.random() * glitchSymbols.length)];
+    });
+    renderAsciiArray(asciiArray);
+    setTimeout(() => {
+      originalChars.forEach(item => { asciiArray[item.idx] = item.char; });
+      renderAsciiArray(asciiArray);
+      setTimeout(triggerGlitch, Math.random() * 90);
+    }, Math.random() * 200);
+  }
+  setTimeout(triggerGlitch, Math.random() * 90);
+}
+
+function startTypewriterOnce() {
+  const el = $('asciiTyped');
+  const cursor = $('asciiCursor');
+  const card = $('asciiCard');
+  if(!el) return;
+  if (asciiAnimated) {
+    el.innerHTML = esc(asciiArtTarget).replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+    if(cursor) cursor.style.display = 'none';
+    if(card) card.classList.add('loop-active');
+    return;
+  }
+  asciiAnimated = true;
+  let iterations = 0;
+  const totalLength = asciiArtTarget.length;
+  function glitchFrame() {
+    let output = '';
+    for(let i = 0; i < totalLength; i++) {
+      let targetChar = asciiArtTarget.charAt(i);
+      if (targetChar === '\n') output += '<br>';
+      else if (targetChar === ' ') output += '&nbsp;';
+      else if (i < iterations) output += esc(targetChar);
+      else output += randomGlitchChars.charAt(Math.floor(Math.random() * randomGlitchChars.length));
+    }
+    el.innerHTML = output;
+    if(iterations < totalLength) {
+      iterations += 4;
+      setTimeout(glitchFrame, 16);
+    } else {
+      el.innerHTML = esc(asciiArtTarget).replace(/\n/g, '<br>').replace(/ /g, '&nbsp;');
+      if(cursor) cursor.style.display = 'none';
+      if(card) card.classList.add('loop-active');
+      startRandomCharacterGlitch();
+    }
+  }
+  glitchFrame();
+}
+
+/* Navegação por abas responsiva */
+function toggleSidebar() { $('sidebar').classList.toggle('open'); }
+const pageInfo = {
+  overview: ['Visão geral do Cluster', 'Monitoramento em tempo real dos workers e bots.'],
+  workersSection: ['Workers & Cluster', 'Controle de dispositivos e arquivos do Cefilu.'],
+  botsSection: ['Gerenciar Bots', 'Cadastro, estado e perfis dos bots Discord.'],
+  updatesSection: ['Atualizações & Sistema', 'Publicação de atualizações de main.py e cluster.'],
+  setupSection: ['Adicionar Servidor', 'Instruções para ligar novos workers ao cluster.']
+};
+
+function navigate(p){
+  const target=document.getElementById('page-'+p);
+  if(!target||!pageInfo[p]){
+    console.error('[BotHub] Página não encontrada:',p);
+    return;
+  }
+  document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));
+  target.classList.remove('hidden');
+  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.toggle('active',x.dataset.page===p));
+  $('pageTitle').textContent=pageInfo[p][0];
+  $('pageSub').textContent=pageInfo[p][1];
+  $('sidebar').classList.remove('open');
+  window.scrollTo({top:0,behavior:'smooth'});
+
+  window.dispatchEvent(new CustomEvent('bothub:page-change',{detail:{page:p}}));
+  if(p==='overview'){
+    startTypewriterOnce();
+    if(realtimeChart)realtimeChart.update();
+  }
+}
+document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.page)));
+
+/* Gráfico Chart.js */
+let realtimeChart;
+function initRealtimeChart(){
+  const ctxLine = document.getElementById('realtimeChart')?.getContext('2d');
+  if(ctxLine && !realtimeChart){
+    realtimeChart = new Chart(ctxLine, {
+      type: 'line',
+      data: {
+        labels: ['10s', '8s', '6s', '4s', '2s', 'Agora'],
+        datasets: [{
+          label: 'Carga (%)',
+          data: [12, 18, 15, 24, 19, 21],
+          borderColor: '#38bdf8',
+          backgroundColor: 'rgba(56, 189, 248, 0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#94a3b8', font: { size: 10 } } },
+          y: { min: 0, max: 100, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#94a3b8', font: { size: 10 } } }
+        }
+      }
+    });
+    setInterval(() => {
+      if(!realtimeChart) return;
+      let val = Math.floor(Math.random() * 25) + 15;
+      realtimeChart.data.datasets[0].data.shift();
+      realtimeChart.data.datasets[0].data.push(val);
+      realtimeChart.update('none');
+    }, 2000);
+  }
+}
+
+const esc = s => String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+</script>
+
+<!-- Firebase SDK & Lógica de Cluster -->
+<script type="module">
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import {getDatabase,ref,onValue,get,set,update,remove} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+
+const $ = id => document.getElementById(id);
+
+const firebaseConfig={apiKey:'AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE',authDomain:'bothub-bca02.firebaseapp.com',databaseURL:'https://bothub-bca02-default-rtdb.firebaseio.com',projectId:'bothub-bca02',storageBucket:'bothub-bca02.firebasestorage.app',messagingSenderId:'890310788815',appId:'1:890310788815:web:a08d772d6f1afffb3e99ba',measurementId:'G-ZHEP6R0XVW'};
+const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getDatabase(app);
+const testRef=path=>ref(db,path);
+
+let workerData={},botData={},clusterUpdateProgress={},stopListeners=[],busy=false,lastAssignment='';
+let currentModalBotId = null;
+
+const bytes=n=>{let v=Number(n)||0,u=['B','KB','MB','GB','TB'],i=0;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i?1:0)+' '+u[i]};
+const duration=s=>{s=Math.max(0,Math.floor(Number(s)||0));const d=Math.floor(s/86400);s%=86400;const h=Math.floor(s/3600);s%=3600;const m=Math.floor(s/60);return (d?d+'d ':'')+(h+'h '+m+'min')};
+const ageText=ms=>{if(!Number.isFinite(ms)||ms<0)return 'desconhecido';return duration(ms/1000)+' atrás'};
+const STALE_MS=60*60*1000; let cleanupBusy=false,lastCleanup=0;
+
+function online(w){const seen=Number(w&&w.lastSeen||0);return !!w&&seen>0&&Date.now()-seen<30000}
+function capacity(w){if(!online(w))return 0;const ram=Math.max(0,Math.floor((Number(w.ramFreeBytes||0)-512*1024*1024)/(300*1024*1024)));const disk=Math.max(0,Math.floor((Number(w.diskFreeBytes||0)-1024*1024*1024)/(100*1024*1024)));return Math.min(ram,disk)}
+function eligible(w){return capacity(w)>0}
+function stopSubs(){stopListeners.forEach(f=>f());stopListeners=[]}
+
+function watch(path,cb){
+  const r=testRef(path);
+  stopListeners.push(onValue(r,s=>cb(s.val()||{}),e=>{
+    const detail='Erro Firebase em '+path+': '+(e.code||'')+' — '+(e.message||String(e));
+    $('connection').textContent='Erro Firebase';
+    $('connection').className='badge off';
+    console.error('[BotHub Firebase]',path,e);
+  }));
+}
+
+function runningSet(){
+  const s=new Set();
+  for(const w of Object.values(workerData)){
+    const ids=w.readyBotIds;
+    if(Array.isArray(ids))ids.forEach(id=>s.add(String(id)));
+    else if(ids&&typeof ids==='object')Object.keys(ids).forEach(id=>s.add(String(id)));
+  }
+  return s;
+}
+
+function processSet(){
+  const s=new Set();
+  for(const w of Object.values(workerData)){
+    const ids=w.runningBotIds;
+    if(Array.isArray(ids))ids.forEach(id=>s.add(String(id)));
+    else if(ids&&typeof ids==='object')Object.keys(ids).forEach(id=>s.add(String(id)));
+  }
+  return s;
+}
+
+function botStatus(id,b,ready,processes){
+  const wanted=b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off';
+  if(wanted)return ready.has(id)?'<span style="color:var(--green)">Ligado</span>':'<span style="color:var(--cyan)">Ligando</span>';
+  return processes.has(id)?'<span style="color:#fbbf24">Desligando</span>':'<span style="color:var(--red)">Desligado</span>';
+}
+
+let batteryAlertState={},batteryAlertItems=[];
+function batterySummary(w){
+  if(w.batteryPresent!==true||w.batteryPercent===null||w.batteryPercent===undefined||!Number.isFinite(Number(w.batteryPercent)))return "Sem bateria detectada";
+  const pct=Number(w.batteryPercent),states={charging:"Carregando ⚡",discharging:"Descarregando 🔋",full:"Carga completa ✅",not_charging:"Não carregando",unknown:"Desconhecido"};
+  const state=states[w.batteryStatus]||(w.batteryPlugged===true?"Conectado à energia":"Estado desconhecido");
+  let extra=[];
+  if(w.batteryPluggedType)extra.push(({PLUGGED_USB:"USB",PLUGGED_AC:"Tomada",PLUGGED_WIRELESS:"Sem fio",UNPLUGGED:"Desconectado"})[w.batteryPluggedType]||w.batteryPluggedType);
+  if(w.batteryTemperatureC!==undefined&&w.batteryTemperatureC!==null)extra.push(Number(w.batteryTemperatureC).toFixed(1)+" °C");
+  if(w.batteryHealth)extra.push("Saúde: "+String(w.batteryHealth));
+  if(w.batteryVoltageMv!==undefined&&w.batteryVoltageMv!==null)extra.push(Number(w.batteryVoltageMv)+" mV");
+  if(w.batteryCurrentUa!==undefined&&w.batteryCurrentUa!==null)extra.push(Number(w.batteryCurrentUa)+" µA");
+  return pct+"% · "+state+(extra.length?" · "+extra.join(" · "):"");
+}
+function addBatteryAlert(id,w,message){
+  const name=w.label||w.hostname||id;
+  batteryAlertItems.unshift({time:new Date().toLocaleTimeString(),message:esc(name)+": "+esc(message)});
+  batteryAlertItems=batteryAlertItems.slice(0,10);
+  const box=$("batteryAlerts");
+  if(box)box.innerHTML=batteryAlertItems.map(a=>'<div class="hint" style="padding:6px 0;border-bottom:1px solid var(--line)">🔔 <b>'+a.time+'</b> · '+a.message+'</div>').join("");
+}
+function checkBatteryAlerts(entries){
+  for(const [id,w] of entries){
+    if(!online(w)||w.batteryPresent!==true||!Number.isFinite(Number(w.batteryPercent)))continue;
+    const now={percent:Number(w.batteryPercent),plugged:w.batteryPlugged===true,status:String(w.batteryStatus||"unknown")};
+    const old=batteryAlertState[id];
+    if(!old){
+      if(now.percent<=15)addBatteryAlert(id,w,"Bateria baixa ("+now.percent+"%). Conecte o carregador.");
+      batteryAlertState[id]=now;continue;
+    }
+    if(old.percent>15&&now.percent<=15)addBatteryAlert(id,w,"Bateria baixa: "+now.percent+"%. Carregue o dispositivo.");
+    else if(old.percent>25&&now.percent<=25)addBatteryAlert(id,w,"Atenção: bateria em "+now.percent+"%.");
+    if(old.status!=="charging"&&now.status==="charging")addBatteryAlert(id,w,"Começou a carregar ("+now.percent+"%).");
+    if(old.status!=="full"&&now.status==="full")addBatteryAlert(id,w,"Bateria chegou a 100% / carga completa.");
+    if(old.plugged&&!now.plugged)addBatteryAlert(id,w,now.percent>=99?"Carregador desconectado com bateria cheia.":"Foi desconectado da energia ("+now.percent+"%).");
+    batteryAlertState[id]=now;
+  }
+}
+let workersRenderAfter=0,workersRenderTimer=null;
+function statusChip(label,ok){
+  return '<span class="badge '+(ok?'':'off')+'" style="font-size:10px;padding:3px 7px">'+esc(label)+'</span>';
+}
+function workerBotListHtml(workerId,w){
+ const ids=w.runningBotIds, running=new Set(Array.isArray(ids)?ids.map(String):ids&&typeof ids==='object'?Object.keys(ids).map(String):[]);
+ const ready=w.readyBotIds, confirmed=new Set(Array.isArray(ready)?ready.map(String):ready&&typeof ready==='object'?Object.keys(ready).map(String):[]);
+ const items=Object.entries(botData).filter(([id,b])=>running.has(String(id))||((!running.size)&&String(b.workerId||'')===String(workerId)&&confirmed.has(String(id))));
+ if(!items.length)return '<div class="hint" style="margin-top:7px">Nenhum bot em execução detectado.</div>';
+ return '<details open style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Bots em execução ('+items.length+') · mostrar/ocultar</summary><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+items.map(([id,b])=>'<span title="'+esc(b.name||'Bot')+'" style="display:inline-flex;align-items:center;gap:5px;max-width:170px;padding:4px 7px;border:1px solid var(--line);border-radius:8px;font-size:11px"><img src="'+(b.avatarBase64||b.avatarUrl||'')+'" onerror="this.style.display=\'none\'" style="width:19px;height:19px;border-radius:50%;object-fit:cover;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||'Bot')+'</span></span>').join('')+'</div></details>';
+}
+function clusterProgressHtml(id){
+ const p=clusterUpdateProgress[id];if(!p||!p.status)return '';
+ const labels={received:'Solicitação recebida',downloading:'Baixando arquivos',installing:'Preparando instalação',restarting:'Reiniciando worker',completed:'Atualizado',failed:'Falha na atualização'};
+ const color=p.status==='completed'?'var(--green)':p.status==='failed'?'var(--red)':'var(--cyan)';
+ return '<div class="hint" style="margin-top:7px;padding:8px 10px;border:1px solid '+color+'55;border-radius:9px"><strong style="color:'+color+'">Work · '+esc(labels[p.status]||p.status)+'</strong><div>'+esc(p.message||'')+'</div><div>Atualizado: '+(p.updatedAt?ageText(Date.now()-Number(p.updatedAt)):'—')+(p.reportedVersion?' · Versão: '+esc(p.reportedVersion):'')+'</div></div>';
+}
+function drawClusterProgress(){
+ const box=$('clusterUpdateProgress');if(!box)return;
+ const rows=Object.entries(clusterUpdateProgress).filter(([,p])=>p&&p.updateId);
+ if(!rows.length){box.textContent='Nenhuma atualização em andamento.';return;}
+ const labels={received:'Solicitação recebida',downloading:'Baixando arquivos',installing:'Instalando',restarting:'Reiniciando',completed:'Atualizado',failed:'Falhou'};
+ box.innerHTML='<strong>Andamento dos servidores</strong>'+rows.map(([id,p])=>'<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(workerData[id]?.label||workerData[id]?.hostname||id)+'</strong> · '+esc(labels[p.status]||p.status)+'<div>'+esc(p.message||'')+'</div></div>').join('');
+}
+
+function drawWorkers(){
+ if(workersRenderAfter>Date.now()){
+  $('workers').innerHTML='<div class="muted">Aguardando atualização dos workers…</div>';
+  if(!workersRenderTimer)workersRenderTimer=setTimeout(()=>{workersRenderTimer=null;workersRenderAfter=0;drawWorkers()},workersRenderAfter-Date.now());
+  return;
+ }
+  checkBatteryAlerts(Object.entries(workerData));
+  const entries=Object.entries(workerData),live=entries.filter(([,w])=>online(w));
+  $('online').textContent=live.length;
+  $('capacity').textContent=live.reduce((total,[,w])=>total+capacity(w),0);
+  const counts={};
+  Object.values(botData).filter(b=>b.enabled&&b.workerId).forEach(b=>counts[b.workerId]=(counts[b.workerId]||0)+1);
+  const sum=(arr,k)=>arr.reduce((n,[,w])=>n+(Number(w[k])||0),0);
+  $('ramFreeTotal').textContent=bytes(sum(live,'ramFreeBytes'));
+  $('ramTotalLabel').textContent='RAM total: '+bytes(sum(live,'ramTotalBytes'));
+  $('diskFreeTotal').textContent=bytes(sum(live,'diskFreeBytes'));
+  $('diskTotalLabel').textContent='Total: '+bytes(sum(live,'diskTotalBytes'));
+  const cpus=live.map(([,w])=>Number(w.cpuPercent)).filter(Number.isFinite);
+  $('cpuAvg').textContent=cpus.length?(cpus.reduce((a,b)=>a+b,0)/cpus.length).toFixed(1)+'%':'—';
+  $('longestUptime').textContent=live.length?duration(Math.max(...live.map(([,w])=>Number(w.uptimeSeconds)||0))):'—';
+
+  // IP público igual em workers online é comum quando vários tablets usam o mesmo Wi-Fi/NAT.
+  // Cada instalação continua identificada pelo device ID exclusivo.
+  const sharedIpCounts={};
+  for(const [id,w] of entries){
+    const ip=String(w.publicIp||'').trim();
+    if(online(w)&&ip)sharedIpCounts[ip]=(sharedIpCounts[ip]||0)+1;
+  }
+  const sharedIps=new Set(Object.entries(sharedIpCounts).filter(([,n])=>n>1).map(([ip])=>ip));
+  const hasSharedIps=sharedIps.size>0;
+
+  $('workers').innerHTML=entries.length?entries.map(([id,w])=>{
+    const isOnline=online(w),seen=Number(w.lastSeen||0),runCount=Array.isArray(w.runningBotIds)?w.runningBotIds.length:Object.keys(w.runningBotIds||{}).length,ipShared=isOnline&&w.publicIp&&sharedIps.has(String(w.publicIp).trim());
+    const remainingCapacity=isOnline?capacity(w):0;
+    return '<div class="row"><div style="min-width:0;flex:1"><strong>'+esc(w.label||w.hostname||id)+'</strong> '+(ipShared?'<span class="badge shared" title="Outro worker conectado está usando o mesmo IP público">IP compartilhado · mesma rede</span>':'')+'<div class="hint">ID exclusivo: '+esc(id)+' · '+esc(w.platform||'desconhecido')+'</div><div class="hint">Versão do worker: '+esc(w.workerVersion||'não informada')+'</div><div class="hint">IP público: '+esc(w.publicIp||'—')+' · CPU: '+(Number.isFinite(Number(w.cpuPercent))?Number(w.cpuPercent).toFixed(1)+'%':'—')+'</div><div class="hint">RAM: '+bytes(w.ramFreeBytes)+' livre · Disco: '+bytes(w.diskFreeBytes)+' livre</div><div class="hint">Bateria: '+batterySummary(w)+'</div><div class="hint" style="margin-top:7px;display:flex;flex-wrap:wrap;gap:5px;align-items:center"><strong style="margin-right:3px">Ambiente:</strong>'+statusChip(w.runtimeType==='Termux'?'Termux':w.runtimeType==='Linux'?'Linux':(w.runtimeType||'Não identificado'),w.runtimeType==='Termux'||w.runtimeType==='Linux')+(w.runtimeType==='Termux'?statusChip('Termux:API '+(w.termuxApiInstalled===true?'instalada':w.termuxApiInstalled===false?'não instalada':'sem dados'),w.termuxApiInstalled===true):'')+'</div><div>'+workerBotListHtml(id,w)+'</div>'+clusterProgressHtml(id)+'<div class="hint">Ainda aguenta: '+remainingCapacity+' bots adicionais (estimativa)</div><div class="hint">Heartbeat: '+(seen?ageText(Date.now()-seen):'sem registro')+' · '+(isOnline?'conectado':'offline')+'</div></div><div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><span class="badge '+(eligible(w)?'':'off')+'">'+(eligible(w)?'Livre':isOnline?'Sem vaga':'Offline')+'</span>'+(!isOnline?'<button class="danger" style="margin:0" data-remove-worker="'+esc(id)+'">Excluir</button>':'')+'</div></div>';
+  }).join('')+(hasSharedIps?'<div class="hint" style="margin-top:10px;padding:9px 11px;border:1px solid rgba(56,189,248,0.22);border-radius:9px;background:rgba(56,189,248,0.06)">ℹ️ IP público compartilhado é normal quando vários dispositivos estão no mesmo Wi-Fi ou roteador. Cada worker continua independente e é reconhecido pelo seu ID exclusivo.</div>':''):'<div class="muted">Nenhum worker registrado.</div>';
+
+  document.querySelectorAll('[data-remove-worker]').forEach(b=>b.onclick=()=>removeWorker(b.dataset.removeWorker));
+}
+
+window.addEventListener('bothub:page-change',event=>{
+  if(event.detail?.page==='workersSection'){
+    workersRenderAfter=Date.now()+5000;
+    if(workersRenderTimer)clearTimeout(workersRenderTimer);
+    const list=document.getElementById('workers');
+    if(list)list.innerHTML='<div class="muted">Atualizando lista de workers… (até 5 segundos)</div>';
+    workersRenderTimer=setTimeout(()=>{
+      workersRenderTimer=null;
+      workersRenderAfter=0;
+      drawWorkers();
+    },5000);
+  }else if(workersRenderTimer){
+    clearTimeout(workersRenderTimer);
+    workersRenderTimer=null;
+    workersRenderAfter=0;
+  }
+});
+
+function drawBots(){
+  const bots=Object.entries(botData);
+  const active=bots.filter(([,b])=>b.enabled);
+  const running=runningSet();
+  const processes=processSet();
+  const reallyRunning=active.filter(([id])=>running.has(id));
+  const queued=active.filter(([,b])=>!b.workerId||!eligible(workerData[b.workerId]));
+
+  $('active').textContent=reallyRunning.length;
+  $('queued').textContent=queued.length;
+
+  $('bots').innerHTML=bots.length ? `<div class="bot-card-grid">` + bots.map(([id,b])=>{
+    const isRunning=running.has(id);
+    const botAvatar = b.avatarBase64 || b.avatarUrl || '';
+    const avatarHtml = botAvatar
+      ? `<img class="bot-avatar-lg" src="${esc(botAvatar)}" alt="Avatar do bot" onerror="this.outerHTML='<div class=&quot;bot-avatar-lg&quot;>🤖</div>'">`
+      : `<div class="bot-avatar-lg">🤖</div>`;
+    
+    return `
+      <div class="bot-detailed-card">
+        <div class="bot-card-header">
+          ${avatarHtml}
+          <div style="min-width:0;flex:1">
+            <div style="font-weight:700;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.name||'Bot')}</div>
+            <div class="small muted">ID: <code>${esc(id.slice(0,8))}</code></div>
+          </div>
+        </div>
+        <div class="small muted" style="line-height:1.4">
+          <div><b>Status:</b> ${botStatus(id,b,running,processes)}</div>
+          <div><b>Worker:</b> ${esc(b.workerId || b.lastWorkerId || 'Na fila')}</div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:auto;padding-top:6px;flex-wrap:wrap">
+          <button class="primary" style="flex:1;padding:6px;font-size:11.5px" data-open-bot="${esc(id)}">⚙️ Painel</button>
+          <button class="secondary" style="padding:6px 10px" data-toggle="${esc(id)}" data-enabled="${b.enabled?'1':'0'}">${b.enabled?'⏹️':'▶️'}</button>
+          <button class="danger" style="padding:6px 10px" data-delete="${esc(id)}">🗑️</button>
+        </div>
+      </div>
+    `;
+  }).join('') + `</div>` : '<div class="muted">Nenhum bot cadastrado.</div>';
+
+  $('queueMsg').textContent=queued.length?'Servidores ocupados. ('+queued.length+' na fila)':'';
+  document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>toggleBot(b.dataset.toggle,b.dataset.enabled!=='1'));
+  document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>deleteBot(b.dataset.delete));
+  document.querySelectorAll('[data-open-bot]').forEach(b=>b.onclick=()=>openBotModal(b.dataset.openBot));
+}
+
+/* Funções do Painel Individual do Bot */
+window.openBotModal = function(id) {
+  currentModalBotId = id;
+  const b = botData[id];
+  if(!b) return;
+  $('modalBotTitle').textContent = `Painel: ${b.name || id}`;
+  $('modalProfileName').value = b.name || '';
+  $('modalProfileDesc').value = b.description || '';
+  $('modalProfileToken').value = '';
+  const botConfig = b.config && typeof b.config === 'object' ? b.config : {};
+  $('modalGuildAccessMode').value = botConfig.botHubGuildAccessMode === 'optional' ? 'optional' : 'required';
+  $('modalGuildAllowlist').value = Array.isArray(botConfig.botHubAllowedGuildIds) ? botConfig.botHubAllowedGuildIds.join('\n') : '';
+  const currentAvatar = b.avatarBase64 || b.avatarUrl || '';
+  if(currentAvatar) {
+    $('modalAvatarPreview').src = currentAvatar;
+    $('modalAvatarPreview').style.display = 'block';
+  } else {
+    $('modalAvatarPreview').removeAttribute('src');
+    $('modalAvatarPreview').style.display = 'none';
+  }
+  $('modalProfileAvatarBase64').value = b.avatarBase64 || '';
+  $('modalAvatarAutoUpdate').checked = b.avatarAutoUpdate !== false;
+  $('botModal').classList.remove('hidden');
+  switchBotTab('files');
+  loadBotFiles();
+};
+
+window.closeBotModal = function() {
+  $('botModal').classList.add('hidden');
+  currentModalBotId = null;
+};
+
+window.switchBotTab = function(tabName) {
+  ['files', 'logs', 'profile'].forEach(t => {
+    $('botTab' + t.charAt(0).toUpperCase() + t.slice(1)).classList.toggle('hidden', t !== tabName);
+  });
+  document.querySelectorAll('.modal-tab-btn').forEach((btn, idx) => {
+    btn.classList.toggle('active', ['files', 'logs', 'profile'][idx] === tabName);
+  });
+  if(tabName === 'logs') fetchBotLogs();
+};
+
+function getSelectedBotAndWorker() {
+  const id = currentModalBotId;
+  const b = botData[id];
+  const wid = b && b.workerId;
+  if(!id || !b) throw new Error("Bot inválido.");
+  if(!wid || !online(workerData[wid])) throw new Error("Este bot precisa estar atribuído a um worker online.");
+  return { id, b, wid };
+}
+
+/* Redimensionar e comprimir imagem no client-side via Canvas */
+window.handleAvatarCompress = function(event) {
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 120;
+      const MAX_HEIGHT = 120;
+      let width = img.width;
+      let height = img.height;
+      if (width > height) {
+        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+      } else {
+        if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.75); // Compactado em JPEG 75%
+      $('modalProfileAvatarBase64').value = dataUrl;
+      $('modalAvatarPreview').src = dataUrl;
+      $('modalAvatarPreview').style.display = 'block';
+    }
+    img.src = e.target.result;
+  }
+  reader.readAsDataURL(file);
+};
+
+window.loadBotFiles = async function() {
+  const status = $('modalFileStatus'), list = $('modalFileList');
+  status.className = "hint"; status.textContent = "Carregando…"; list.innerHTML = "";
+  try {
+    const { id, wid } = getSelectedBotAndWorker();
+    const result = await sendWorkerCommand(wid, { operation: "list", botId: id, path: "" });
+    let items = (result.result && result.result.items) || [];
+    
+    // Ocultar bot_settings.json, main.py e configs.txt sem exibir aviso redundante
+    items = items.filter(item => item.name !== 'bot_settings.json' && item.name !== 'main.py' && item.name !== 'configs.txt');
+
+    list.innerHTML = items.length ? items.map(item => {
+      const icon = item.directory ? "📁" : "📄";
+      return `<div class="row"><div><strong>${icon} ${esc(item.name)}</strong><div class="hint">${item.directory?"pasta":bytes(item.size)}</div></div><button class="secondary" style="padding:4px 8px;font-size:11px" onclick="openBotFile('${esc(item.path)}', ${item.directory?1:0})">${item.directory?"Abrir":"Editar"}</button></div>`;
+    }).join("") : '<div class="muted">Nenhum arquivo customizado.</div>';
+    status.textContent = "";
+  } catch(e) {
+    status.className = "error"; status.textContent = e.message;
+  }
+};
+
+window.openBotFile = async function(path, isDir) {
+  if(isDir) return;
+  const status = $('modalFileStatus');
+  status.textContent = "Lendo " + path + "…";
+  try {
+    const { id, wid } = getSelectedBotAndWorker();
+    const data = await sendWorkerCommand(wid, { operation: "read", botId: id, path });
+    $('modalFilePath').value = path;
+    $('modalFileContent').value = data.result.content;
+    status.textContent = "Aberto: " + path;
+  } catch(e) {
+    status.className = "error"; status.textContent = e.message;
+  }
+};
+
+window.saveBotFile = async function() {
+  const status = $('modalFileStatus');
+  try {
+    const { id, wid } = getSelectedBotAndWorker();
+    const path = $('modalFilePath').value.trim();
+    const content = $('modalFileContent').value;
+    if(!path) throw new Error("Informe o arquivo.");
+    if(['bot_settings.json', 'main.py', 'configs.txt'].includes(path)) throw new Error("Edição restrita para este arquivo.");
+    await sendWorkerCommand(wid, { operation: "write", botId: id, path, content });
+    status.className = "ok"; status.textContent = "Salvo com sucesso!";
+    loadBotFiles();
+  } catch(e) {
+    status.className = "error"; status.textContent = e.message;
+  }
+};
+
+window.deleteBotFile = async function() {
+  const path = $('modalFilePath').value.trim();
+  if(!path) return alert("Informe o arquivo.");
+  if(['bot_settings.json', 'main.py', 'configs.txt'].includes(path)) return alert("Exclusão restrita.");
+  if(!confirm("Excluir " + path + "?")) return;
+  try {
+    const { id, wid } = getSelectedBotAndWorker();
+    await sendWorkerCommand(wid, { operation: "delete", botId: id, path });
+    $('modalFilePath').value = ""; $('modalFileContent').value = "";
+    loadBotFiles();
+  } catch(e) {
+    alert(e.message);
+  }
+};
+
+window.restartSelectedBot = async function() {
+  try {
+    const { id, wid } = getSelectedBotAndWorker();
+    await sendWorkerCommand(wid, { operation: "restart", botId: id });
+    alert("Reinício solicitado!");
+  } catch(e) {
+    alert(e.message);
+  }
+};
+
+window.fetchBotLogs = async function() {
+  const status = $('modalLogsStatus'), pre = $('modalLogsText');
+  status.textContent = "Buscando…"; pre.textContent = "";
+  try {
+    const { id, wid } = getSelectedBotAndWorker();
+    const result = await sendWorkerCommand(wid, { operation: "logs", botId: id });
+    const data = result.result || {};
+    pre.textContent = data.logs || "Nenhum log.";
+    status.textContent = "Tamanho: " + bytes(data.size || 0);
+  } catch(e) {
+    status.className = "error"; status.textContent = e.message;
+  }
+};
+
+window.fetchCurrentBotAvatar = async function() {
+  const msg = $('modalProfileMsg');
+  msg.className = "hint";
+  msg.textContent = "Consultando o Discord pelo worker…";
+  try {
+    const { id, wid } = getSelectedBotAndWorker();
+    const result = await sendWorkerCommand(wid, { operation: "fetch_avatar", botId: id });
+    const avatarUrl = result.avatarUrl || '';
+    if(!avatarUrl) throw new Error("O Discord não retornou uma imagem para este bot.");
+    $('modalProfileAvatarBase64').value = '';
+    $('modalAvatarPreview').src = avatarUrl;
+    $('modalAvatarPreview').style.display = 'block';
+    msg.className = "ok";
+    msg.textContent = "Imagem atual obtida do Discord e salva no cadastro. Clique em Salvar Perfil para aplicar a seleção no painel.";
+    await refreshData();
+  } catch(e) {
+    msg.className = "error";
+    msg.textContent = e.message || String(e);
+  }
+};
+
+window.saveBotProfileOnlySite = async function() {
+  const msg = $('modalProfileMsg'); msg.className = "hint"; msg.textContent = "Enviando alterações ao Worker e ao Discord…";
+  try {
+    const { id, wid } = getSelectedBotAndWorker();
+    const name = $('modalProfileName').value.trim();
+    const description = $('modalProfileDesc').value.trim();
+    const avatarBase64 = $('modalProfileAvatarBase64').value;
+    const newToken = $('modalProfileToken').value.trim();
+    const mode = $('modalGuildAccessMode').value;
+    const rawIds = $('modalGuildAllowlist').value.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
+    const guildIds = [...new Set(rawIds)];
+    if(!name) throw new Error("Informe o nome do bot.");
+    if(!['required','optional'].includes(mode)) throw new Error("Modo de permissão inválido.");
+    if(guildIds.some(x=>!/^\d{15,22}$/.test(x))) throw new Error("Há um ID de servidor inválido. Use somente números.");
+    if(guildIds.length>100) throw new Error("Limite de 100 servidores autorizados por bot.");
+    msg.textContent = "Validando token e atualizando o perfil no Discord…";
+    const result = await sendWorkerCommand(wid, {
+      operation:"profile", botId:id, name, description,
+      avatarDataUrl:avatarBase64 || "",
+      avatarAutoUpdate:$('modalAvatarAutoUpdate').checked,
+      token:newToken,
+      guildAccessMode:mode,
+      guildIds
+    },90000);
+    $('modalProfileToken').value = '';
+    msg.className = "ok";
+    msg.textContent = result.message || "Perfil, token e permissões atualizados.";
+    await refreshData();
+  } catch(e) {
+    msg.className = "error"; msg.textContent = e.message || String(e);
+  }
+};
+
+async function rebalance(){
+  if(busy)return;busy=true;
+  try{
+    const now=Date.now();
+    const nodes=Object.entries(workerData).filter(([,w])=>eligible(w)).sort((a,b)=>capacity(b[1])-capacity(a[1]));
+    const counts={};nodes.forEach(([id])=>counts[id]=0);
+    const assignments={};const seenTokens=new Set();
+    const enabled=Object.entries(botData).filter(([,b])=>b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off');
+    for(const [bid,b] of enabled){
+      const secret=String(b.token||'').trim();
+      if(!secret||seenTokens.has(secret)){assignments[bid]=null;continue}
+      seenTokens.add(secret);
+      const previous=b.workerId||b.lastWorkerId||null;
+      let target=previous;
+      if(!target||!Object.prototype.hasOwnProperty.call(counts,target)||counts[target]>=capacity(workerData[target])){
+        target=nodes.find(([id,w])=>counts[id]<capacity(w))?.[0]||previous;
+      }else if(!eligible(workerData[target])){
+        target=nodes.find(([id,w])=>counts[id]<capacity(w))?.[0]||previous;
+      }
+      if(target&&Object.prototype.hasOwnProperty.call(counts,target))counts[target]++;
+      assignments[bid]=target;
+    }
+    let signature=JSON.stringify(assignments);if(signature===lastAssignment){busy=false;return}
+    lastAssignment=signature;
+    const updates={};
+    for(const [bid,b] of Object.entries(botData)){
+      const wid=b.enabled?assignments[bid]||null:null;
+      if((b.workerId||null)!==wid)updates['bots/'+bid+'/workerId']=wid;
+    }
+    if(Object.keys(updates).length)await update(ref(db),updates);
+    const allWorkerIds=new Set([...Object.keys(workerData),...Object.values(botData).map(b=>b.workerId).filter(Boolean)]);
+    for(const wid of allWorkerIds){
+      const assigned={};
+      for(const [bid,b] of Object.entries(botData)){
+        if(b.enabled&&assignments[bid]===wid)assigned[bid]={name:b.name,token:b.token,config:b.config||{},enabled:true,desiredState:'on',updatedAt:b.updatedAt||now};
+      }
+      await set(testRef('workerTasks/'+wid),assigned);
+    }
+  }catch(e){console.error('Rebalance:',e);}
+  finally{busy=false}
+}
+
+async function toggleBot(id,enabled){
+  try{
+    const bot=botData[id]||{};
+    const changes={enabled,desiredState:enabled?'on':'off',updatedAt:Date.now()};
+    if(!enabled){changes.lastWorkerId=bot.workerId||bot.lastWorkerId||null;changes.workerId=null;}
+    else{changes.workerId=bot.lastWorkerId||bot.workerId||null;}
+    await update(testRef('bots/'+id),changes);
+    lastAssignment='';
+    await refreshData();
+  }catch(e){alert('Erro: '+e.message)}
+}
+
+async function deleteBot(id){
+  const bot=botData[id];if(!bot)return;
+  if(!confirm('Excluir este bot?'))return;
+  try{
+    const workerId=bot.workerId||bot.lastWorkerId||null;
+    await set(testRef('botHubDeletions/'+id),{botId:id,workerId,requestedAt:Date.now(),processed:{}});
+    const updates={};
+    updates['bots/'+id]=null;
+    updates['botState/'+id]=null;
+    updates['botLeases/'+id]=null;
+    for(const wid of new Set([...Object.keys(workerData),...(workerId?[workerId]:[])])){
+      updates['workerTasks/'+wid+'/'+id]=null;
+    }
+    await update(ref(db),updates);
+    lastAssignment='';
+    await refreshData();
+  }catch(e){alert('Erro: '+e.message)}
+}
+
+async function refreshData(){
+  const [w,b]=await Promise.all([get(testRef('workers')),get(testRef('bots'))]);
+  workerData=w.val()||{};botData=b.val()||{};
+  drawWorkers();drawBots();await rebalance();drawWorkers();drawBots();
+}
+
+async function cleanupStaleWorkers(){
+  if(cleanupBusy||Date.now()-lastCleanup<60000)return;
+  cleanupBusy=true;lastCleanup=Date.now();
+  try{
+    for(const [id,w] of Object.entries(workerData)){
+      const seen=Number(w.lastSeen||w.createdAt)||0;
+      if(seen>0&&Date.now()-seen>STALE_MS){await remove(testRef('workers/'+id));delete workerData[id];}
+    }
+  }catch(e){}finally{cleanupBusy=false}
+}
+
+async function removeWorker(id){
+  const w=workerData[id];if(!w)return;
+  if(online(w)){alert('Dispositivo online.');return}
+  if(!confirm('Excluir registro?'))return;
+  try{await remove(testRef('workers/'+id));delete workerData[id];drawWorkers();}catch(e){alert(e.message)}
+}
+
+async function refreshAutomaticAvatarsOnLogin(){
+  const tasks=[];
+  for(const [botId,bot] of Object.entries(botData)){
+    if(bot.avatarAutoUpdate===false) continue;
+    const wid=bot.workerId||bot.lastWorkerId;
+    if(!wid || !online(workerData[wid])) continue;
+    tasks.push(sendWorkerCommand(wid,{operation:"fetch_avatar",botId}).catch(err=>{
+      console.warn('[BotHub] Não foi possível atualizar avatar no login:',botId,err.message||err);
+    }));
+  }
+  await Promise.allSettled(tasks);
+}
+
+async function sendWorkerCommand(wid,command,timeoutMs=50000){
+  const id=crypto.randomUUID().replaceAll("-","");
+  const label=String(command.operation||"ação")+" "+String(command.botId||"");
+  const logBox=$("actionLog");
+  const addLog=(status)=>{
+    const row=document.createElement("div");row.className="row";
+    row.innerHTML=`<span>${label} — ${status}</span><span class="muted">${new Date().toLocaleTimeString()}</span>`;
+    logBox.prepend(row);
+    while(logBox.children.length>20)logBox.lastElementChild.remove();
+  };
+  addLog("Enviando");
+  await set(testRef("workerCommands/"+wid+"/"+id),{...command,requestId:id,requestedAt:Date.now(),status:"waiting",panelLabel:label});
+  const startedAt=Date.now();
+  while(Date.now()-startedAt<timeoutMs){
+    await new Promise(resolve=>setTimeout(resolve,1200));
+    const snap=await get(testRef("workerResults/"+wid+"/"+id));
+    const result=snap.val();
+    if(result){
+      await remove(testRef("workerResults/"+wid+"/"+id)).catch(()=>{});
+      if(result.status!=="ok"){throw new Error(result.message||"Worker recusou.");}
+      addLog("Concluído");
+      return result;
+    }
+  }
+  throw new Error("Tempo esgotado para resposta do worker.");
+}
+
+$('publishMainUpdate').onclick=async()=>{
+  const msg=$('mainUpdateMsg');msg.className='hint';
+  const type=$('mainUpdateType').value,description=$('mainUpdateDescription').value.trim();
+  if(!description){msg.className='error';msg.textContent='Escreva uma descrição.';return}
+  if(!confirm('Publicar atualização do main.py?'))return;
+  msg.textContent='Publicando…';
+  try{
+    await set(testRef('botHubUpdates/current'),{updateId:'main-'+Date.now(),type,description,clusterOnly:false,requestedAt:Date.now()});
+    msg.className='ok';msg.textContent='Atualização publicada!';
+  }catch(e){msg.className='error';msg.textContent=e.message}
+};
+
+$('updateCluster').onclick=async()=>{
+  const msg=$('clusterUpdateMsg');
+  if(!confirm('Atualizar controlador em todos os workers?'))return;
+  msg.className='hint';msg.textContent='Solicitando atualização…';
+  try{
+    const updateId='manual-'+Date.now();
+    await set(testRef('botHubClusterUpdates/current'),{updateId,type:'mandatory',clusterOnly:true,files:['start.py','add_cluster_server.py','bothub_firebase_worker.py'],requestedAt:Date.now()});
+    msg.className='ok';msg.textContent='Solicitação enviada. Aguardando os servidores…';
+    $('clusterUpdateProgress').textContent='Solicitação publicada. Os servidores mostrarão cada etapa assim que receberem o comando.';
+  }catch(e){msg.className='error';msg.textContent=e.message}
+};
+
+$('loginBtn').onclick=async()=>{
+  const btn=$('loginBtn');btn.disabled=true;$('loginMsg').textContent='Conectando…';
+  try{
+    await signInWithEmailAndPassword(auth,$('email').value.trim(),$('password').value);
+  }catch(e){
+    $('loginMsg').textContent='Login falhou: '+e.message;
+    btn.disabled=false;
+  }
+};
+
+$('logout').onclick=()=>signOut(auth);
+
+$('createBot').onclick=async()=>{
+  const name=$('botName').value.trim(),token=$('botToken').value.trim();
+  if(!name||token.length<30){$('createMsg').textContent='Informe nome e token válido.';return}
+  try{
+    if(Object.values(botData).some(b=>String(b.token||'').trim()===token)){throw new Error('Token já cadastrado.');}
+    const id=crypto.randomUUID().replaceAll('-','');
+    await set(testRef('bots/'+id),{name,token,config:{},enabled:true,desiredState:'on',workerId:null,createdAt:Date.now(),updatedAt:Date.now()});
+    $('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado!';
+    lastAssignment='';await refreshData();
+  }catch(e){$('createMsg').textContent='Erro: '+e.message}
+};
+
+function start(){
+  workersRenderAfter=0;if(workersRenderTimer){clearTimeout(workersRenderTimer);workersRenderTimer=null;}
+  stopSubs();
+  $('login').classList.add('hidden');
+  $('dashboard').classList.remove('hidden');
+  $('connection').textContent='Conectando…';$('connection').className='badge';
+  watch('workers',v=>{workerData=v;cleanupStaleWorkers();drawWorkers();rebalance().then(drawBots)});
+  watch('botHubClusterUpdates/progress',v=>{clusterUpdateProgress=v||{};drawClusterProgress();drawWorkers()});
+  watch('bots',v=>{botData=v;drawBots();rebalance()});
+  $('connection').textContent='Conectado';$('connection').className='badge';
+  initRealtimeChart();
+  startTypewriterOnce();
+}
+
+onAuthStateChanged(auth,async user=>{
+  if(!user){
+    stopSubs();$('dashboard').classList.add('hidden');$('login').classList.remove('hidden');
+    $('connection').textContent='Desconectado';$('connection').className='badge off';
+    return;
+  }
+  try{
+    let s=await get(ref(db,'admins/'+user.uid));
+    if(s.val()!==true){
+      const legacy=await get(ref(db,'teste2/admins/'+user.uid));
+      if(legacy.val()===true){s=legacy;}
+      else{$('loginMsg').textContent='UID não autorizado.';await signOut(auth);return;}
+    }
+    start();
+    refreshData().then(()=>refreshAutomaticAvatarsOnLogin()).catch(e=>console.warn('[BotHub] Falha ao atualizar avatares no login:',e));
+  }catch(e){
+    $('loginMsg').textContent='Erro: '+e.message;
+    await signOut(auth);
+  }
+});
+
+setInterval(()=>{if(auth.currentUser){cleanupStaleWorkers().then(()=>drawWorkers())}},60000);
+</script>
+</body>
+</html>
