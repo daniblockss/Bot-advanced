@@ -1,7 +1,7 @@
 name: Validate TESTE 2 BotHub cluster
 on:
   push:
-    branches: [main, teste-2]
+    branches: [teste-2]
     paths:
       - 'teste 2/**'
       - '.github/workflows/**'
@@ -19,4 +19,4 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile isolated TESTE 2 Python files
-        run: python -m py_compile "teste 2/main.py" "teste 2/bot_admin.py" "teste 2/standard_main.py" "teste 2/bothub_firebase_worker.py" "teste 2/add_cluster_server.py" "teste 2/start.py"
+        run: python -m py_compile "teste 2/main.py" "teste 2/bothub_firebase_worker.py" "teste 2/add_cluster_server.py"

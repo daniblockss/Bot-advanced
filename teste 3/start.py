@@ -16,8 +16,11 @@ import time
 import urllib.request
 from pathlib import Path
 
+_SUPERVISOR_LOCK_HANDLE = None
+SUPERVISOR_LOCK_FILE = Path(__file__).resolve().parent / ".bothub_supervisor.lock"
+
 BASE_URL = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
-SUPERVISOR_VERSION = "2026.11.12.5"
+SUPERVISOR_VERSION = "2026.11.13.6"
 ROOT = Path(__file__).resolve().parent
 LOG_FILE = ROOT / "start.log"
 INSTALLER = ROOT / "add_cluster_server.py"
@@ -26,6 +29,8 @@ VENV = ROOT / "venv"
 WORKER_PYTHON = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 SUPERVISOR_POLL_INTERVAL = max(2, int(os.getenv("BOTHUB_SUPERVISOR_POLL_SECONDS", "3")))
 RESTART_DELAY = 5
+MAX_RESTART_DELAY = 300
+WORKER_STABLE_SECONDS = 60
 STOP_TIMEOUT = 20
 
 COMPONENTS = (
@@ -44,6 +49,33 @@ COMPONENTS = (
         "markers": (b"workerTasks/", b"accounts:signUp", b"def main("),
     },
 )
+
+def acquire_supervisor_lock() -> bool:
+    """Garante um único supervisor por pasta, inclusive no Termux."""
+    global _SUPERVISOR_LOCK_HANDLE
+    handle = SUPERVISOR_LOCK_FILE.open("a+", encoding="utf-8")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(" ")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, ImportError):
+        handle.close()
+        return False
+    handle.seek(0)
+    handle.truncate()
+    handle.write(str(os.getpid()))
+    handle.flush()
+    _SUPERVISOR_LOCK_HANDLE = handle
+    return True
+
 
 def setup_logger():
     ROOT.mkdir(parents=True, exist_ok=True)
@@ -68,6 +100,7 @@ def setup_logger():
     return logger
 
 log = setup_logger()
+_CPU_WAKELOCK_ACTIVE = False
 
 
 def termux_command(name: str) -> str | None:
@@ -80,9 +113,16 @@ def termux_command(name: str) -> str | None:
     return str(candidate) if candidate and candidate.is_file() else None
 
 def manage_cpu_wakelock(enable: bool) -> None:
-    """Mantém a CPU acordada enquanto start.py supervisiona o worker no Termux."""
+    """Altera o wakelock somente quando o estado solicitado difere do estado conhecido."""
+    global _CPU_WAKELOCK_ACTIVE
     if not (os.environ.get("PREFIX", "").startswith("/data/data/com.termux")
             or "ANDROID_ROOT" in os.environ):
+        return
+    if enable and _CPU_WAKELOCK_ACTIVE:
+        log.debug("Wakelock já está ativo; nenhuma nova chamada será feita.")
+        return
+    if not enable and not _CPU_WAKELOCK_ACTIVE:
+        log.debug("Wakelock já está liberado; nenhuma nova chamada será feita.")
         return
     command = termux_command("termux-wake-lock" if enable else "termux-wake-unlock")
     if not command:
@@ -92,6 +132,7 @@ def manage_cpu_wakelock(enable: bool) -> None:
         result = subprocess.run([command], stdout=subprocess.DEVNULL,
                                 stderr=subprocess.PIPE, text=True, timeout=10)
         if result.returncode == 0:
+            _CPU_WAKELOCK_ACTIVE = bool(enable)
             log.info("Bloqueio de suspensão da CPU %s.",
                      "ativado" if enable else "liberado")
         else:
@@ -137,21 +178,33 @@ def install_component(item: dict, data: bytes) -> None:
         pass
 
 def prepare_initial_files() -> None:
-    """Valida os arquivos locais; baixa do GitHub somente no primeiro bootstrap."""
+    """Confere os componentes no GitHub ao iniciar e atualiza cópias locais antigas."""
     for item in COMPONENTS:
+        local_data = None
         try:
-            validate(item["path"].read_bytes(), item)
-            log.info("%s local validado. Atualizações serão aplicadas somente por solicitação no painel.",
-                     item["name"])
-            continue
+            local_data = item["path"].read_bytes()
+            validate(local_data, item)
         except Exception as local_error:
-            log.warning("%s ausente ou inválido (%s); tentando bootstrap pelo GitHub.",
+            log.warning("%s ausente ou inválido (%s); será baixado do GitHub.",
                         item["name"], local_error)
 
-        data = fetch_component(item)
-        install_component(item, data)
-        log.info("%s baixado no bootstrap (%d bytes; SHA-256 %s).",
-                 item["name"], len(data), hashlib.sha256(data).hexdigest())
+        try:
+            remote_data = fetch_component(item)
+        except Exception as remote_error:
+            if local_data is not None:
+                log.warning("GitHub indisponível para %s; mantendo a cópia local válida: %s",
+                            item["name"], str(remote_error)[:180])
+                continue
+            raise
+
+        if local_data is not None and hashlib.sha256(local_data).digest() == hashlib.sha256(remote_data).digest():
+            log.info("%s já está na versão mais recente (SHA-256 %s).",
+                     item["name"], hashlib.sha256(remote_data).hexdigest())
+            continue
+
+        install_component(item, remote_data)
+        log.info("%s atualizado no início (%d bytes; SHA-256 %s).",
+                 item["name"], len(remote_data), hashlib.sha256(remote_data).hexdigest())
 
 def stop_worker(process: subprocess.Popen | None) -> None:
     if process is None or process.poll() is not None:
@@ -210,22 +263,40 @@ def main() -> int:
         log.critical("É necessário Python 3.10 ou superior.")
         return 2
 
+    if not acquire_supervisor_lock():
+        log.warning("Já existe um start.py ativo nesta pasta. Esta instância duplicada será encerrada sem tocar no Worker.")
+        return 0
+
+    log.info("Lock exclusivo do supervisor adquirido (PID %s).", os.getpid())
     worker_process = None
     try:
         manage_cpu_wakelock(True)
         prepare_initial_files()
         setup_environment()
         worker_process = start_worker()
+        worker_started_at = time.monotonic()
+        restart_delay = RESTART_DELAY
         log.info("Worker iniciado. start.py supervisiona a execução e reinicia o worker após atualizações solicitadas no painel.")
 
         while True:
             # Este monitor só recupera uma queda do processo. Não consulta o GitHub.
             time.sleep(SUPERVISOR_POLL_INTERVAL)
             if worker_process.poll() is not None:
-                log.warning("Worker encerrou com código %s. Supervisor reiniciando em %ss.",
-                            worker_process.returncode, RESTART_DELAY)
-                time.sleep(RESTART_DELAY)
+                exit_code = worker_process.returncode
+                runtime = time.monotonic() - worker_started_at
+                if exit_code == 73:
+                    log.info("Outra instância já possui o lock desta instalação. Encerrando este supervisor duplicado sem reiniciar o Worker.")
+                    break
+                if runtime >= WORKER_STABLE_SECONDS:
+                    restart_delay = RESTART_DELAY
+                log.warning(
+                    "Worker encerrou com código %s após %.1fs. Nova tentativa em %ss.",
+                    exit_code, runtime, restart_delay
+                )
+                time.sleep(restart_delay)
                 worker_process = start_worker()
+                worker_started_at = time.monotonic()
+                restart_delay = min(MAX_RESTART_DELAY, restart_delay * 2)
     except KeyboardInterrupt:
         log.info("Encerramento solicitado; finalizando apenas o worker.")
     except Exception:

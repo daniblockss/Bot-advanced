@@ -5,7 +5,7 @@ from __future__ import annotations
 import os, platform, shutil, subprocess, sys, urllib.request, shlex, time, json, zipfile, io
 from pathlib import Path
 
-INSTALLER_VERSION = "2026.11.13.13"
+INSTALLER_VERSION = "2026.11.12.11"
 GITHUB_RAW = "https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202"
 INSTALLER_URL = GITHUB_RAW + "/add_cluster_server.py"
 WORKER_URL = GITHUB_RAW + "/bothub_firebase_worker.py"
@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 WORKER = ROOT / "bothub_firebase_worker.py"
 VENV = ROOT / "venv"
 PYTHON = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-TERMUX = ("com.termux" in (str(Path.home()) + " " + os.environ.get("PREFIX", "")).lower() or bool(os.environ.get("TERMUX_VERSION")) or "ANDROID_ROOT" in os.environ or "ANDROID_DATA" in os.environ)
+TERMUX = "com.termux" in str(Path.home()).lower() or "ANDROID_ROOT" in os.environ
 
 def run(args):
     print("\n[BotHub Installer] $", " ".join(map(str, args)), flush=True)

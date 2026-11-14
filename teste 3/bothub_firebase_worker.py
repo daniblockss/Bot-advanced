@@ -1,66 +1,95 @@
 #!/usr/bin/env python3
 # BotHub Firebase worker: auto-registers this device using Firebase Anonymous Auth.
-import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,signal,atexit,base64,hashlib,sqlite3,threading
+import os,sys,json,time,socket,platform,shutil,subprocess,urllib.parse,uuid,signal,atexit,base64,hashlib,sqlite3
 from pathlib import Path
-import re
 import requests
 
-WORKER_VERSION="2026.11.12.17"
 ROOT=Path(__file__).resolve().parent
 ROOT.mkdir(parents=True,exist_ok=True)
 CFGFILE=ROOT/"worker.json"
 TOKFILE=ROOT/"firebase-token.json"
 API_KEY="AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE"
 DB="https://bothub-bca02-default-rtdb.firebaseio.com"
-PROCS={};LOGS={};LOG_OFFSETS={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
-AVATAR_SYNC_CACHE={}
-LOG_THROTTLE={}
-
-def log_throttled(key, interval, *parts):
-    now=time.monotonic()
-    if now-LOG_THROTTLE.get(str(key),0)>=interval:
-        LOG_THROTTLE[str(key)]=now
-        print(*parts,flush=True)
-
+PROCS={};LOGS={};CLEAN_EXITED={};S=requests.Session();WORKER_STARTED=time.time();CURRENT_CFG=None
 LAST_TOKEN=None;LAST_DID=None;LAST_QUEUE={};SHUTDOWN_IN_PROGRESS=False
-HEARTBEAT_STOP=threading.Event();HEARTBEAT_THREAD=None
+LAST_SAVED_RUNTIME=None;RUNTIME_STATE_LOADED=False
 
-TERMUX_CONSOLE = "com.termux" in str(Path.home()).lower() or "ANDROID_ROOT" in os.environ
+WORKER_VERSION="2026.11.13.9"
 
-class TimestampedConsole:
-    def __init__(self, stream):
-        self.stream = stream
-        self.pending = ""
+def runtime_environment():
+    """Identifica Android/Termux por caminhos antigos e atuais do Android."""
+    prefix=str(os.environ.get("PREFIX",""))
+    home=str(Path.home())
+    combined=(prefix+" "+home+" "+str(os.environ.get("TERMUX_VERSION",""))).lower()
+    is_termux=("com.termux" in combined or bool(os.environ.get("TERMUX_VERSION")))
+    android=(is_termux or "ANDROID_ROOT" in os.environ or "ANDROID_DATA" in os.environ
+             or "/data/data/" in prefix.lower() or "/data/user/0/" in prefix.lower()
+             or "/data/user/0/" in home.lower())
+    if is_termux:
+        runtime="Termux"
+    elif android:
+        runtime="Android"
+    elif os.name=="nt":
+        runtime="Windows"
+    elif sys.platform=="darwin":
+        runtime="macOS"
+    elif sys.platform.startswith("linux"):
+        runtime="Linux"
+    else:
+        runtime=platform.system() or "Desconhecido"
+    command=shutil.which("termux-battery-status")
+    if not command and prefix:
+        candidate=Path(prefix)/"bin"/"termux-battery-status"
+        if candidate.is_file():command=str(candidate)
+    return runtime,command
 
-    def write(self, value):
-        if not isinstance(value, str):
-            value = str(value)
-        self.pending += value
-        while "\n" in self.pending:
-            line, self.pending = self.pending.split("\n", 1)
-            if line:
-                self.stream.write("[" + time.strftime("%H:%M:%S") + "] " + line + "\n")
-            else:
-                self.stream.write("\n")
-        return len(value)
-
-    def flush(self):
-        if self.pending:
-            self.stream.write("[" + time.strftime("%H:%M:%S") + "] " + self.pending)
-            self.pending = ""
-        self.stream.flush()
-
-    def isatty(self):
-        return self.stream.isatty() if hasattr(self.stream, "isatty") else False
-
-    def fileno(self):
-        return self.stream.fileno()
-
-def enable_termux_console_timestamps():
-    if TERMUX_CONSOLE and not isinstance(sys.stdout, TimestampedConsole):
-        sys.stdout = TimestampedConsole(sys.stdout)
-        sys.stderr = TimestampedConsole(sys.stderr)
-
+def battery_stats(command):
+    """Lê a bateria pelo Termux:API; em outros sistemas informa ausência real."""
+    result={"batteryPresent":False,"batteryPercent":None,"batteryStatus":"unknown",
+            "batteryPlugged":False,"batteryPluggedType":None,"batteryTemperatureC":None,
+            "batteryHealth":None,"batteryVoltageMv":None,"batteryCurrentUa":None}
+    if not command:
+        try:
+            import psutil
+            battery=psutil.sensors_battery()
+            if battery is not None and battery.percent is not None:
+                plugged=bool(battery.power_plugged)
+                result.update(batteryPresent=True,batteryPercent=round(float(battery.percent),1),
+                              batteryStatus=("charging" if plugged else "discharging"),
+                              batteryPlugged=plugged,
+                              batteryPluggedType=("PLUGGED_AC" if plugged else "UNPLUGGED"))
+            return result
+        except Exception:return result
+    try:
+        proc=subprocess.run([command],capture_output=True,text=True,timeout=3,
+                            stdin=subprocess.DEVNULL)
+        if proc.returncode!=0:return result
+        raw=json.loads(proc.stdout or "{}")
+        if not isinstance(raw,dict) or "percentage" not in raw:return result
+        pct=float(raw.get("percentage"))
+        if not 0<=pct<=100:return result
+        status=str(raw.get("status") or "unknown").strip().lower().replace(" ","_")
+        status_map={"charging":"charging","discharging":"discharging","full":"full",
+                    "not_charging":"not_charging","unknown":"unknown"}
+        plugged_raw=raw.get("plugged")
+        plugged_type=(str(plugged_raw).strip().upper() if plugged_raw is not None and not isinstance(plugged_raw,bool) else None)
+        plugged=(plugged_type not in (None,"UNPLUGGED","NONE","UNKNOWN"))
+        if isinstance(plugged_raw,bool):plugged=plugged_raw
+        elif isinstance(plugged_raw,str) and plugged_raw.upper() in ("TRUE","FALSE"):
+            plugged=plugged_raw.upper()=="TRUE";plugged_type=None
+        result.update(batteryPresent=True,batteryPercent=round(pct,1),
+                      batteryStatus=status_map.get(status,"unknown"),
+                      batteryPlugged=plugged,batteryPluggedType=plugged_type,
+                      batteryHealth=str(raw.get("health") or "") or None)
+        for source,target,divisor in (("temperature","batteryTemperatureC",1),
+                                      ("voltage","batteryVoltageMv",1),
+                                      ("current","batteryCurrentUa",1)):
+            value=raw.get(source)
+            if isinstance(value,(int,float)) and not isinstance(value,bool):
+                result[target]=value/divisor
+        return result
+    except (OSError,subprocess.SubprocessError,ValueError,TypeError,json.JSONDecodeError):
+        return result
 
 def save_json(path,data):
     tmp=path.with_suffix(path.suffix+".tmp")
@@ -73,7 +102,16 @@ def setup():
     if CFGFILE.exists():
         try:
             cfg=json.loads(CFGFILE.read_text(encoding="utf-8"))
-            if cfg.get("device_id"):return cfg
+            if cfg.get("device_id"):
+                original=str(cfg["device_id"])
+                safe_id="".join(c for c in original if c.isalnum() or c in "-_")[:80]
+                if not safe_id:
+                    safe_id="device-"+uuid.uuid4().hex[:16]
+                if safe_id != original:
+                    print("[BotHub] ID antigo do worker continha caracteres inválidos para o Firebase; ID normalizado.",flush=True)
+                    cfg["device_id"]=safe_id
+                    save_json(CFGFILE,cfg)
+                return cfg
         except Exception:pass
     # A local random ID is generated automatically; no ID/email/password prompt.
     cfg={"device_id":"device-"+uuid.uuid4().hex[:16],"createdAt":int(time.time()*1000)}
@@ -135,60 +173,26 @@ def fb(method,path,tok,data=None,_retried=False):
             except Exception as e:
                 raise RuntimeError("Firebase recusou a sessão (401) e a renovação falhou: "+str(e)[:180])
         raise RuntimeError("Firebase HTTP 401: "+detail+" | Confira Authentication > Anonymous e as regras de leitura/gravação do Realtime Database para usuários autenticados.")
-    if r.status_code>=300:raise RuntimeError("Firebase "+str(r.status_code)+": "+r.text[:220])
+    if r.status_code>=300:
+        raise RuntimeError("Firebase "+str(r.status_code)+" em "+method+" "+path+": "+r.text[:220])
     return r.json() if r.text else None
-
-TERMUX_DIAGNOSTICS_CACHE={"at":0,"data":{}}
-
-def termux_diagnostics():
-    """Detecta apenas a disponibilidade do Termux:API."""
-    if not TERMUX_CONSOLE:
-        return {"runtimeType":"Linux","termuxApiInstalled":None}
-    now=time.monotonic()
-    if now-TERMUX_DIAGNOSTICS_CACHE["at"]<60:
-        return dict(TERMUX_DIAGNOSTICS_CACHE["data"])
-    api_cmd=shutil.which("termux-battery-status")
-    if not api_cmd:
-        prefix=os.environ.get("PREFIX","")
-        candidate=Path(prefix)/"bin"/"termux-battery-status" if prefix else None
-        if candidate and candidate.is_file():
-            api_cmd=str(candidate)
-    api_installed=False
-    if api_cmd:
-        try:
-            probe=subprocess.run([api_cmd],capture_output=True,text=True,timeout=5,
-                                 env=os.environ.copy())
-            payload=json.loads(probe.stdout) if probe.returncode==0 else None
-            api_installed=(isinstance(payload,dict) and
-                           payload.get("percentage") is not None and
-                           0 <= float(payload["percentage"]) <= 100)
-        except (OSError,ValueError,TypeError,subprocess.TimeoutExpired):
-            api_installed=False
-    data={"runtimeType":"Termux","termuxApiInstalled":api_installed}
-    TERMUX_DIAGNOSTICS_CACHE.update({"at":now,"data":data})
-    return dict(data)
 
 def stats(cfg):
     d=shutil.disk_usage(str(ROOT))
     running=[k for k,p in PROCS.items() if p.poll() is None]
-    ready=[]
-    for bot_id in running:
-        try:
-            log_path=ROOT/"bots"/sid(bot_id)/"bot.log"
-            with log_path.open("rb") as handle:
-                handle.seek(int(LOG_OFFSETS.get(bot_id,0)))
-                recent=handle.read(512*1024).decode("utf-8",errors="replace")
-            if "Conectado como" in recent: ready.append(bot_id)
-        except Exception: pass
+    ready=[k for k in running if (ROOT/"bots"/sid(k)/".bothub_discord_ready").is_file()]
+    runtime, battery_command=runtime_environment()
     x={"deviceId":cfg["device_id"],"uid":cfg.get("uid",""),"hostname":socket.gethostname(),
-       "label":socket.gethostname(),"platform":platform.platform(),"diskFreeBytes":d.free,
-       "diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"workerVersion":WORKER_VERSION,
-       "runningBots":len(running),"runningBotIds":running,"readyBotIds":ready,
-       "lastSeen":int(time.time()*1000),"online":True,"status":"online",
+       "label":socket.gethostname(),"platform":platform.platform(),"runtimeType":runtime,
+       "termuxApiInstalled":bool(battery_command) if runtime=="Termux" else None,
+       "workerVersion":WORKER_VERSION,"architecture":platform.machine(),
+       "pythonVersion":platform.python_version(),"diskFreeBytes":d.free,
+       "diskTotalBytes":d.total,"cpuCount":os.cpu_count() or 1,"runningBots":len(running),
+       "runningBotIds":running,"readyBotIds":ready,"lastSeen":int(time.time()*1000),
        "uptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerUptimeSeconds":int(time.time()-WORKER_STARTED),
        "workerStartedAt":int(WORKER_STARTED*1000)}
-    x.update(termux_diagnostics())
+    x.update(battery_stats(battery_command))
     try:x["uptimeSeconds"]=int(float(Path("/proc/uptime").read_text().split()[0]))
     except Exception:pass
     try:x["publicIp"]=S.get("https://api.ipify.org?format=json",timeout=4).json().get("ip","")
@@ -209,111 +213,151 @@ def stats(cfg):
             available=mem.get("MemAvailable",mem.get("MemFree",0)+mem.get("Buffers",0)+mem.get("Cached",0))
             x.update(ramFreeBytes=available,ramTotalBytes=total,cpuPercent=0,cpuCount=os.cpu_count() or 1)
         except Exception:x.update(ramFreeBytes=0,ramTotalBytes=0,cpuPercent=0,cpuCount=os.cpu_count() or 1)
-    # Termux:API tem prioridade nos workers Android/Termux.
-    termux_battery = None
-    termux_cmd = shutil.which("termux-battery-status")
-    # Em algumas instalações do Termux, o PATH do processo pode estar incompleto.
-    if not termux_cmd:
-        prefix = os.environ.get("PREFIX", "")
-        candidate = Path(prefix) / "bin" / "termux-battery-status" if prefix else None
-        if candidate and candidate.is_file():
-            termux_cmd = str(candidate)
-    if termux_cmd:
-        try:
-            result = subprocess.run(
-                [termux_cmd], capture_output=True, text=True, timeout=10,
-                env=os.environ.copy()
-            )
-            if result.returncode == 0:
-                parsed = json.loads(result.stdout)
-                percentage = parsed.get("percentage") if isinstance(parsed, dict) else None
-                if percentage is not None:
-                    percentage = float(percentage)
-                    if 0 <= percentage <= 100:
-                        termux_battery = parsed
-                    else:
-                        print("[BotHub] Termux:API retornou percentual de bateria inválido.", flush=True)
-            else:
-                detail = (result.stderr or result.stdout or "").strip()
-                print("[BotHub] Termux:API retornou código", result.returncode, detail[:120], flush=True)
-        except subprocess.TimeoutExpired:
-            print("[BotHub] Termux:API demorou demais para responder; usando fallback.", flush=True)
-        except Exception as exc:
-            print("[BotHub] Termux:API bateria indisponível:", str(exc)[:120], flush=True)
-    if termux_battery is not None:
-        raw_status = str(termux_battery.get("status") or "UNKNOWN").upper()
-        status_map = {"CHARGING":"charging","DISCHARGING":"discharging","FULL":"full",
-                      "NOT_CHARGING":"not_charging","UNKNOWN":"unknown"}
-        raw_plugged = str(termux_battery.get("plugged") or "UNPLUGGED").upper()
-        x.update(
-            batteryPresent=True,
-            batteryPercent=max(0,min(100,int(float(termux_battery.get("percentage") or 0)))),
-            batteryPlugged=raw_plugged != "UNPLUGGED",
-            batteryStatus=status_map.get(raw_status,"unknown"),
-            batterySource="termux",
-            batteryPluggedType=raw_plugged,
-            batteryTemperatureC=termux_battery.get("temperature"),
-            batteryHealth=termux_battery.get("health"),
-            batteryVoltageMv=termux_battery.get("voltage"),
-            batteryCurrentUa=termux_battery.get("current")
-        )
-    else:
-        # Fallback para psutil e Linux power_supply (servidores sem Termux).
-        battery = None
-        try:
-            import psutil
-            battery = psutil.sensors_battery()
-        except Exception:
-            battery = None
-        if battery is not None:
-            x.update(batteryPresent=True,
-                     batteryPercent=max(0,min(100,int(round(battery.percent)))),
-                     batteryPlugged=battery.power_plugged,
-                     batteryStatus=("charging" if battery.power_plugged else "discharging"),
-                     batterySource="psutil")
-        else:
-            try:
-                for supply in Path("/sys/class/power_supply").iterdir():
-                    kind=(supply/"type").read_text(encoding="utf-8").strip().lower()
-                    if kind != "battery":
-                        continue
-                    raw=(supply/"capacity").read_text(encoding="utf-8").strip()
-                    percent=max(0,min(100,int(float(raw))))
-                    try: status=(supply/"status").read_text(encoding="utf-8").strip().lower()
-                    except Exception: status="unknown"
-                    x.update(batteryPresent=True,batteryPercent=percent,
-                             batteryPlugged=status in ("charging","full"),
-                             batteryStatus=status,batterySource="sysfs")
-                    break
-                else:
-                    x.update(batteryPresent=False,batteryPercent=None,
-                             batteryPlugged=None,batteryStatus="unavailable",batterySource="none")
-            except Exception:
-                x.update(batteryPresent=False,batteryPercent=None,
-                         batteryPlugged=None,batteryStatus="unavailable",batterySource="none")
     return x
+
+def sync_runtime_type(did,t,cfg):
+    """Mantém o ambiente estável no Firebase e só grava quando a detecção mudar."""
+    global LAST_SAVED_RUNTIME,RUNTIME_STATE_LOADED
+    detected,_=runtime_environment()
+    if not RUNTIME_STATE_LOADED:
+        try:
+            saved=fb("GET","workers/"+did+"/runtimeType",t)
+        except Exception:
+            saved=None
+        LAST_SAVED_RUNTIME=saved if isinstance(saved,str) and saved.strip() else None
+        RUNTIME_STATE_LOADED=True
+    if detected != LAST_SAVED_RUNTIME:
+        fb("PATCH","workers/"+did,t,{
+            "runtimeType":detected,
+            "runtimeDetectedAt":int(time.time()*1000),
+            "runtimeSource":"worker"
+        })
+        LAST_SAVED_RUNTIME=detected
+        print("[BotHub] Ambiente do Worker registrado/atualizado:",detected,flush=True)
+    return detected
 
 def sid(v):
     return "".join(c for c in str(v) if c.isalnum() or c in "-_")[:80] or "bot"
 
+def clean_exit_state(k, requested_at=None):
+    """Aplica uma pausa temporária após saída limpa; nunca deixa o bot parado para sempre."""
+    path=ROOT/"bots"/sid(k)/".bothub_clean_exit.json"
+    try:
+        data=json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        saved=float(data.get("startRequestedAt") or 0)
+        current=float(requested_at or 0)
+        if requested_at is not None and current > saved:
+            path.unlink(missing_ok=True)
+            return None
+        retry_after=float(data.get("retryAfter") or 0)
+        if retry_after > time.time():
+            return saved
+        path.unlink(missing_ok=True)
+    except Exception:
+        pass
+    return None
+
+def mark_clean_exit(k, requested_at, code=0):
+    folder=ROOT/"bots"/sid(k)
+    folder.mkdir(parents=True,exist_ok=True)
+    path=folder/".bothub_clean_exit.json"
+    try:
+        previous=json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except Exception:
+        previous={}
+    same_request=float(previous.get("startRequestedAt") or 0)==float(requested_at or 0)
+    attempts=int(previous.get("attempts") or 0)+1 if same_request else 1
+    delay=min(300,30*(2**min(attempts-1,4)))
+    retry_after=time.time()+delay
+    save_json(path,{
+        "startRequestedAt":float(requested_at or 0),
+        "exitCode":int(code),
+        "exitedAt":int(time.time()*1000),
+        "attempts":attempts,
+        "retryAfter":retry_after,
+        "retryDelaySeconds":delay
+    })
+    CLEAN_EXITED[k]=float(requested_at or 0)
+    print("[BotHub] bot encerrou com código 0; nova tentativa em",delay,"segundos (tentativa",attempts,"):",k,flush=True)
+
 def stop(k):
     p=PROCS.pop(k,None);l=LOGS.pop(k,None)
+    try:(ROOT/"bots"/sid(k)/".bothub_discord_ready").unlink(missing_ok=True)
+    except OSError:pass
     if p and p.poll() is None:
         try:
-            p.terminate()
-            p.wait(timeout=8)
+            if os.name != "nt" and p.pid:
+                os.killpg(p.pid, signal.SIGTERM)
+            else:
+                p.terminate()
+            p.wait(timeout=5)
         except Exception:
             try:
-                p.kill()
-                p.wait(timeout=3)
+                if os.name != "nt" and p.pid:
+                    os.killpg(p.pid, getattr(signal,"SIGKILL",signal.SIGTERM))
+                else:
+                    p.kill()
             except Exception:
-                pass
+                try:p.kill()
+                except Exception:pass
+            try:p.wait(timeout=2)
+            except Exception:pass
     if l:
+        try:l.close()
+        except Exception:pass
+
+def stop_bot_processes(bot_id):
+    """Encerra o script exato deste bot (IA, Standard ou Admin), mesmo se estiver órfão."""
+    folder = (ROOT / "bots" / sid(bot_id)).resolve()
+    targets = {(folder / name).resolve() for name in ("bot-ia.py", "bot-standard.py", "bot-adm.py", "main.py", "standard_main.py", "bot_admin.py")}
+    current_pid = os.getpid()
+    found = []
+    if os.name != "nt" and Path("/proc").is_dir():
+        for entry in Path("/proc").iterdir():
+            if not entry.name.isdigit() or int(entry.name) == current_pid:
+                continue
+            try:
+                raw = (entry / "cmdline").read_bytes()
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\0") if part]
+                if any(arg.endswith(".py") and Path(arg).resolve() in targets for arg in args[1:]):
+                    found.append(int(entry.name))
+            except (OSError, ValueError, RuntimeError):
+                continue
+    else:
         try:
-            l.flush()
-            l.close()
-        except Exception:
+            import psutil
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                pid = proc.info.get("pid")
+                if not pid or pid == current_pid:
+                    continue
+                for arg in (proc.info.get("cmdline") or [])[1:]:
+                    try:
+                        if arg.endswith(".py") and Path(arg).resolve() in targets:
+                            found.append(pid)
+                            break
+                    except (OSError, ValueError, RuntimeError):
+                        continue
+        except Exception as e:
+            print("[BotHub] Não foi possível localizar o processo do bot", bot_id, str(e)[:140], flush=True)
+    for pid in sorted(set(found)):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
             pass
+    deadline = time.time() + 4
+    remaining = set(found)
+    while remaining and time.time() < deadline:
+        remaining = {pid for pid in remaining if Path("/proc").exists() and Path("/proc", str(pid)).exists()}
+        if remaining:
+            time.sleep(0.2)
+    for pid in remaining:
+        try:
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+        except OSError:
+            pass
+    if found:
+        print("[BotHub] processo do bot", bot_id, "encerrado; PID(s):", ", ".join(map(str, sorted(set(found)))), flush=True)
+    return bool(found)
 
 def child_parent_death_signal():
     """Linux: encerra o bot se o controlador morrer abruptamente."""
@@ -344,12 +388,12 @@ def kill_bot_processes_under_root():
                 continue
             try:
                 raw = (entry / "cmdline").read_bytes()
-                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
+                args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\0") if part]
                 for arg in args[1:]:
                     if not arg.endswith(".py"):
                         continue
                     script = Path(arg).resolve()
-                    if script.name == "main.py" and bots_root in script.parents:
+                    if script.name in {"bot-ia.py","bot-standard.py","bot-adm.py","main.py","standard_main.py","bot_admin.py"} and bots_root in script.parents:
                         candidates.append(pid)
                         break
             except (OSError, ValueError, RuntimeError):
@@ -364,7 +408,7 @@ def kill_bot_processes_under_root():
                 for arg in (proc.info.get("cmdline") or [])[1:]:
                     try:
                         script = Path(arg).resolve()
-                        if script.name == "main.py" and bots_root in script.parents:
+                        if script.name in {"bot-ia.py","bot-standard.py","bot-adm.py","main.py","standard_main.py","bot_admin.py"} and bots_root in script.parents:
                             candidates.append(pid)
                             break
                     except (OSError, ValueError, RuntimeError):
@@ -399,34 +443,22 @@ def kill_bot_processes_under_root():
         print("[BotHub] Processos main.py encerrados:", ", ".join(map(str, sorted(set(candidates)))), flush=True)
 
 def cleanup_children():
-    # Encerra os bots, sincroniza o estado e só então remove a pasta local.
-    # Se a sincronização falhar, preserva a pasta para não perder dados.
+    # Encerra primeiro os processos para que o snapshot SQLite final seja consistente.
     for key in list(PROCS):
         stop(key)
-        synced = False
         try:
             sync_bot_state(key, 'push', CURRENT_FIREBASE_TOKEN, CURRENT_DEVICE_ID)
-            synced = True
-        except Exception as exc:
-            print('[BotHub] sincronização final falhou; pasta preservada:', key, str(exc)[:140], flush=True)
+        except Exception:
+            pass
         try:
             release_bot_lease(key, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN)
         except Exception:
             pass
-        if synced:
-            try:
-                folder = (ROOT / 'bots' / sid(key)).resolve()
-                bots_root = (ROOT / 'bots').resolve()
-                if folder.parent == bots_root and folder.exists():
-                    shutil.rmtree(folder)
-                    print('[BotHub] pasta local removida após sincronização final:', key, flush=True)
-            except Exception as exc:
-                print('[BotHub] não foi possível remover pasta local:', key, str(exc)[:120], flush=True)
-    # Encerra processos órfãos que sobreviveram a uma execução anterior.
+    # Depois encontra e encerra processos órfãos que sobreviveram a uma execução anterior.
     kill_bot_processes_under_root()
 
 def publish_shutdown_status(reason="Servidor desligado"):
-    """Publica o desligamento no Firebase e avisa por DM os donos dos bots."""
+    """Publica o desligamento no Firebase sem enviar mensagens privadas aos donos dos bots."""
     global LAST_TOKEN, LAST_DID, LAST_QUEUE
     now = int(time.time() * 1000)
     stopped_ids = list(LAST_QUEUE.keys()) if isinstance(LAST_QUEUE, dict) else []
@@ -444,31 +476,6 @@ def publish_shutdown_status(reason="Servidor desligado"):
             print("[BotHub] Desligamento publicado no Firebase.", flush=True)
         except Exception as e:
             print("[BotHub] Não foi possível publicar o desligamento no Firebase:", str(e)[:180], flush=True)
-    seen_owners = set()
-    for bot_id, bot_cfg in (LAST_QUEUE.items() if isinstance(LAST_QUEUE, dict) else []):
-        if not isinstance(bot_cfg, dict) or not bot_cfg.get("token"):
-            continue
-        token_value = bot_cfg.get("token")
-        try:
-            info = discord_api(token_value, "GET", "/applications/@me", None)
-            owner = (info.get("owner") or {}).get("id")
-            if not owner or str(owner) in seen_owners:
-                continue
-            seen_owners.add(str(owner))
-            channel = discord_api(token_value, "POST", "/users/@me/channels", {"recipient_id": str(owner)})
-            msg = (
-                "⚠️ **O bot foi desligado porque o servidor/controlador ficou offline.**\n\n"
-                "Isso pode acontecer por alguns motivos:\n"
-                "1. O servidor está sendo atualizado ou reiniciado.\n"
-                "2. Ocorreu um erro ou o processo foi encerrado. Não se preocupe: "
-                "se o servidor voltar a funcionar, os bots atribuídos serão iniciados novamente.\n\n"
-                "Motivo informado: " + str(reason)[:250] +
-                "\nBots desta instalação que estavam atribuídos: " + str(len(stopped_ids)) + "."
-            )
-            discord_api(token_value, "POST", "/channels/" + str(channel["id"]) + "/messages",
-                        {"content": msg, "allowed_mentions": {"parse": []}})
-        except Exception as e:
-            print("[BotHub] Falha ao avisar o criador do bot", bot_id, ":", str(e)[:160], flush=True)
 
 def handle_shutdown_signal(signum, frame):
     global SHUTDOWN_IN_PROGRESS
@@ -476,7 +483,7 @@ def handle_shutdown_signal(signum, frame):
         return
     SHUTDOWN_IN_PROGRESS = True
     reason = "SIGINT (interrupção manual)" if signum == signal.SIGINT else "SIGTERM (servidor encerrado)"
-    print("[BotHub] Controlador sendo desligado; avisando criadores e publicando status...", flush=True)
+    print("[BotHub] Controlador sendo desligado; publicando status e encerrando processos...", flush=True)
     publish_shutdown_status(reason)
     cleanup_children()
     raise SystemExit(0)
@@ -484,7 +491,6 @@ def handle_shutdown_signal(signum, frame):
 def script_already_running(script, token_value=None):
     """Detecta main.py duplicado por caminho OU pelo mesmo token em outra pasta."""
     target = str(script.resolve())
-    bots_root = (ROOT / "bots").resolve()
     current_pid = os.getpid()
     if sys.platform.startswith("linux") and Path("/proc").is_dir():
         for entry in Path("/proc").iterdir():
@@ -499,7 +505,7 @@ def script_already_running(script, token_value=None):
                         running_script = Path(arg).resolve()
                     except Exception:
                         continue
-                    if running_script.name != "main.py" or bots_root not in running_script.parents:
+                    if running_script.name not in {"bot-ia.py","bot-standard.py","bot-adm.py","main.py","standard_main.py","bot_admin.py"}:
                         continue
                     if str(running_script) == target:
                         return int(entry.name)
@@ -526,9 +532,7 @@ def script_already_running(script, token_value=None):
                         running_script = Path(arg).resolve()
                     except Exception:
                         continue
-                    if not str(arg).endswith(".py") or running_script.name != "main.py":
-                        continue
-                    if bots_root not in running_script.parents:
+                    if not str(arg).endswith(".py") or running_script.name not in {"bot-ia.py","bot-standard.py","bot-adm.py","main.py","standard_main.py","bot_admin.py"}:
                         continue
                     if str(running_script) == target:
                         return proc.info["pid"]
@@ -548,7 +552,6 @@ def script_already_running(script, token_value=None):
 def kill_existing_bothub_bots():
     """Encerra processos antigos de bots do BotHub antes de o controlador atual iniciá-los."""
     current_pid = os.getpid()
-    bots_root = (ROOT / "bots").resolve()
     killed = []
     if sys.platform.startswith("linux") and Path("/proc").is_dir():
         for entry in Path("/proc").iterdir():
@@ -568,7 +571,7 @@ def kill_existing_bothub_bots():
                 is_bot_script = False
                 for arg in script_args:
                     path = Path(arg).resolve()
-                    if path.name == "main.py" and bots_root in path.parents:
+                    if path.name == "main.py" and "bots" in path.parts:
                         is_bot_script = True
                         break
                 if is_bot_script:
@@ -587,7 +590,7 @@ def kill_existing_bothub_bots():
                 for arg in args[1:]:
                     try:
                         path = Path(arg).resolve()
-                        if path.name == "main.py" and bots_root in path.parents:
+                        if path.name == "main.py" and "bots" in path.parts:
                             proc.terminate()
                             killed.append(pid)
                             break
@@ -616,8 +619,8 @@ def kill_existing_bothub_bots():
                 pass
 
 # --- Cooperative leases and Firebase-backed memory state ---
-LEASE_SECONDS = max(15, int(os.getenv('BOTHUB_LEASE_SECONDS', '25')))
-STATE_FIXED_FILES = {'bot_personality.json','foto de perfil.txt','image_history.json','memory.sqlite3','reminders.sqlite3','memoria_geral','importantes','geral_avisos','identidade','regras','identidade-padrao.txt','regras-padrao.txt','bot_settings.json'}
+LEASE_SECONDS = max(45, int(os.getenv('BOTHUB_LEASE_SECONDS', '75')))
+STATE_FIXED_FILES = {'bot_personality.json','foto de perfil.txt','image_history.json','memory.sqlite3','reminders.sqlite3','memoria_geral','importantes','geral_avisos','identidade','regras','identidade-padrao.txt','regras-padrao.txt','comunidades_autorizadas.txt'}
 ACTIVE_LEASES = {}
 CURRENT_DEVICE_ID = ''
 CURRENT_FIREBASE_TOKEN = ''
@@ -696,28 +699,6 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
     if not isinstance(owner,dict) or owner.get('owner') != device_id or int(owner.get('fence') or 0) != int(lease['fence']):
         ACTIVE_LEASES.pop(bid,None); raise RuntimeError('Lease perdido; estado compartilhado protegido.')
     folder=ROOT/'bots'/bid; folder.mkdir(parents=True,exist_ok=True); url=_state_url(bid)
-    # Antes de enviar o estado, cria uma cópia sincronizável da configuração sem segredos.
-    # config.json nunca é enviado diretamente porque contém token e possíveis chaves de API.
-    if mode == 'push':
-        try:
-            local_cfg_path = folder/'config.json'
-            if local_cfg_path.is_file():
-                local_cfg = json.loads(local_cfg_path.read_text(encoding='utf-8'))
-                if isinstance(local_cfg, dict):
-                    def strip_secrets(value):
-                        blocked = {'discord_token','token','api_key','apikey','secret','password','authorization'}
-                        if isinstance(value, dict):
-                            return {str(key): strip_secrets(item) for key,item in value.items()
-                                    if str(key).lower() not in blocked and str(key).lower() not in {'apis'}}
-                        if isinstance(value, list):
-                            return [strip_secrets(item) for item in value]
-                        return value
-                    safe_cfg = strip_secrets(local_cfg)
-                    if isinstance(safe_cfg.get('ai'), dict):
-                        safe_cfg['ai'].pop('api_keys', None)
-                    save_json(folder/'bot_settings.json', safe_cfg)
-        except Exception as e:
-            print('[BotHub] não foi possível preparar configurações seguras para sincronização:',str(e)[:120],flush=True)
     r=_req_json('GET',url+'.json',tok); remote=r.json() if r.text else {}
     if not isinstance(remote,dict): remote={}
     if mode == 'pull' and remote:
@@ -744,124 +725,115 @@ def sync_bot_state(bot_id, mode='push', tok=None, device_id=None):
 
 
 def start(k,b):
-    """Inicia no máximo um processo por bot nesta instalação."""
-    folder=ROOT/"bots"/sid(k)
-    folder.mkdir(parents=True,exist_ok=True)
-    script=folder/"main.py"
-
-    current=PROCS.get(k)
-    if current is not None and current.poll() is None:
-        print("[BotHub] já está em execução; início duplicado ignorado:",k,"PID",current.pid,flush=True)
+    folder=ROOT/"bots"/sid(k);folder.mkdir(parents=True,exist_ok=True)
+    requested_at=float(b.get("startRequestedAt") or 0)
+    if clean_exit_state(k,requested_at) is not None:
+        CLEAN_EXITED[k]=requested_at
+        print("[BotHub] início pausado: última execução terminou com código 0; aguardando novo pedido do painel:",k,flush=True)
         return
-
+    bot_type=str(b.get("botType") or (b.get("config") or {}).get("botType") or "ia_chat").lower()
+    if bot_type not in {"ia_chat","standard","bot_admin"}: bot_type="ia_chat"
+    script_name={"ia_chat":"bot-ia.py","standard":"bot-standard.py","bot_admin":"bot-adm.py"}[bot_type]
+    script=folder/script_name
+    if k in PROCS and PROCS[k].poll() is None:
+        return
     sync_bot_state(k, 'pull')
-    try:
-        size=download_latest_main(folder)
-        print("[BotHub] main.py sincronizado com o GitHub:",k,"bytes:",size,flush=True)
-    except Exception as exc:
-        if not script.exists():
-            raise
-        print("[BotHub] AVISO: atualização de main.py indisponível; usando cópia local:",
-              k,str(exc)[:180],flush=True)
-
+    if not script.exists():
+        default_urls={
+            "ia_chat":os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-ia.py"),
+            "standard":os.getenv("BOTHUB_STANDARD_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-standard.py"),
+            "bot_admin":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-adm.py",
+        }
+        url=default_urls[bot_type]
+        r=S.get(url,timeout=45);r.raise_for_status()
+        if len(r.content)<1000:raise RuntimeError("Download incompleto de "+script_name)
+        source=r.content.decode("utf-8");compile(source,str(script),"exec")
+        tmp=script.with_suffix(".py.download.tmp");tmp.write_bytes(r.content);tmp.replace(script)
     try:
         compile(script.read_text(encoding="utf-8"),str(script),"exec")
     except Exception as exc:
-        raise RuntimeError("main.py não passou na validação de sintaxe: "+str(exc)[:180])
-
-    duplicate_pid=script_already_running(script,b.get("token"))
+        raise RuntimeError(script_name+" não passou na validação de sintaxe: "+str(exc)[:180])
+    duplicate_pid = script_already_running(script, b.get("token"))
     if duplicate_pid is not None:
-        print("[BotHub] processo duplicado antigo detectado (PID",duplicate_pid,"); encerrando antes do início:",k,flush=True)
+        print("[BotHub] Duplicata de main.py/token detectada (PID",duplicate_pid,"). Encerrando a cópia antiga antes de iniciar a instância correta para",k,flush=True)
         try:
-            os.kill(duplicate_pid,signal.SIGTERM)
-            deadline=time.time()+5
-            while time.time()<deadline:
-                try: os.kill(duplicate_pid,0)
-                except OSError: break
+            os.kill(duplicate_pid, signal.SIGTERM)
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                try:
+                    os.kill(duplicate_pid, 0)
+                except OSError:
+                    break
                 time.sleep(0.2)
             else:
-                os.kill(duplicate_pid,getattr(signal,"SIGKILL",signal.SIGTERM))
+                os.kill(duplicate_pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         except OSError:
             pass
+    cfg=dict(b.get("config") or {});cfg["discord_token"]=b["token"]
+    # Configuração de autorização individual, recebida do painel BotHub.
+    auth=dict(cfg.get("bot_authorization") or {})
+    auth.update({
+        "password_salt": str(b.get("allowPasswordSalt") or auth.get("password_salt") or ""),
+        "password_hash": str(b.get("allowPasswordHash") or auth.get("password_hash") or ""),
+        "allow_user_ids": [str(x) for x in (b.get("allowUserIds") if b.get("allowUserIds") is not None else auth.get("allow_user_ids", [])) if str(x).isdigit()],
+        "authorized_guild_ids": [str(x) for x in (b.get("authorizedGuildIds") if b.get("authorizedGuildIds") is not None else auth.get("authorized_guild_ids", [])) if str(x).isdigit()],
+    })
+    cfg["bot_authorization"]=auth
+    cp=folder/"config.json";save_json(cp,cfg)
 
-    def merge_cfg(base,overlay):
-        result=dict(base) if isinstance(base,dict) else {}
-        if isinstance(overlay,dict):
-            for key,value in overlay.items():
-                if isinstance(value,dict) and isinstance(result.get(key),dict):
-                    result[key]=merge_cfg(result[key],value)
-                else:
-                    result[key]=value
-        return result
-
-    cp=folder/"config.json"
-    cfg=dict(b.get("config") or {})
-    if cp.is_file():
-        try:
-            local_cfg=json.loads(cp.read_text(encoding="utf-8"))
-            if isinstance(local_cfg,dict):
-                cfg=merge_cfg(cfg,local_cfg)
-        except Exception as exc:
-            print("[BotHub] configuração local não pôde ser preservada:",str(exc)[:140],flush=True)
-    cfg["discord_token"]=b["token"]
-    bot_policy=b.get("config") if isinstance(b.get("config"),dict) else {}
-    if bot_policy.get("botHubGuildAccessMode") in ("required","optional"):
-        cfg["botHubGuildAccessMode"]=bot_policy["botHubGuildAccessMode"]
-        cfg["botHubAllowedGuildIds"]=list(bot_policy.get("botHubAllowedGuildIds") or [])
-    save_json(cp,cfg)
-
+    # Tenta iniciar mais de uma vez se o processo cair imediatamente (ex.: falha transitória).
     last_error=""
     for attempt in range(1,4):
+        if k in PROCS:
+            stop(k)
         log=open(folder/"bot.log","ab",buffering=0)
-        kwargs={}
+        popen_kwargs = {}
         if sys.platform.startswith("linux"):
-            kwargs["preexec_fn"]=child_parent_death_signal
+            popen_kwargs["preexec_fn"] = child_parent_death_signal
         try:
-            process=subprocess.Popen(
-                [sys.executable,"-u",str(script)],
-                cwd=str(folder),
-                stdin=subprocess.DEVNULL,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                start_new_session=(os.name!="nt"),
-                **kwargs
-            )
+            # Remove o sinal antigo antes de cada inicialização; só on_ready do Discord recria.
+            try:(folder/".bothub_discord_ready").unlink(missing_ok=True)
+            except OSError:pass
+            child_env=os.environ.copy()
+            child_env["BOTHUB_SHARED_STATE_DIR"]=str(ROOT/".bothub_shared")
+            child_env["BOTHUB_BOT_ID"]=str(k)
+            p=subprocess.Popen([sys.executable,"-u",str(script)],cwd=str(folder),stdin=subprocess.DEVNULL,
+                stdout=log,stderr=subprocess.STDOUT,start_new_session=(os.name!="nt"),env=child_env,**popen_kwargs)
         except Exception:
             log.close()
             raise
-
-        PROCS[k]=process
-        LOGS[k]=log
-        try: LOG_OFFSETS[k]=log.tell()
-        except Exception: LOG_OFFSETS[k]=0
-        print("[BotHub] iniciando",b.get("name",k),"PID",process.pid,
-              "tentativa",attempt,"/3",flush=True)
-
+        PROCS[k]=p;LOGS[k]=log
+        print("[BotHub] iniciando",b.get("name",k),"PID",p.pid,"tentativa",attempt,"/3",flush=True)
+        # Pequena janela de saúde: processos que morrem logo após o Popen não são marcados como iniciados.
         deadline=time.time()+3
-        while time.time()<deadline and process.poll() is None:
+        while time.time()<deadline and p.poll() is None:
             time.sleep(0.25)
-
-        if process.poll() is None:
-            print("[BotHub] iniciado com sucesso:",b.get("name",k),"PID",process.pid,flush=True)
+        if p.poll() is None:
+            print("[BotHub] processo permaneceu ativo após a verificação inicial:",b.get("name",k),flush=True)
             return
-
         try:
             log.flush()
-            with (folder/"bot.log").open("r",encoding="utf-8",errors="replace") as handle:
-                last_error="\n".join(handle.readlines()[-18:])[-1800:]
+            with open(folder/"bot.log","r",encoding="utf-8",errors="replace") as handle:
+                last_error="\\n".join(handle.readlines()[-18:])[-1800:]
         except Exception:
             last_error="sem detalhes adicionais no log"
-
+        print("[BotHub] o processo encerrou durante a inicialização (código",p.returncode,"):",last_error[-700:],flush=True)
+        if p.returncode == 0:
+            # Saída limpa não deve provocar um ciclo infinito de reinicializações.
+            mark_clean_exit(k, b.get("startRequestedAt"), p.returncode)
+            PROCS.pop(k,None)
+            LOGS.pop(k,None)
+            try: log.close()
+            except Exception: pass
+            raise RuntimeError("o processo encerrou com código 0; reinício automático pausado até um novo pedido de inicialização")
         PROCS.pop(k,None)
         LOGS.pop(k,None)
         try: log.close()
         except Exception: pass
-        print("[BotHub] processo encerrou durante a inicialização (código",
-              process.returncode,"):",last_error[-700:],flush=True)
         if attempt<3:
             time.sleep(attempt)
-
     raise RuntimeError("main.py encerrou nas 3 tentativas. Últimas linhas do log: "+last_error[-900:])
+
 
 # File manager seguro: somente a pasta do bot selecionado; sem shell arbitrário.
 EDITABLE_EXTS={".py",".txt",".md",".json",".html",".css",".js",".yaml",".yml",".toml",".ini",".sh"}
@@ -961,737 +933,336 @@ def discord_api(token_value, method, endpoint, payload):
         raise RuntimeError("Discord HTTP "+str(response.status_code)+": "+str(body.get("message","falha"))[:180])
     return body
 
-def process_bot_deletions(tok, device_id):
-    """Aplica exclusões solicitadas pelo painel, mesmo se o worker ficou offline."""
-    records = fb("GET", "botHubDeletions", tok) or {}
-    if not isinstance(records, dict):
-        return
-    did_key = urllib.parse.quote(str(device_id), safe="")
-    for raw_id, record in list(records.items()):
-        if not isinstance(record, dict):
-            continue
-        target = str(record.get("workerId") or "")
-        if target and target != str(device_id):
-            continue
-        processed = record.get("processed") or {}
-        if isinstance(processed, dict) and processed.get(did_key):
-            continue
-        bid = sid(raw_id)
-        try:
-            stop(bid)
-            shutil.rmtree(ROOT / "bots" / bid, ignore_errors=True)
-            # Remove qualquer estado remoto que tenha sobrado de uma execução anterior.
-            for remote_path in (
-                "botState/" + urllib.parse.quote(bid, safe=""),
-                "botLeases/" + urllib.parse.quote(bid, safe=""),
-                "workerTasks/" + did_key + "/" + urllib.parse.quote(bid, safe=""),
-            ):
-                try:
-                    fb("DELETE", remote_path, tok)
-                except Exception as e:
-                    print("[BotHub] limpeza remota pendente para", bid, ":", str(e)[:100], flush=True)
-            fb("PUT", "botHubDeletions/" + urllib.parse.quote(str(raw_id), safe="") +
-               "/processed/" + did_key, tok, True)
-            print("[BotHub] exclusão aplicada; pasta local removida:", bid, flush=True)
-        except Exception as e:
-            print("[BotHub] falha ao aplicar exclusão de", bid, ":", str(e)[:180], flush=True)
-
-
-def discord_bot_avatar(token_value):
-    """Obtém a identidade e a URL pública do avatar atual da conta bot."""
-    user=discord_api(token_value,"GET","/users/@me",None)
-    user_id=str(user.get("id") or "")
-    if not user_id:
-        raise RuntimeError("Discord não retornou o ID do bot.")
-    avatar=user.get("avatar")
-    if avatar:
-        ext="gif" if str(avatar).startswith("a_") else "png"
-        url="https://cdn.discordapp.com/avatars/"+user_id+"/"+str(avatar)+"."+ext+"?size=256"
-    else:
-        try: index=(int(user_id)>>22)%6
-        except Exception: index=0
-        url="https://cdn.discordapp.com/embed/avatars/"+str(index)+".png"
-    image_response=S.get(url,timeout=15)
-    image_response.raise_for_status()
-    content_type=str(image_response.headers.get("Content-Type") or "image/png").split(";",1)[0].lower()
-    if not content_type.startswith("image/"):
-        raise RuntimeError("O CDN do Discord não retornou um arquivo de imagem.")
-    image_b64=base64.b64encode(image_response.content).decode("ascii")
-    if len(image_b64)>2*1024*1024:
-        raise RuntimeError("A imagem do avatar excedeu o limite de armazenamento.")
-    return {
-        "avatarUrl":url,
-        "avatarBase64":"data:"+content_type+";base64,"+image_b64,
-        "avatarDiscordId":user_id,
-        "avatarDiscordName":user.get("username") or ""
-    }
-
-
-def sync_missing_bot_avatars(queue,tok):
-    """Busca imediatamente a foto de bots novos e atualiza avatares do Discord periodicamente."""
-    now=time.time()
-    for bid,bot_cfg in (queue.items() if isinstance(queue,dict) else []):
-        if not isinstance(bot_cfg,dict) or not bot_cfg.get("token"):
-            continue
-        # O usuário pode desativar a sincronização automática no perfil.
-        if bot_cfg.get("avatarAutoUpdate") is False:
-            continue
-        # Em modo automático, atualizar também o arquivo Base64 salvo no Firebase.
-        key=str(bid)
-        last=AVATAR_SYNC_CACHE.get(key,0)
-        # Primeira tentativa é imediata; depois atualiza a cada 90 segundos para refletir
-        # mudanças de foto no Discord sem consultar a API em todas as voltas do worker.
-        if now-last<90:
-            continue
-        AVATAR_SYNC_CACHE[key]=now
-        try:
-            avatar=discord_bot_avatar(bot_cfg["token"])
-            avatar["avatarFetchedAt"]=int(time.time()*1000)
-            fb("PATCH","bots/"+urllib.parse.quote(key,safe=""),tok,avatar)
-            bot_cfg.update(avatar)
-            log_throttled("avatar-sync:"+key,3600,"[BotHub] Avatar do bot sincronizado:",key)
-        except Exception as exc:
-            # Falhas temporárias podem ser tentadas novamente rapidamente.
-            AVATAR_SYNC_CACHE[key]=now-70
-            log_throttled("avatar-sync-error:"+key,30,"[BotHub] Falha ao sincronizar avatar de",key,str(exc)[:120])
-
-
 def process_worker_commands(cfg,tok,did,queue):
     commands=fb("GET","workerCommands/"+did,tok) or {}
     if not isinstance(commands,dict): return
     for request_id,cmd in list(commands.items())[:5]:
         if not isinstance(cmd,dict): continue
-        command_path="workerCommands/"+did+"/"+urllib.parse.quote(str(request_id),safe="")
         result={"id":request_id,"updatedAt":int(time.time()*1000)}
         try:
-            fb("PATCH",command_path,tok,{"status":"received","receivedAt":int(time.time()*1000),"workerId":cfg.get("device_id")})
-            fb("PATCH",command_path,tok,{"status":"running","startedAt":int(time.time()*1000)})
             op=cmd.get("operation")
-            if op=="fetch_avatar":
-                bid=str(cmd.get("botId",""))
+            if op=="stop":
+                bid=sid(cmd.get("botId",""))
+                tracked = bid in PROCS
+                stop(bid)
+                orphan_stopped = stop_bot_processes(bid)
+                # Impede que a cópia da fila lida antes do comando reinicie o bot neste ciclo.
+                if isinstance(queue, dict):
+                    queue.pop(bid, None)
+                try:
+                    fb("DELETE","workerTasks/"+did+"/"+urllib.parse.quote(bid,safe=""),tok)
+                except Exception as queue_error:
+                    print("[BotHub] não foi possível remover a tarefa do bot parado:",bid,str(queue_error)[:140],flush=True)
+                try: sync_bot_state(bid,"push",tok,cfg.get("device_id"))
+                except Exception as state_error:
+                    print("[BotHub] estado final não sincronizado ao parar",bid,str(state_error)[:140],flush=True)
+                try: release_bot_lease(bid,cfg.get("device_id"),tok)
+                except Exception as lease_error:
+                    print("[BotHub] lease não liberado ao parar",bid,str(lease_error)[:140],flush=True)
+                stopped = tracked or orphan_stopped
+                print("[BotHub] parada explícita confirmada:",bid,"processo encerrado:",stopped,flush=True)
+                result.update(status="ok",message="main.py do bot encerrado neste worker.",stopped=stopped)
+            elif op=="create_invite":
+                bid=sid(cmd.get("botId",""))
                 bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
                 secret=bot_cfg.get("token") if isinstance(bot_cfg,dict) else None
                 if not secret: raise ValueError("O bot não está atribuído a este worker ou não tem token.")
-                avatar=discord_bot_avatar(secret)
-                avatar["avatarFetchedAt"]=int(time.time()*1000)
-                fb("PATCH","bots/"+urllib.parse.quote(bid,safe=""),tok,avatar)
-                bot_cfg.update(avatar)
-                result.update(status="ok",message="Avatar atual do Discord obtido e salvo no painel.",**avatar)
+                profile=discord_api(secret,"GET","/users/@me",None)
+                application_id=str(profile.get("id") or "")
+                if not application_id: raise RuntimeError("Discord não retornou o ID da aplicação.")
+                permissions=117840 if str(bot_cfg.get("botType") or "ia_chat").lower()=="bot_admin" else 0
+                invite_url=f"https://discord.com/oauth2/authorize?client_id={application_id}&scope=bot%20applications.commands&permissions={permissions}"
+                result.update(status="ok",inviteUrl=invite_url,applicationId=application_id,cached=False)
             elif op=="profile":
                 bid=str(cmd.get("botId",""))
                 bot_cfg=queue.get(bid) if isinstance(queue,dict) else None
                 secret=bot_cfg.get("token") if isinstance(bot_cfg,dict) else None
                 if not secret: raise ValueError("O bot não está atribuído a este worker ou não tem token.")
-                candidate=str(cmd.get("token") or "").strip()
-                active_token=candidate or secret
-                try:
-                    old_identity=discord_bot_avatar(secret)
-                    expected_bot_id=str(old_identity.get("avatarDiscordId") or "")
-                except Exception:
-                    expected_bot_id=str(bot_cfg.get("avatarDiscordId") or "")
-                identity=discord_bot_avatar(active_token)
-                if expected_bot_id and identity.get("avatarDiscordId") != expected_bot_id:
-                    raise ValueError("O novo token precisa pertencer à mesma conta de bot.")
-                name=str(cmd.get("name") or "").strip()
-                if not name or len(name)>32: raise ValueError("O nome deve ter de 1 a 32 caracteres.")
-                description=str(cmd.get("description") or "")
-                if len(description)>400: raise ValueError("A descrição deve ter até 400 caracteres.")
-                avatar=cmd.get("avatarDataUrl") or ""
-                changes={"username":name}
+                changes={};name=cmd.get("name");avatar=cmd.get("avatarDataUrl");description=cmd.get("description")
+                if name:
+                    changes["username"]=str(name)[:32]
                 if avatar:
                     if not isinstance(avatar,str) or not avatar.startswith(("data:image/png;base64,","data:image/jpeg;base64,")):
                         raise ValueError("Avatar inválido: use PNG ou JPEG.")
                     if len(avatar)>6*1024*1024: raise ValueError("A imagem é muito grande (limite 4,5 MB).")
                     changes["avatar"]=avatar
-                discord_api(active_token,"PATCH","/users/@me",changes)
-                discord_api(active_token,"PATCH","/applications/@me",{"description":description})
-                fresh=discord_bot_avatar(active_token)
-                mode=str(cmd.get("guildAccessMode") or "required").lower()
-                if mode not in {"required","optional"}: raise ValueError("Modo de permissão inválido.")
-                raw_ids=cmd.get("guildIds") or []
-                if not isinstance(raw_ids,list) or len(raw_ids)>100:
-                    raise ValueError("Informe até 100 IDs de servidores.")
-                guild_ids=[]
-                for value in raw_ids:
-                    value=str(value).strip()
-                    if not re.fullmatch(r"\d{15,22}",value):
-                        raise ValueError("ID de servidor inválido.")
-                    if value not in guild_ids: guild_ids.append(value)
-                config=dict(bot_cfg.get("config") or {})
-                config["botHubGuildAccessMode"]=mode
-                config["botHubAllowedGuildIds"]=guild_ids
-                auto_update=cmd.get("avatarAutoUpdate") is True
-                updates={
-                    "name":name,
-                    "description":description,
-                    "config":config,
-                    "avatarUrl":fresh.get("avatarUrl",""),
-                    "avatarDiscordId":fresh.get("avatarDiscordId",""),
-                    "avatarDiscordName":fresh.get("avatarDiscordName",""),
-                    "avatarFetchedAt":int(time.time()*1000),
-                    "avatarAutoUpdate":auto_update,
-                    "avatarBase64":fresh.get("avatarBase64","") if auto_update else (avatar or bot_cfg.get("avatarBase64") or ""),
-                }
-                if candidate:
-                    updates["token"]=candidate
-                    bot_cfg["token"]=candidate
-                fb("PATCH","bots/"+urllib.parse.quote(bid,safe=""),tok,updates)
-                bot_cfg.update(updates)
-                bot_cfg["config"]=config
-                # Reinicia para carregar token e política de servidores atualizados no config.json.
-                stop(bid)
-                result.update(status="ok",message="Perfil atualizado no Discord e no Firebase. Token validado para a mesma conta; permissões de servidores salvas.",nameChanged=True,avatarChanged=bool(avatar),descriptionChanged=True,tokenChanged=bool(candidate),guildAccessMode=mode,guildIds=guild_ids,**fresh)
+                if changes:
+                    discord_api(secret,"PATCH","/users/@me",changes)
+                if description is not None:
+                    if len(str(description))>400: raise ValueError("A descrição deve ter até 400 caracteres.")
+                    discord_api(secret,"PATCH","/applications/@me",{"description":str(description)})
+                result.update(status="ok",message="Perfil atualizado.",nameChanged=bool(name),avatarChanged=bool(avatar),descriptionChanged=description is not None)
             else:
                 result.update(status="ok",result=file_command(cmd))
         except Exception as e:
             result.update(status="error",message=str(e)[:350])
         try:
             fb("PUT","workerResults/"+did+"/"+urllib.parse.quote(str(request_id),safe=""),tok,result)
-            fb("PATCH",command_path,tok,{"status":"completed" if result.get("status")=="ok" else "failed","completedAt":int(time.time()*1000),"message":result.get("message","")})
-            fb("DELETE",command_path,tok)
+            fb("DELETE","workerCommands/"+did+"/"+urllib.parse.quote(str(request_id),safe=""),tok)
         except Exception as e:
             print("[BotHub] Não foi possível publicar o resultado do comando:",str(e)[:180],flush=True)
 
-def load_worker_queue(tok, device_id):
-    """
-    Lê os bots persistidos e recupera automaticamente os que ficaram presos
-    a um worker offline. A troca de worker usa ETag/If-Match para evitar que
-    dois workers reivindiquem o mesmo bot ao mesmo tempo.
-    """
-    did_key = urllib.parse.quote(str(device_id), safe="")
-    try:
-        cached = fb("GET", "workerTasks/" + did_key, tok) or {}
-        if not isinstance(cached, dict):
-            cached = {}
-    except Exception as exc:
-        print("[BotHub] não foi possível ler workerTasks:", str(exc)[:160], flush=True)
-        cached = {}
+def bot_script_info(bot_type):
+    kind=str(bot_type or "ia_chat").lower()
+    if kind=="ia_chat":
+        return "bot-ia.py",os.getenv("BOTHUB_BOT_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-ia.py"),10000
+    if kind=="bot_admin":
+        return "bot-adm.py",os.getenv("BOTHUB_ADMIN_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-adm.py"),5000
+    if kind=="standard":
+        return "bot-standard.py",os.getenv("BOTHUB_STANDARD_SOURCE_URL","https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bot-standard.py"),1000
+    raise RuntimeError("Tipo de bot não suportado para atualização: "+kind)
 
-    try:
-        registry = fb("GET", "bots", tok)
-        workers = fb("GET", "workers", tok) or {}
-    except Exception as exc:
-        print("[BotHub] não foi possível consultar o cadastro Firebase; usando fila salva:", str(exc)[:180], flush=True)
-        return cached
-
-    if not isinstance(registry, dict):
-        return cached
-    if not isinstance(workers, dict):
-        workers = {}
-
-    now_ms = int(time.time() * 1000)
-    stale_ms = max(60000, int(os.getenv("BOTHUB_WORKER_STALE_MS", "60000")))
-    local_stats = stats(CURRENT_CFG or {})
-    ram_free = int(local_stats.get("ramFreeBytes") or 0)
-    disk_free = int(local_stats.get("diskFreeBytes") or 0)
-    # Reserva RAM/disco para o sistema operacional e crescimento dos arquivos.
-    # Reserva 512 MiB para o sistema e estima 300 MiB por bot para evitar pressão de memória.
-    ram_capacity = max(0, (ram_free - 512 * 1024 * 1024) // (300 * 1024 * 1024))
-    disk_capacity = max(0, (disk_free - 1024 * 1024 * 1024) // (100 * 1024 * 1024))
-    capacity = min(int(ram_capacity), int(disk_capacity))
-    assigned_here = sum(
-        1 for record in registry.values()
-        if isinstance(record, dict)
-        and str(record.get("workerId") or "") == str(device_id)
-        and record.get("enabled", True) is not False
-        and str(record.get("desiredState") or "on").lower() != "off"
-    )
-    can_take_over = capacity > assigned_here
-
-    for raw_id, record in registry.items():
-        if not isinstance(record, dict):
-            continue
-        enabled = record.get("enabled", True) is not False
-        if str(record.get("desiredState") or "on").lower() == "off":
-            enabled = False
-        if not enabled or not record.get("token"):
-            continue
-        assigned_worker = str(record.get("workerId") or "")
-        if assigned_worker == str(device_id):
-            continue
-        owner_info = workers.get(assigned_worker) if assigned_worker else None
-        last_seen = int((owner_info or {}).get("lastSeen") or 0) if isinstance(owner_info, dict) else 0
-        owner_status = str((owner_info or {}).get("status") or "").lower() if isinstance(owner_info, dict) else ""
-        owner_online_flag = isinstance(owner_info, dict) and owner_info.get("online") is True
-        owner_is_live = owner_online_flag or owner_status == "online" or bool(last_seen and now_ms - last_seen < stale_ms)
-        if owner_is_live or not can_take_over:
-            continue
-
-        # Em caso de heartbeat atrasado, um Lease válido ainda bloqueia a transferência.
-        try:
-            lease_response = S.get(_lease_url(raw_id), params={"auth": tok},
-                headers={"User-Agent": "BotHub-Cluster/4.0"}, timeout=10)
-            if lease_response.status_code < 300 and lease_response.text:
-                active_lease = lease_response.json()
-                if isinstance(active_lease, dict):
-                    lease_owner = str(active_lease.get("owner") or "")
-                    lease_until = int(active_lease.get("leaseUntil") or 0)
-                    if lease_owner and lease_owner != str(device_id) and lease_until > now_ms:
-                        continue
-        except Exception as lease_check_error:
-            print("[BotHub] Lease não pôde ser confirmado; transferência bloqueada:",
-                  sid(raw_id), str(lease_check_error)[:100], flush=True)
-            continue
-
-        # Compare-and-swap: só assume se o registro não mudou desde a leitura.
-        bot_url = DB + "/bots/" + urllib.parse.quote(str(raw_id), safe="") + ".json"
-        try:
-            check = S.get(bot_url, params={"auth": tok}, headers={
-                "X-Firebase-ETag": "true", "User-Agent": "BotHub-Cluster/4.0"
-            }, timeout=10)
-            if check.status_code >= 300:
-                continue
-            current = check.json() if check.text else {}
-            if not isinstance(current, dict):
-                continue
-            current_worker = str(current.get("workerId") or "")
-            if current_worker != assigned_worker:
-                continue
-            current_owner = workers.get(current_worker) if current_worker else None
-            current_seen = int((current_owner or {}).get("lastSeen") or 0) if isinstance(current_owner, dict) else 0
-            current_status = str((current_owner or {}).get("status") or "").lower() if isinstance(current_owner, dict) else ""
-            current_online = isinstance(current_owner, dict) and current_owner.get("online") is True
-            if current_online or current_status == "online" or (current_seen and now_ms - current_seen < stale_ms):
-                continue
-            lease_check = S.get(_lease_url(raw_id), params={"auth": tok},
-                headers={"User-Agent": "BotHub-Cluster/4.0"}, timeout=10)
-            if lease_check.status_code < 300 and lease_check.text:
-                lease_data = lease_check.json()
-                if isinstance(lease_data, dict):
-                    lease_owner = str(lease_data.get("owner") or "")
-                    lease_until = int(lease_data.get("leaseUntil") or 0)
-                    if lease_owner and lease_owner != str(device_id) and lease_until > now_ms:
-                        continue
-            current["lastWorkerId"] = current_worker or current.get("lastWorkerId")
-            current["workerId"] = str(device_id)
-            current["updatedAt"] = now_ms
-            put = S.put(bot_url, params={"auth": tok}, json=current, headers={
-                "If-Match": check.headers.get("ETag", "null_etag"),
-                "User-Agent": "BotHub-Cluster/4.0"
-            }, timeout=10)
-            if put.status_code in (200, 204):
-                record = current
-                record["workerId"] = str(device_id)
-                assigned_here += 1
-                can_take_over = capacity > assigned_here
-                print("[BotHub] assumindo automaticamente bot órfão:", sid(raw_id),
-                      "worker anterior:", assigned_worker or "nenhum", flush=True)
-        except Exception as exc:
-            print("[BotHub] não foi possível assumir bot órfão", sid(raw_id), str(exc)[:120], flush=True)
-
-    queue = {}
-    for raw_id, record in registry.items():
-        if not isinstance(record, dict) or str(record.get("workerId") or "") != str(device_id):
-            continue
-        bot_id = sid(raw_id)
-        enabled = record.get("enabled", True) is not False
-        if str(record.get("desiredState") or "on").lower() == "off":
-            enabled = False
-        item = {
-            "name": record.get("name") or bot_id,
-            "token": record.get("token") or "",
-            "config": record.get("config") if isinstance(record.get("config"), dict) else {},
-            "enabled": enabled,
-            "desiredState": "on" if enabled else "off",
-            "updatedAt": record.get("updatedAt") or record.get("createdAt") or 0,
-            "avatarUrl": record.get("avatarUrl") or "",
-            "avatarBase64": record.get("avatarBase64") or "",
-            "avatarDiscordId": record.get("avatarDiscordId") or "",
-            "avatarAutoUpdate": record.get("avatarAutoUpdate", True) is not False,
-        }
-        if item["token"]:
-            queue[bot_id] = item
-        elif enabled:
-            print("[BotHub] bot atribuído sem token no cadastro Firebase:", bot_id, flush=True)
-    return queue
-
-def fetch_latest_main():
-    url="https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/main.py"
+def latest_bot_script_bytes(bot_type):
+    name,url,minimum=bot_script_info(bot_type)
     response=S.get(url,timeout=45);response.raise_for_status()
     data=response.content
-    if len(data)<10000: raise RuntimeError("main.py baixado está incompleto.")
-    compile(data.decode("utf-8"),"main.py","exec")
+    if len(data)<minimum:raise RuntimeError(name+" baixado está incompleto.")
+    compile(data.decode("utf-8"),name+" (versão publicada)","exec")
     return data
 
-def main_file_version(data):
-    return hashlib.sha256(data).hexdigest()[:12]
-
-def download_latest_main(folder):
-    data=fetch_latest_main()
-    target=folder/"main.py";tmp=folder/"main.py.update.tmp"
-    backup=folder/".main.py.last-good"
-    old_version="desconhecida"
+def download_latest_bot_script(folder,bot_type):
+    name,_,_=bot_script_info(bot_type)
+    data=latest_bot_script_bytes(bot_type)
+    target=folder/name;tmp=folder/(name+".update.tmp")
+    backup=folder/("."+name+".last-good")
     if target.exists():
         old=target.read_bytes()
-        if len(old)>=10000:
-            compile(old.decode("utf-8"),"main.py (versão anterior)","exec")
-            old_version=main_file_version(old)
+        if len(old)>=1000:
+            compile(old.decode("utf-8"),name+" (versão anterior)","exec")
             backup_tmp=backup.with_suffix(".tmp")
             backup_tmp.write_bytes(old);backup_tmp.replace(backup)
     tmp.write_bytes(data);tmp.replace(target)
-    new_version=main_file_version(data)
-    save_json(folder/".bothub_main_version.json",{"version":new_version,"sha256":hashlib.sha256(data).hexdigest(),"updatedAt":int(time.time()*1000)})
-    if old_version!="desconhecida" and old_version!=new_version:
-        print("[BotHub] main.py atualizado:",old_version,"->",new_version,flush=True)
-    else:
-        print("[BotHub] main.py versão atual:",new_version,flush=True)
     return len(data)
 
-def notify_update(bot_id, bot_cfg, update):
+def latest_main_bytes():
+    return latest_bot_script_bytes("ia_chat")
+
+def download_latest_main(folder):
+    return download_latest_bot_script(folder,"ia_chat")
+
+def notify_update(bot_id, bot_cfg, update, notification_state):
     token_value=bot_cfg.get("token")
-    if not token_value:return
+    if not token_value:return False
     try:
         app_info=discord_api(token_value,"GET","/applications/@me",None)
         owner=(app_info.get("owner") or {}).get("id")
-        if not owner:return
-        channel=discord_api(token_value,"POST","/users/@me/channels",{"recipient_id":str(owner)})
+        if not owner:return False
+        owner=str(owner)
+        update_id=str(update.get("updateId") or "")
+        # A mesma pessoa pode ser dona de vários bots: avisar somente uma vez por versão.
+        if update_id and notification_state.get(owner)==update_id:
+            return True
+        channel=discord_api(token_value,"POST","/users/@me/channels",{"recipient_id":owner})
         mode="OBRIGATÓRIA" if update.get("type")=="mandatory" else "OPCIONAL"
-        description=("Versão instalada: **"+str(update.get("currentVersion") or "desconhecida")+"**\n"+
-                     "Versão mais recente: **"+str(update.get("latestVersion") or "desconhecida")+"**\n"+
-                     str(update.get("description") or "Melhorias e correções.")[:1400])
+        description=str(update.get("description") or "Melhorias e correções.")[:1500]
         content=("📦 **Atualização BotHub disponível — "+mode+"**\n"+description+
-                 ("\n\nEsta atualização será instalada automaticamente." if mode=="OBRIGATÓRIA"
+                 ("\n\nEsta atualização será instalada automaticamente." if mode=="mandatory"
                   else "\n\nPara instalar, digite !update neste chat com o bot."))
         discord_api(token_value,"POST","/channels/"+str(channel["id"])+"/messages",
                     {"content":content,"allowed_mentions":{"parse":[]}})
+        if update_id:
+            notification_state[owner]=update_id
+            save_json(ROOT/".bothub_update_notifications.json",notification_state)
+        return True
     except Exception as e:
         print("[BotHub] Não foi possível avisar o criador de",bot_id,":",str(e)[:180],flush=True)
+        return False
 
 def process_release_updates(tok, queue):
     release=fb("GET","botHubUpdates/current",tok)
-    if not isinstance(release,dict) or not release.get("updateId") or release.get("clusterOnly"):return
+    if not isinstance(release,dict) or not release.get("updateId") or release.get("clusterOnly"):
+        return
+    notification_file=ROOT/".bothub_update_notifications.json"
+    try:
+        notification_state=json.loads(notification_file.read_text(encoding="utf-8")) if notification_file.exists() else {}
+    except Exception:
+        notification_state={}
+    if not isinstance(notification_state,dict):
+        notification_state={}
+    update_id=str(release.get("updateId"))
     for raw_id,bot_cfg in list(queue.items()):
-        if not isinstance(bot_cfg,dict) or not bot_cfg.get("enabled",True):continue
-        bid=sid(raw_id);folder=ROOT/"bots"/bid
-        if not folder.exists():continue
+        if not isinstance(bot_cfg,dict) or not bot_cfg.get("enabled",True):
+            continue
+        bid=sid(raw_id)
+        folder=ROOT/"bots"/bid
+        if not folder.exists():
+            continue
         state_file=folder/".bothub_update_state.json"
-        try:state=json.loads(state_file.read_text(encoding="utf-8")) if state_file.exists() else {}
-        except Exception:state={}
-        update_id=str(release.get("updateId"))
+        try:
+            state=json.loads(state_file.read_text(encoding="utf-8")) if state_file.exists() else {}
+        except Exception:
+            state={}
+        if not isinstance(state,dict):
+            state={}
         if state.get("updateId")!=update_id:
-            try:
-                latest_data=fetch_latest_main()
-                latest_version=main_file_version(latest_data)
-                installed_data=(folder/"main.py").read_bytes() if (folder/"main.py").is_file() else b""
-                installed_version=main_file_version(installed_data) if installed_data else "ausente"
-            except Exception as version_error:
-                print("[BotHub] Comparação de versões falhou para",raw_id,":",str(version_error)[:150],flush=True)
-                latest_version="indisponível";installed_version="desconhecida"
-            state={"updateId":update_id,"announced":False,"updated":installed_version==latest_version,
-                   "currentVersion":installed_version,"latestVersion":latest_version}
-            if installed_version!=latest_version:
-                notify_update(raw_id,bot_cfg,dict(release,currentVersion=installed_version,latestVersion=latest_version))
-                state["announced"]=True
-            else:
-                print("[BotHub] Atualização já aplicada em",raw_id,"(versão",latest_version+"); aviso ignorado.",flush=True)
-            save_json(state_file,state)
-        request_file=folder/".bothub_update_request"
+            state={"updateId":update_id,"announced":False,"updated":False,"attempts":0}
         mandatory=release.get("type")=="mandatory"
+        bot_type=str(bot_cfg.get("botType") or (bot_cfg.get("config") or {}).get("botType") or "ia_chat").lower()
+        if bot_type not in {"ia_chat","standard","bot_admin"}:continue
+        script_name,_,_=bot_script_info(bot_type)
+        # Se o arquivo já corresponde à publicação, marca como atualizado sem reiniciar.
+        if not state.get("updated"):
+            try:
+                installed=folder/script_name
+                published=latest_bot_script_bytes(bot_type)
+                if installed.is_file() and installed.read_bytes()==published:
+                    state.update(updateId=update_id,announced=bool(mandatory or state.get("announced")),updated=True,
+                                 updatedAt=int(time.time()*1000),bytes=len(published),
+                                 retryAfter=0,lastError="",alreadyCurrent=True)
+                    save_json(state_file,state)
+                    print("[BotHub] bot já está na versão publicada; atualização ignorada sem reiniciar:",raw_id,script_name,flush=True)
+                    continue
+            except Exception as compare_error:
+                print("[BotHub] não foi possível comparar a versão instalada de",raw_id,":",str(compare_error)[:160],flush=True)
+        if state.get("updated"):
+            continue
+        # Atualizações obrigatórias são silenciosas: não enviam DM e não pedem !update.
+        if not mandatory and not state.get("announced"):
+            announced=notify_update(raw_id,bot_cfg,release,notification_state)
+            state["announced"]=bool(announced)
+            save_json(state_file,state)
+
+        request_file=folder/".bothub_update_request"
         accepted=request_file.exists()
-        if state.get("updateId")==update_id and state.get("updated"):continue
-        if not mandatory and not accepted:continue
-        backup=folder/"main.py.update.backup"
-        had_old=(folder/"main.py").is_file()
+        # Não repete download/restart a cada ciclo quando a atualização falhou.
+        # A tentativa seguinte só ocorre depois do backoff persistido em disco.
+        try:
+            retry_after=float(state.get("retryAfter") or 0)
+        except (TypeError,ValueError):
+            retry_after=0
+        if retry_after>time.time():
+            continue
+        if not mandatory and not accepted:
+            continue
         try:
             stop(bid)
-            if had_old:
-                shutil.copy2(folder/"main.py", backup)
-            size=download_latest_main(folder)
+            size=download_latest_bot_script(folder,bot_type)
             start(bid,bot_cfg)
-            state.update(updateId=update_id,announced=True,updated=True,updatedAt=int(time.time()*1000),bytes=size)
+            state.update(updateId=update_id,announced=bool(mandatory or state.get("announced")),updated=True,
+                         updatedAt=int(time.time()*1000),bytes=size,
+                         retryAfter=0,lastError="")
             save_json(state_file,state)
-            if request_file.exists():request_file.unlink()
-            try: backup.unlink(missing_ok=True)
-            except Exception: pass
-            print("[BotHub] bot atualizado e reiniciado:",raw_id,"bytes:",size,flush=True)
+            if request_file.exists():
+                request_file.unlink()
+            print("[BotHub] bot atualizado:",raw_id,"bytes:",size,flush=True)
         except Exception as e:
-            print("[BotHub] falha ao atualizar/reiniciar",raw_id,":",str(e)[:220],flush=True)
-            # Se a versão nova não inicializar, restaura a anterior e tenta ligar o bot.
+            attempts=int(state.get("attempts") or 0)+1
+            delay=min(900,30*(2**min(attempts-1,5)))
+            state.update(updateId=update_id,announced=True,updated=False,
+                         attempts=attempts,retryAfter=time.time()+delay,
+                         retryDelaySeconds=delay,lastAttemptAt=int(time.time()*1000),
+                         lastError=str(e)[:500])
+            save_json(state_file,state)
+            print("[BotHub] atualização falhou para",raw_id,
+                  "- código/erro:",str(e)[:180],
+                  "- próxima tentativa em",delay,"segundos.",flush=True)
+            # Restaura a versão anterior, mas não reinicia em ciclo apertado.
             try:
-                stop(bid)
+                backup=folder/("."+script_name+".last-good")
                 if backup.is_file():
-                    backup.replace(folder/"main.py")
+                    restored=folder/(script_name+".restore.tmp")
+                    restored.write_bytes(backup.read_bytes())
+                    restored.replace(folder/script_name)
                     print("[BotHub] versão anterior restaurada para",raw_id,flush=True)
-                if bid not in PROCS or PROCS[bid].poll() is not None:
-                    start(bid,bot_cfg)
-            except Exception as restart_error:
-                print("[BotHub] também falhou ao reiniciar",raw_id,":",str(restart_error)[:180],flush=True)
+                    if bid not in PROCS or PROCS[bid].poll() is not None:
+                        start(bid,bot_cfg)
+            except Exception as recovery_error:
+                print("[BotHub] recuperação da versão anterior falhou para",raw_id,
+                      ":",str(recovery_error)[:180],flush=True)
 
 
 CLUSTER_UPDATE_URLS={
-    "start.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/start.py",
     "add_cluster_server.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/add_cluster_server.py",
     "bothub_firebase_worker.py":"https://raw.githubusercontent.com/daniblockss/Bot-advanced/main/teste%202/bothub_firebase_worker.py",
 }
 
-def wake_screen_for_cluster_update():
-    """Pede ao Android para acender a tela antes de instalar uma atualização do cluster."""
-    if not TERMUX_CONSOLE:
-        return
-    command=shutil.which("input") or "/system/bin/input"
-    try:
-        result=subprocess.run([command,"keyevent","224"],capture_output=True,text=True,timeout=8)
-        if result.returncode==0:
-            print("[BotHub] Tela acordada para aplicar atualização.",flush=True)
-        else:
-            log_throttled("wake_screen_update",60,"[BotHub] Android não permitiu acender a tela para atualização.")
-    except (OSError,subprocess.TimeoutExpired) as exc:
-        log_throttled("wake_screen_update_error",60,"[BotHub] Não foi possível solicitar tela ativa:",str(exc)[:120])
+def publish_cluster_progress(did,update_id,status,message,version=None):
+    """Publica cada etapa da atualização para o painel administrativo."""
+    payload={"updateId":str(update_id),"status":str(status),"message":str(message)[:240],
+             "updatedAt":int(time.time()*1000),"reportedVersion":version or WORKER_VERSION}
+    fb("PUT","botHubClusterUpdates/progress/"+did,CURRENT_FIREBASE_TOKEN or LAST_TOKEN,payload)
 
-def publish_cluster_progress(tok,cfg,update_id,status,message,version=None):
-    """Publica o andamento da atualização para o painel em tempo real."""
-    device_id=(cfg or {}).get("device_id") or CURRENT_DEVICE_ID
-    if not device_id:return
-    did=urllib.parse.quote(str(device_id),safe="")
-    payload={"deviceId":device_id,"updateId":str(update_id),"status":str(status),
-             "message":str(message)[:240],"updatedAt":int(time.time()*1000),
-             "workerVersion":WORKER_VERSION}
-    if version:payload["reportedVersion"]=str(version)
-    try:fb("PUT","botHubClusterUpdates/progress/"+did,tok,payload)
-    except Exception as exc:print("[BotHub] Falha ao publicar progresso:",str(exc)[:140],flush=True)
-
-
-def publish_applied_cluster_update(tok,cfg):
-    state_path=ROOT/".bothub_cluster_update_state.json"
-    try:state=json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
-    except Exception:state={}
-    if state.get("status")!="applied" or state.get("reportedAt") or not state.get("updateId"):return
-    publish_cluster_progress(tok,cfg,state["updateId"],"completed",
-        "Servidor atualizado e worker reiniciado. Versão do worker: "+WORKER_VERSION,WORKER_VERSION)
-    state["reportedAt"]=int(time.time()*1000);state["reportedVersion"]=WORKER_VERSION
-    save_json(state_path,state)
-
-
-def process_cluster_update(tok,cfg=None):
-    """Executa a atualização e transmite as etapas ao painel."""
+def process_cluster_update(tok,did):
+    """Atualiza o worker e confirma a conclusão somente depois de iniciar o código novo."""
     release=fb("GET","botHubClusterUpdates/current",tok)
     if not isinstance(release,dict) or not release.get("updateId"):
         return False
     update_id=str(release.get("updateId"))
-    publish_cluster_progress(tok,cfg,update_id,"received","Solicitação de atualização recebida pelo servidor.")
     state_path=ROOT/".bothub_cluster_update_state.json"
-    try: state=json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
-    except Exception: state={}
-    if state.get("updateId")==update_id and state.get("status") in ("applied","installing"):
+    try:
+        state=json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    except Exception:
+        state={}
+    if state.get("updateId")==update_id and state.get("status")=="applied":
+        publish_cluster_progress(did,update_id,"completed","Worker voltou e confirmou a atualização.",WORKER_VERSION)
         return False
-
-    wake_screen_for_cluster_update()
-    publish_cluster_progress(tok,cfg,update_id,"downloading","Baixando e validando os arquivos do GitHub.")
+    if state.get("updateId")==update_id and state.get("status")=="installing":
+        started=float(state.get("requestedAt") or 0)/1000
+        if started and time.time()-started < 180:
+            publish_cluster_progress(did,update_id,"restarting","Aguardando a retomada do processo atualizado.")
+            return False
 
     requested=release.get("files",[])
     if isinstance(requested,dict):
         requested=list(requested.keys())
     if not isinstance(requested,list) or not requested:
         return False
+    allowed={"add_cluster_server.py","bothub_firebase_worker.py"}
     clean={}
-    for name in requested:
-        if name not in CLUSTER_UPDATE_URLS:
-            raise RuntimeError("Arquivo de cluster não permitido: "+str(name))
-        url=CLUSTER_UPDATE_URLS[name]
-        response=S.get(url,timeout=45)
-        response.raise_for_status()
-        data=response.content
-        if len(data)<1000:
-            raise RuntimeError("Download incompleto de "+name)
-        source=data.decode("utf-8")
-        compile(source,name,"exec")
-        clean[name]=source
+    try:
+        publish_cluster_progress(did,update_id,"received","Solicitação recebida pelo Worker.")
+        publish_cluster_progress(did,update_id,"downloading","Baixando e validando os arquivos publicados.")
+        for name in requested:
+            if name not in allowed:
+                raise RuntimeError("Arquivo de cluster não permitido: "+str(name))
+            response=S.get(CLUSTER_UPDATE_URLS[name],timeout=45)
+            response.raise_for_status()
+            data=response.content
+            if len(data)<1000:
+                raise RuntimeError("Download incompleto de "+name)
+            source=data.decode("utf-8")
+            compile(source,name,"exec")
+            clean[name]=source
 
-    pending=ROOT/".bothub_cluster_update_pending.json"
-    save_json(pending,{"updateId":update_id,"files":clean})
-    publish_cluster_progress(tok,cfg,update_id,"installing","Arquivos baixados e validados. Preparando a instalação.")
-    helper="""import json,os,sys,time,subprocess
-from pathlib import Path
-parent=int(sys.argv[1]);root=Path(sys.argv[2]).resolve();py=sys.argv[3]
-pending=root/".bothub_cluster_update_pending.json"
-state=root/".bothub_cluster_update_state.json"
-allowed={"start.py","add_cluster_server.py","bothub_firebase_worker.py"}
-def alive(pid):
-    try: os.kill(pid,0); return True
-    except OSError: return False
-deadline=time.time()+90
-while alive(parent) and time.time()<deadline: time.sleep(.5)
-if alive(parent):
-    try: os.kill(parent,15)
-    except OSError: pass
-    time.sleep(2)
-data=json.loads(pending.read_text(encoding="utf-8"))
-for name,source in data.get("files",{}).items():
-    if name not in allowed or not isinstance(source,str): raise RuntimeError("Arquivo não permitido")
-    compile(source,name,"exec")
-    target=root/name;tmp=root/(name+".cluster-update.tmp")
-    tmp.write_text(source,encoding="utf-8");tmp.replace(target)
-venvpy=root/"venv"/("Scripts/python.exe" if os.name=="nt" else "bin/python")
-if not venvpy.exists(): venvpy=Path(py)
-state.write_text(json.dumps({"updateId":data.get("updateId"),"status":"applied","appliedAt":int(time.time()*1000)}),encoding="utf-8")
-pending.unlink(missing_ok=True)
-launcher=root/"start.py"
-if not launcher.exists():
-    launcher=root/"add_cluster_server.py"
-if not launcher.exists():
-    raise RuntimeError("Nem start.py nem add_cluster_server.py foram encontrados; não é possível reiniciar.")
-if os.environ.get("BOTHUB_SUPERVISED") == "1":
-    print("[BotHub] Atualização aplicada; o start.py supervisor reiniciará este worker.", flush=True)
-    raise SystemExit(0)
-os.execv(str(venvpy),[str(venvpy),str(launcher)])
-"""
-    helper_path=ROOT/".bothub_cluster_updater.py"
-    helper_path.write_text(helper,encoding="utf-8")
-    save_json(state_path,{"updateId":update_id,"status":"installing","requestedAt":int(time.time()*1000)})
-    publish_cluster_progress(tok,cfg,update_id,"restarting","Atualização preparada. start.py supervisionará o reinício do worker.")
-    print("[BotHub] Atualização do cluster: baixando "+", ".join(clean.keys())+" diretamente do GitHub; reiniciando controlador.",flush=True)
-    subprocess.Popen([sys.executable,str(helper_path),str(os.getpid()),str(ROOT),sys.executable],
-        cwd=str(ROOT),stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
-        start_new_session=(os.name!="nt"))
-    return True
+        publish_cluster_progress(did,update_id,"installing","Arquivos validados; instalando de forma atômica.")
+        save_json(state_path,{"updateId":update_id,"status":"installing","requestedAt":int(time.time()*1000)})
+        for name,source in clean.items():
+            target=ROOT/name
+            tmp=ROOT/(name+".cluster-update.tmp")
+            tmp.write_text(source,encoding="utf-8")
+            tmp.replace(target)
+        save_json(state_path,{"updateId":update_id,"status":"applied","appliedAt":int(time.time()*1000)})
+        publish_cluster_progress(did,update_id,"restarting","Arquivos instalados; aguardando o Worker atualizado voltar.")
+        print("[BotHub] Atualização aplicada:",", ".join(clean.keys()),"- reiniciando o mesmo processo, sem encerrar o supervisor.",flush=True)
+        os.execv(sys.executable,[sys.executable,str(ROOT/"bothub_firebase_worker.py")])
+        return True
+    except Exception as exc:
+        try: publish_cluster_progress(did,update_id,"failed","Falha: "+str(exc)[:180],WORKER_VERSION)
+        except Exception: pass
+        raise
 
 def _pid_is_this_worker(pid):
-    """Evita matar um processo não relacionado caso o PID antigo tenha sido reutilizado."""
+    """Confere se o PID pertence ao worker desta instalação, não a outro servidor."""
     if pid == os.getpid():
         return True
+    expected = str((ROOT / "bothub_firebase_worker.py").resolve())
     if os.name != "nt":
         try:
-            raw = Path("/proc") / str(pid) / "cmdline"
-            command = raw.read_bytes().replace(b"\\0", b" ").decode("utf-8", errors="ignore")
-            return "bothub_firebase_worker.py" in command
+            raw = (Path("/proc") / str(pid) / "cmdline").read_bytes()
+            args = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\\0") if part]
+            return any(arg.endswith(".py") and str(Path(arg).resolve()) == expected for arg in args[1:])
         except Exception:
             return False
     try:
         import psutil
         process = psutil.Process(pid)
-        return any("bothub_firebase_worker.py" in str(arg).lower()
-                   for arg in process.cmdline())
+        return any(str(Path(arg).resolve()) == expected for arg in process.cmdline()
+                   if str(arg).lower().endswith(".py"))
     except Exception:
         return False
 
-def acquire_worker_lock():
-    """O controlador novo encerra a instância antiga desta instalação e assume o controle."""
-    # Um único controlador por usuário/dispositivo, mesmo se as instalações estiverem em pastas diferentes.
-    lock_path = Path.home() / ".bothub_worker.lock"
-    # O arquivo guarda o PID da instância que atualmente possui o bloqueio.
-    old_pid = None
-    try:
-        raw = lock_path.read_text(encoding="utf-8").strip()
-        if raw.isdigit():
-            old_pid = int(raw)
-    except Exception:
-        pass
-
-    # Migração do bloqueio antigo: versões anteriores gravavam "0" e não guardavam o PID.
-    # Neste caso, localiza os outros workers pelo cmdline e encerra-os; esta instância é preservada.
-    other_pids = set()
-    if os.name != "nt":
-        try:
-            for entry in Path("/proc").iterdir():
-                if not entry.name.isdigit():
-                    continue
-                pid = int(entry.name)
-                if pid != os.getpid() and _pid_is_this_worker(pid):
-                    other_pids.add(pid)
-        except Exception:
-            pass
-    elif old_pid and old_pid != os.getpid() and _pid_is_this_worker(old_pid):
-        other_pids.add(old_pid)
-
-    if old_pid and old_pid != os.getpid() and _pid_is_this_worker(old_pid):
-        other_pids.add(old_pid)
-
-    for pid in sorted(other_pids):
-        print("[BotHub] Controlador antigo detectado (PID", pid,
-              "). Encerrando-o; esta instância continuará ativa.", flush=True)
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            pass
-
-    deadline = time.time() + 10
-    while other_pids and time.time() < deadline:
-        alive = set()
-        for pid in other_pids:
-            try:
-                os.kill(pid, 0)
-                alive.add(pid)
-            except OSError:
-                pass
-        other_pids = alive
-        if other_pids:
-            time.sleep(0.25)
-    for pid in other_pids:
-        try:
-            os.kill(pid, signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM)
-        except OSError:
-            pass
-
-    handle = open(lock_path, "a+", encoding="utf-8")
-    try:
-        if os.name == "nt":
-            import msvcrt
-            handle.seek(0)
-            if lock_path.stat().st_size == 0:
-                handle.write(" ")
-                handle.flush()
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except (OSError, BlockingIOError):
-        handle.close()
-        # Se o processo antigo ainda está encerrando, tenta assumir o bloqueio por alguns segundos.
-        deadline = time.time() + 8
-        while time.time() < deadline:
-            time.sleep(0.25)
-            handle = open(lock_path, "a+", encoding="utf-8")
-            try:
-                if os.name == "nt":
-                    import msvcrt
-                    handle.seek(0)
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    import fcntl
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except (OSError, BlockingIOError):
-                handle.close()
-                handle = None
-        if handle is None:
-            print("[BotHub] Não consegui assumir o controle: outro controlador ainda mantém o bloqueio.", flush=True)
-            return None
-
-    handle.seek(0)
-    handle.truncate()
-    handle.write(str(os.getpid()))
-    handle.flush()
-    return handle
-
-def worker_presence_heartbeat():
-    """Atualiza somente a presença em paralelo ao processamento dos bots."""
-    last_error_log = 0
-    while not HEARTBEAT_STOP.is_set():
-        tok = LAST_TOKEN
-        did = LAST_DID
-        if tok and did:
-            now = int(time.time() * 1000)
-            try:
-                response = requests.patch(
-                    DB + "/workers/" + did + ".json",
-                    params={"auth": tok},
-                    json={"lastSeen": now, "online": True, "status": "online"},
-                    headers={"User-Agent": "BotHub-Cluster/4.0"},
-                    timeout=8,
-                )
-                if response.status_code >= 300:
-                    raise RuntimeError("Firebase HTTP " + str(response.status_code))
-            except Exception as exc:
-                if time.time() - last_error_log >= 30:
-                    print("[BotHub] heartbeat de presença temporariamente indisponível:", str(exc)[:140], flush=True)
-                    last_error_log = time.time()
-        HEARTBEAT_STOP.wait(5)
-
-
 def main():
-    global CURRENT_CFG, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN, LEASE_MISSES, LAST_TOKEN, LAST_DID, LAST_QUEUE
-    enable_termux_console_timestamps()
+    global CURRENT_CFG, CURRENT_DEVICE_ID, CURRENT_FIREBASE_TOKEN, LEASE_MISSES
     cfg=setup()
     CURRENT_CFG=cfg
     CURRENT_DEVICE_ID=cfg['device_id']
@@ -1701,49 +1272,72 @@ def main():
         subprocess.check_call([str(vp),"-m","pip","install","--upgrade","pip"])
         subprocess.check_call([str(vp),"-m","pip","install","requests","discord.py","aiohttp"])
         os.execv(str(vp),[str(vp),str(Path(__file__).resolve())])
-    lock_handle = acquire_worker_lock()
-    if lock_handle is None:
-        print("[BotHub] Já existe um controlador rodando nesta pasta. Este processo será encerrado para evitar bots duplicados.", flush=True)
-        return
+    # Execução direta: não bloquear o Worker por arquivo de lock.
     signal.signal(signal.SIGTERM, handle_shutdown_signal)
     signal.signal(signal.SIGINT, handle_shutdown_signal)
     atexit.register(cleanup_children)
-    global HEARTBEAT_THREAD
-    HEARTBEAT_THREAD = threading.Thread(target=worker_presence_heartbeat, name="BotHubPresence", daemon=True)
-    HEARTBEAT_THREAD.start()
     kill_existing_bothub_bots()
     kill_bot_processes_under_root()
     print("[BotHub] Todos os main.py antigos desta instalação foram encerrados; iniciando os bots atribuídos.", flush=True)
     print("[BotHub] Worker iniciado sem pedir ID, e-mail ou senha.",flush=True)
-    print("[BotHub] VERSÃO DO WORKER:",WORKER_VERSION,flush=True)
     while True:
         try:
             t=token(cfg);did=urllib.parse.quote(cfg["device_id"],safe="")
+            shared_auth_dir=ROOT/".bothub_shared";shared_auth_dir.mkdir(parents=True,exist_ok=True)
+            save_json(shared_auth_dir/"firebase-worker-token.json",{"idToken":t,"uid":str(cfg.get("uid") or ""),"updatedAt":int(time.time()*1000)})
             LAST_TOKEN=t;LAST_DID=did;CURRENT_FIREBASE_TOKEN=t
-            fb("PATCH","workers/"+did,t,stats(cfg))
-            publish_applied_cluster_update(t,cfg)
-            process_bot_deletions(t, cfg["device_id"])
-            queue=load_worker_queue(t, cfg["device_id"]) or {}
+            # Verifica atualização antes do heartbeat: um erro no PUT de status
+            # não pode impedir que este worker receba a própria correção.
+            try:
+                if process_cluster_update(t,did):
+                    break
+            except Exception as update_error:
+                print("[BotHub] falha ao verificar atualização do cluster:",str(update_error)[:220],flush=True)
+            # O tipo do ambiente é sincronizado separadamente e somente quando muda.
+            sync_runtime_type(did,t,cfg)
+            heartbeat=stats(cfg)
+            heartbeat["runtimeType"]=sync_runtime_type(did,t,cfg)
+            heartbeat["runtimeSource"]="worker"
+            fb("PATCH","workers/"+did,t,heartbeat)
+            queue=fb("GET","workerTasks/"+did,t) or {}
             LAST_QUEUE=queue if isinstance(queue,dict) else {}
-            sync_missing_bot_avatars(queue,t)
             process_worker_commands(cfg,t,did,queue)
             # Uma conta Discord (token) só pode ter uma instância ativa neste worker.
             # Se o painel atribuir o mesmo token a IDs/pastas diferentes, manter apenas a primeira.
             desired={}
             token_owner={}
             duplicate_ids=set()
-            for raw_id,b in queue.items():
+            for raw_id,b in list(queue.items()):
                 if not isinstance(b,dict) or not b.get("enabled",True):
                     continue
                 k=sid(raw_id)
+                # O cadastro principal é a fonte de verdade; uma fila antiga nunca pode
+                # ressuscitar um bot que o painel já marcou como OFF.
+                try:
+                    remote_bot = fb("GET","bots/"+urllib.parse.quote(k,safe=""),t) or {}
+                    if (not isinstance(remote_bot,dict) or remote_bot.get("enabled") is False
+                            or str(remote_bot.get("desiredState","on")).lower()=="off"):
+                        queue.pop(raw_id, None)
+                        queue.pop(k, None)
+                        stop(k)
+                        stop_bot_processes(k)
+                        try: release_bot_lease(k,cfg["device_id"],t)
+                        except Exception: pass
+                        try: fb("DELETE","workerTasks/"+did+"/"+urllib.parse.quote(k,safe=""),t)
+                        except Exception: pass
+                        print("[BotHub] bot OFF no cadastro; main.py encerrado e tarefa removida:",k,flush=True)
+                        continue
+                except Exception as status_error:
+                    print("[BotHub] não foi possível confirmar o estado do bot",k,str(status_error)[:120],flush=True)
+                    continue
                 secret=str(b.get("token") or "").strip()
                 if not secret:
-                    log_throttled("missing-token:"+k,300,"[BotHub] bot sem token ignorado:",k)
+                    print("[BotHub] bot sem token ignorado:",k,flush=True)
                     continue
                 if secret in token_owner:
                     duplicate_ids.add(k)
-                    log_throttled("duplicate-token:"+k,60,"[BotHub] token duplicado detectado; não inicia a segunda pasta:",k,
-                          "(a conta já está atribuída a",token_owner[secret]+")")
+                    print("[BotHub] token duplicado detectado; não inicia a segunda pasta:",k,
+                          "(a conta já está atribuída a",token_owner[secret]+")",flush=True)
                     continue
                 token_owner[secret]=k
                 desired[k]=b
@@ -1753,47 +1347,82 @@ def main():
                     if claim_bot_lease(k,cfg['device_id'],t):
                         leased[k]=bot_cfg
                     else:
-                        log_throttled("lease-owned:"+k,60,"[BotHub] bot pertence a outro worker; aguardando:",k)
+                        print("[BotHub] bot pertence a outro worker; aguardando:",k,flush=True)
                 except Exception as lease_error:
-                    log_throttled("lease-error:"+k,30,"[BotHub] lease indisponível para",k,str(lease_error)[:140])
+                    print("[BotHub] lease indisponível para",k,str(lease_error)[:140],flush=True)
             for k in list(PROCS):
                 if k not in leased or k in duplicate_ids:
                     stop(k)
-                    synced = False
-                    try:
-                        sync_bot_state(k,'push',t,cfg['device_id'])
-                        synced = True
-                    except Exception as exc:
-                        print("[BotHub] sincronização falhou; pasta local preservada:",k,str(exc)[:140],flush=True)
+                    try: sync_bot_state(k,'push',t,cfg['device_id'])
+                    except Exception: pass
                     release_bot_lease(k,cfg['device_id'],t)
-                    if synced:
-                        try:
-                            folder = (ROOT / "bots" / sid(k)).resolve()
-                            bots_root = (ROOT / "bots").resolve()
-                            if folder.parent == bots_root and folder.exists():
-                                shutil.rmtree(folder)
-                                print("[BotHub] bot parado/transferido; estado sincronizado e pasta removida:",k,flush=True)
-                        except Exception as exc:
-                            print("[BotHub] não foi possível remover pasta do bot:",k,str(exc)[:120],flush=True)
+                    if k not in leased:
+                        shutil.rmtree(ROOT/'bots'/sid(k),ignore_errors=True)
+                    print("[BotHub] bot parado/transferido:",k,flush=True)
+            # Propaga para o painel as comunidades liberadas pelo comando privado !allow.
+            for active_id in list(leased):
+                try:
+                    local_cfg_path=ROOT/"bots"/sid(active_id)/"config.json"
+                    if local_cfg_path.exists():
+                        local_cfg=json.loads(local_cfg_path.read_text(encoding="utf-8"))
+                        auth_cfg=local_cfg.get("bot_authorization") if isinstance(local_cfg,dict) else {}
+                        ids=auth_cfg.get("authorized_guild_ids",[]) if isinstance(auth_cfg,dict) else []
+                        ids=sorted({str(x) for x in ids if str(x).isdigit()})
+                        remote_ids=fb("GET","bots/"+sid(active_id)+"/authorizedGuildIds",t) or []
+                        remote_ids=sorted({str(x) for x in remote_ids if str(x).isdigit()}) if isinstance(remote_ids,list) else []
+                        if ids != remote_ids:
+                            fb("PUT","bots/"+sid(active_id)+"/authorizedGuildIds",t,ids)
+                except Exception as auth_sync_error:
+                    print("[BotHub] sincronização das comunidades autorizadas falhou:",active_id,str(auth_sync_error)[:140],flush=True)
+            # Reinicia apenas o bot cuja configuração de autorização mudou no painel.
+            for active_id,active_cfg in leased.items():
+                try:
+                    if active_id in PROCS and PROCS[active_id].poll() is None:
+                        local_path=ROOT/"bots"/sid(active_id)/"config.json"
+                        local=json.loads(local_path.read_text(encoding="utf-8")) if local_path.exists() else {}
+                        current=local.get("bot_authorization") if isinstance(local,dict) else {}
+                        current=current if isinstance(current,dict) else {}
+                        desired={
+                            "password_salt":str(active_cfg.get("allowPasswordSalt") or ""),
+                            "password_hash":str(active_cfg.get("allowPasswordHash") or ""),
+                            "allow_user_ids":sorted({str(x) for x in (active_cfg.get("allowUserIds") or []) if str(x).isdigit()}),
+                            "authorized_guild_ids":sorted({str(x) for x in (active_cfg.get("authorizedGuildIds") or []) if str(x).isdigit()}),
+                        }
+                        normalized={
+                            "password_salt":str(current.get("password_salt") or ""),
+                            "password_hash":str(current.get("password_hash") or ""),
+                            "allow_user_ids":sorted({str(x) for x in (current.get("allow_user_ids") or []) if str(x).isdigit()}),
+                            "authorized_guild_ids":sorted({str(x) for x in (current.get("authorized_guild_ids") or []) if str(x).isdigit()}),
+                        }
+                        if normalized != desired:
+                            stop(active_id)
+                            print("[BotHub] autorização alterada no painel; reiniciando bot:",active_id,flush=True)
+                except Exception as auth_restart_error:
+                    print("[BotHub] não foi possível conferir autorização:",active_id,str(auth_restart_error)[:120],flush=True)
             for k,bot_cfg in leased.items():
                 try:
+                    requested_at=float(bot_cfg.get("startRequestedAt") or 0)
+                    saved_exit=clean_exit_state(k,requested_at)
+                    if saved_exit is not None:
+                        CLEAN_EXITED[k]=saved_exit
+                        continue
+                    CLEAN_EXITED.pop(k,None)
                     if k not in PROCS or PROCS[k].poll() is not None:
+                        # Se terminou normalmente depois de iniciar, pausa novas tentativas
+                        # até o painel registrar um novo pedido explícito de inicialização.
+                        previous=PROCS.get(k)
+                        if previous is not None and previous.poll() is not None and previous.returncode == 0:
+                            mark_clean_exit(k,requested_at,previous.returncode)
+                            print("[BotHub] bot encerrou com código 0; pausa persistida até novo pedido:",k,flush=True)
+                            stop(k)
+                            continue
                         sync_bot_state(k,'pull',t,cfg['device_id'])
                         sync_bot_state(k,'push',t,cfg['device_id'])
-                        desired_state=str(bot_cfg.get("desiredState") or "on").lower()
-                        if bot_cfg.get("enabled", True) is False or desired_state == "off":
-                            continue
+                        auto_start=bot_cfg.get("autoStart",True) is not False
+                        start_requested=float(bot_cfg.get("startRequestedAt") or 0)
+                        if not auto_start and start_requested <= WORKER_STARTED*1000: continue
                         start(k,bot_cfg)
-                except Exception as e: log_throttled("bot-failure:"+k,30,"[BotHub] falha no bot",k,str(e)[:220])
-            try:
-                if process_cluster_update(t,cfg):
-                    break
-            except Exception as e:
-                try:
-                    rel=fb("GET","botHubClusterUpdates/current",t) or {}
-                    if rel.get("updateId"):publish_cluster_progress(t,cfg,rel.get("updateId"),"failed","Falha na atualização: "+str(e)[:180])
-                except Exception:pass
-                print("[BotHub] falha ao atualizar arquivos de cluster:",str(e)[:220],flush=True)
+                except Exception as e: print("[BotHub] falha no bot",k,str(e)[:220],flush=True)
             try: process_release_updates(t,queue)
             except Exception as e: print("[BotHub] falha ao verificar atualização:",str(e)[:220],flush=True)
         except KeyboardInterrupt: break
@@ -1805,7 +1434,7 @@ def main():
                 ACTIVE_LEASES.clear()
         else:
             LEASE_MISSES = 0
-        time.sleep(max(3,int(os.getenv('BOTHUB_POLL_SECONDS','5'))))
+        time.sleep(max(10,int(os.getenv('BOTHUB_POLL_SECONDS','15'))))
     cleanup_children()
 
 if __name__=="__main__":

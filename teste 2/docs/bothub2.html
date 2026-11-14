@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#070a12">
-<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.13.8</title>
+<title>BotHub — Cyber Dashboard AI & Standard · v2026.11.12.17</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -398,7 +398,6 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
     <button class="nav-btn active" data-page="overview"><span class="nav-ico">📊</span>Visão geral</button>
     <button class="nav-btn" data-page="workersSection"><span class="nav-ico">🖥️</span>Workers & Cluster</button>
     <button class="nav-btn" data-page="botsSection"><span class="nav-ico">🤖</span>Gerenciar Bots</button>
-    <button class="nav-btn" data-page="globalApisSection"><span class="nav-ico">🔑</span>APIs Globais</button>
     <button class="nav-btn" data-page="updatesSection"><span class="nav-ico">🔄</span>Atualizações & Sistema</button>
     <button class="nav-btn" data-page="setupSection"><span class="nav-ico">📖</span>Adicionar Servidor</button>
     <div class="side-bottom">
@@ -516,13 +515,6 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
     <div id="page-botsSection" class="page hidden">
       <div class="card" style="margin-bottom: 14px;">
         <h2>Cadastrar bot Discord</h2>
-        <label>Tipo de bot</label>
-        <select id="botType"><option value="ia_chat">IA CHAT — main.py completo</option><option value="standard">STANDARD — comandos configuráveis</option><option value="bot_admin">BOT ADMIN — tickets, pontos e APIs</option></select>
-        <div id="standardBotFields" class="hidden" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0"><b>Comandos STANDARD</b><label>Comandos em JSON (nome, descrição e resposta)</label><textarea id="standardCommands" rows="5" placeholder='{"ping":{"description":"Verificar bot","response":"Pong!"}}'></textarea><p class="hint">Cada chave vira um comando com o prefixo !.</p></div>
-        <div id="adminBotFields" class="hidden" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0">
-          <b>Configuração do BOT ADMIN</b>
-          <p class="hint">Não precisa preencher IDs nem canais aqui. O criador será identificado automaticamente pelo token do bot. Depois de adicionar o bot ao servidor, use <b>!config</b> no Discord para escolher o canal de entrada, a categoria dos tickets e a equipe de atendimento.</p>
-        </div>
         <label>Nome do bot</label>
         <input id="botName" maxlength="100" placeholder="Meu bot">
         <label>Token do bot</label>
@@ -539,25 +531,12 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
       </div>
     </div>
 
-    <div id="page-globalApisSection" class="page hidden">
-      <div class="card">
-        <h2>APIs Globais</h2>
-        <p class="hint">Gerencie chaves compartilhadas pelos bots autorizados. A chave nunca é exibida novamente em texto aberto.</p>
-        <label>Provedor</label><select id="globalApiProvider"><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="llm7">LLM7</option><option value="chatgpt">ChatGPT / OpenAI</option></select>
-        <label>Chave da API</label><input id="globalApiKey" type="password" autocomplete="off" placeholder="Cole a chave privada">
-        <label>Modelo (opcional)</label><input id="globalApiModel" placeholder="Ex.: llama-3.3-70b-versatile">
-        <button id="addGlobalApi" class="primary" style="margin-top:10px">Adicionar API global</button><div id="globalApiMsg" class="hint"></div>
-      </div>
-      <div class="card"><h2>Chaves cadastradas</h2><div id="globalApisList" class="hint">Carregando APIs globais…</div></div>
-    </div>
-
     <!-- Seção Atualizações & Sistema (Separada corretamente) -->
     <div id="page-updatesSection" class="page hidden">
       <div class="grid two-col">
         <div class="card">
           <h2>Atualizar main.py (Bots)</h2>
-          <p class="hint">Atualize todos os bots atribuídos aos workers com uma única publicação.</p>
-          <div id="mainPublishedVersions" class="hint" style="margin:8px 0;padding:9px;border:1px solid var(--line);border-radius:9px">Versão publicada do main.py: 2026.11.13.5</div>
+          <p class="hint">Publica atualização para os bots individuais do cluster.</p>
           <label>Tipo de atualização</label>
           <select id="mainUpdateType">
             <option value="optional">Opcional — o criador decide</option>
@@ -565,18 +544,14 @@ pre.code-block{white-space:pre-wrap;overflow-wrap:anywhere;background:#050810;bo
           </select>
           <label>Descrição</label>
           <textarea id="mainUpdateDescription" rows="2" maxlength="1500" placeholder="Descreva as melhorias"></textarea>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
-            <button id="publishMainUpdate" class="secondary">Publicar atualização</button>
-            <button id="updateAllBots" class="primary">⚡ Atualizar todos os bots agora</button>
-          </div>
-          <div id="mainUpdateMsg" class="hint"></div><div id="botUpdateProgress" class="hint" style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px">Aguardando versões dos bots…</div>
+          <button id="publishMainUpdate" class="primary" style="margin-top:10px">Publicar atualização</button>
+          <div id="mainUpdateMsg" class="hint"></div>
         </div>
 
         <div class="card">
           <h2>Controlador do Cluster (Workers)</h2>
           <p class="hint">Atualiza os scripts do repositório em todos os workers conectados.</p>
-          <div id="clusterPublishedVersions" class="hint" style="margin:8px 0;padding:9px;border:1px solid var(--line);border-radius:9px">Versões publicadas: start.py 2026.11.13.1 · add_cluster_server.py 2026.11.12.11 · worker 2026.11.13.8</div>
-          <div style="margin-top: 12px;"></div>
+          <div style="margin-top: 24px;"></div>
           <button id="updateCluster" class="primary">Atualizar arquivos do Cefilu</button>
           <div id="clusterUpdateMsg" class="hint" style="margin-top: 10px;"></div>
           <div id="clusterUpdateProgress" class="hint" style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px">Nenhuma atualização em andamento.</div>
@@ -606,12 +581,6 @@ python3 start.py</pre>
     </div>
 
     <div class="modal-body-content">
-      <div class="card" style="padding:10px;margin-bottom:10px">
-        <strong>➕ Adicionar bot ao servidor</strong>
-        <p class="hint" style="margin:5px 0">Gera um convite oficial do Discord para este bot.</p>
-        <button class="primary" onclick="generateBotInvite()">Gerar convite</button>
-        <div id="modalInviteStatus" class="hint" style="margin-top:7px"></div>
-      </div>
       <div class="modal-tabs">
         <button class="modal-tab-btn active" onclick="switchBotTab('files')">📁 Arquivos</button>
         <button class="modal-tab-btn" onclick="switchBotTab('logs')">📋 Logs</button>
@@ -652,14 +621,14 @@ python3 start.py</pre>
         <label>Token do bot (deixe vazio para manter o atual)</label>
         <input id="modalProfileToken" type="password" autocomplete="new-password" placeholder="Novo token do mesmo bot">
         <div class="small muted">O novo token será validado e precisa pertencer à mesma conta Discord. Ele não será exibido novamente no painel.</div>
-        <label>Permissões de servidores (sincronizadas com a aba Permissões)</label>
-        <select id="modalGuildAccessMode" disabled>
+        <label>Permissão de servidores</label>
+        <select id="modalGuildAccessMode">
           <option value="required">Obrigatório: somente IDs autorizados</option>
           <option value="optional">Opcional: permitir todos os servidores</option>
         </select>
         <label>IDs dos servidores autorizados (um por linha)</label>
-        <textarea id="modalGuildAllowlist" rows="3" maxlength="5000" placeholder="Nenhum servidor liberado" readonly></textarea>
-        <div class="small muted">Esta lista é atualizada automaticamente quando você libera ou bloqueia servidores na aba geral de Permissões. Para alterar, use aquela aba.</div>
+        <textarea id="modalGuildAllowlist" rows="3" maxlength="5000" placeholder="123456789012345678"></textarea>
+        <div class="small muted">No modo obrigatório, apenas estes servidores podem usar os comandos. Também é possível autorizar pelo Discord com <b>!allow</b> (somente criador global).</div>
         <label>Foto de Perfil (aplicada ao Discord e sincronizada)</label>
         <label style="display:flex;align-items:center;gap:8px;margin-top:10px">
           <input id="modalAvatarAutoUpdate" type="checkbox" style="width:auto">
@@ -821,7 +790,6 @@ const pageInfo = {
   overview: ['Visão geral do Cluster', 'Monitoramento em tempo real dos workers e bots.'],
   workersSection: ['Workers & Cluster', 'Controle de dispositivos e arquivos do Cefilu.'],
   botsSection: ['Gerenciar Bots', 'Cadastro, estado e perfis dos bots Discord.'],
-  globalApisSection: ['APIs Globais', 'Chaves compartilhadas, contribuidores e disponibilidade dos provedores.'],
   updatesSection: ['Atualizações & Sistema', 'Publicação de atualizações de main.py e cluster.'],
   setupSection: ['Adicionar Servidor', 'Instruções para ligar novos workers ao cluster.']
 };
@@ -902,16 +870,7 @@ const firebaseConfig={apiKey:'AIzaSyDS_KvyPWGgzYqIVgkagw5DAwzlenNZtiE',authDomai
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getDatabase(app);
 const testRef=path=>ref(db,path);
 
-let workerData={},botData={},clusterUpdateProgress={},botVersionData={},stopListeners=[],busy=false,lastAssignment='';
-let trustedWorkerUids=new Set();
-async function syncTrustedWorkers(){
-  for(const w of Object.values(workerData)){
-    const uid=String(w.uid||'').trim();
-    if(!uid||trustedWorkerUids.has(uid))continue;
-    try{await set(testRef('botHubTrustedWorkers/'+uid),true);trustedWorkerUids.add(uid);}
-    catch(e){console.warn('[BotHub] Não foi possível autorizar worker Firebase:',e.message||e);}
-  }
-}
+let workerData={},botData={},clusterUpdateProgress={},stopListeners=[],busy=false,lastAssignment='';
 let currentModalBotId = null;
 
 const bytes=n=>{let v=Number(n)||0,u=['B','KB','MB','GB','TB'],i=0;while(v>=1024&&i<u.length-1){v/=1024;i++}return v.toFixed(i?1:0)+' '+u[i]};
@@ -937,7 +896,6 @@ function watch(path,cb){
 function runningSet(){
   const s=new Set();
   for(const w of Object.values(workerData)){
-    // readyBotIds só contém bots que confirmaram on_ready no gateway do Discord.
     const ids=w.readyBotIds;
     if(Array.isArray(ids))ids.forEach(id=>s.add(String(id)));
     else if(ids&&typeof ids==='object')Object.keys(ids).forEach(id=>s.add(String(id)));
@@ -955,35 +913,9 @@ function processSet(){
   return s;
 }
 
-// Mantém o último sinal por 45 s para absorver leituras transitórias do Firebase.
-const botPresenceCache=new Map();
-function botPresence(id,ready,processes){
-  const now=Date.now();
-  if(ready.has(id)){
-    botPresenceCache.set(id,{state:'ready',at:now});
-    return {state:'ready',label:'Discord conectado'};
-  }
-  if(processes.has(id)){
-    botPresenceCache.set(id,{state:'running',at:now});
-    return {state:'running',label:'Conectando ao Discord'};
-  }
-  const previous=botPresenceCache.get(id);
-  if(previous&&now-previous.at<45000){
-    return {state:'grace',label:'Reconectando · verificando Worker'};
-  }
-  botPresenceCache.delete(id);
-  return {state:'waiting',label:'Aguardando inicialização'};
-}
 function botStatus(id,b,ready,processes){
   const wanted=b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off';
-  if(wanted){
-    const presence=botPresence(id,ready,processes);
-    if(presence.state==='ready')return '<span style="color:var(--green)">Ligado · Discord conectado</span>';
-    if(presence.state==='running')return '<span style="color:var(--cyan)">Conectando ao Discord</span>';
-    if(presence.state==='grace')return '<span style="color:#fbbf24">Reconectando · verificando Worker</span>';
-    return '<span style="color:var(--muted)">Aguardando inicialização</span>';
-  }
-  botPresenceCache.delete(id);
+  if(wanted)return ready.has(id)?'<span style="color:var(--green)">Ligado</span>':'<span style="color:var(--cyan)">Ligando</span>';
   return processes.has(id)?'<span style="color:#fbbf24">Desligando</span>':'<span style="color:var(--red)">Desligado</span>';
 }
 
@@ -1031,36 +963,22 @@ function statusChip(label,ok){
 function workerBotListHtml(workerId,w){
  const ids=w.runningBotIds, running=new Set(Array.isArray(ids)?ids.map(String):ids&&typeof ids==='object'?Object.keys(ids).map(String):[]);
  const ready=w.readyBotIds, confirmed=new Set(Array.isArray(ready)?ready.map(String):ready&&typeof ready==='object'?Object.keys(ready).map(String):[]);
- const items=Object.entries(botData).filter(([id,b])=>running.has(String(id))||String(b.workerId||'')===String(workerId));
- if(!items.length)return '<div class="hint" style="margin-top:7px">Nenhum bot atribuído a este Worker.</div>';
- return '<details open style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Bots atribuídos ('+items.length+') · mostrar/ocultar</summary><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+items.map(([id,b])=>{const p=botPresence(String(id),confirmed,running);const state=p.label;return '<span title="'+esc((b.name||'Bot')+' · '+state)+'" style="display:inline-flex;align-items:center;gap:5px;max-width:210px;padding:4px 7px;border:1px solid var(--line);border-radius:8px;font-size:11px"><img src="'+(b.avatarBase64||b.avatarUrl||'')+'" onerror="this.style.display=\'none\'" style="width:19px;height:19px;border-radius:50%;object-fit:cover;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||'Bot')+' · '+state+'</span></span>';}).join('')+'</div></details>';
+ const items=Object.entries(botData).filter(([id,b])=>running.has(String(id))||((!running.size)&&String(b.workerId||'')===String(workerId)&&confirmed.has(String(id))));
+ if(!items.length)return '<div class="hint" style="margin-top:7px">Nenhum bot em execução detectado.</div>';
+ return '<details open style="margin-top:7px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">Bots em execução ('+items.length+') · mostrar/ocultar</summary><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">'+items.map(([id,b])=>'<span title="'+esc(b.name||'Bot')+'" style="display:inline-flex;align-items:center;gap:5px;max-width:170px;padding:4px 7px;border:1px solid var(--line);border-radius:8px;font-size:11px"><img src="'+(b.avatarBase64||b.avatarUrl||'')+'" onerror="this.style.display=\'none\'" style="width:19px;height:19px;border-radius:50%;object-fit:cover;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(b.name||'Bot')+'</span></span>').join('')+'</div></details>';
 }
 function clusterProgressHtml(id){
  const p=clusterUpdateProgress[id];if(!p||!p.status)return '';
- const age=p.updatedAt?Math.max(0,Date.now()-Number(p.updatedAt)):0;
- const stale=p.status==='restarting'&&age>180000;
  const labels={received:'Solicitação recebida',downloading:'Baixando arquivos',installing:'Preparando instalação',restarting:'Reiniciando worker',completed:'Atualizado',failed:'Falha na atualização'};
- const title=stale?'Reinício não confirmado':(labels[p.status]||p.status);
- const message=stale?'O Worker não confirmou o retorno após a atualização. O estado abaixo é antigo; confira o log start.log no dispositivo.':(p.message||'');
- const color=p.status==='completed'?'var(--green)':p.status==='failed'||stale?'var(--red)':'var(--cyan)';
- return '<div class="hint" style="margin-top:7px;padding:8px 10px;border:1px solid '+color+'55;border-radius:9px"><strong style="color:'+color+'">Work · '+esc(title)+'</strong><div>'+esc(message)+'</div><div>Atualizado: '+(p.updatedAt?ageText(age):'—')+(p.reportedVersion?' · Versão: '+esc(p.reportedVersion):'')+'</div></div>';
+ const color=p.status==='completed'?'var(--green)':p.status==='failed'?'var(--red)':'var(--cyan)';
+ return '<div class="hint" style="margin-top:7px;padding:8px 10px;border:1px solid '+color+'55;border-radius:9px"><strong style="color:'+color+'">Work · '+esc(labels[p.status]||p.status)+'</strong><div>'+esc(p.message||'')+'</div><div>Atualizado: '+(p.updatedAt?ageText(Date.now()-Number(p.updatedAt)):'—')+(p.reportedVersion?' · Versão: '+esc(p.reportedVersion):'')+'</div></div>';
 }
-function drawBotUpdateProgress(){
- const box=$('botUpdateProgress');if(!box)return;
- const rows=Object.entries(botVersionData).filter(([,p])=>p&&(p.installedVersion||p.status||p.updateId));
- if(!rows.length){box.textContent='Aguardando os workers informarem a versão instalada de cada bot.';return;}
- const labels={received:'Solicitação recebida',updating:'Atualizando',running:'Em execução',starting:'Iniciando',completed:'Atualizado',failed:'Falha na atualização'};
- box.innerHTML='<strong>Versão instalada e andamento por bot</strong>'+rows.map(([id,p])=>{const b=botData[id]||{};const color=p.status==='completed'||p.status==='running'?'var(--green)':p.status==='failed'?'var(--red)':'var(--cyan)';return '<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(b.name||id)+'</strong> · <span style="color:'+color+'">'+esc(labels[p.status]||p.status||'Versão informada')+'</span><div class="small muted">main.py instalado: '+esc(p.installedVersion||'ainda não informado')+'</div>'+(p.message?'<div>'+esc(p.message)+'</div>':'')+(p.updatedAt?'<div class="small muted">'+ageText(Date.now()-Number(p.updatedAt))+'</div>':'')+'</div>';}).join('');
-}
-
 function drawClusterProgress(){
  const box=$('clusterUpdateProgress');if(!box)return;
  const rows=Object.entries(clusterUpdateProgress).filter(([,p])=>p&&p.updateId);
- const workers=Object.entries(workerData).filter(([,w])=>w&&w.serverFileVersions);
+ if(!rows.length){box.textContent='Nenhuma atualização em andamento.';return;}
  const labels={received:'Solicitação recebida',downloading:'Baixando arquivos',installing:'Instalando',restarting:'Reiniciando',completed:'Atualizado',failed:'Falhou'};
- const progress=rows.length?'<strong>Andamento da atualização</strong>'+rows.map(([id,p])=>'<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(workerData[id]?.label||workerData[id]?.hostname||id)+'</strong> · '+esc(labels[p.status]||p.status)+'<div>'+esc(p.message||'')+'</div></div>').join(''):'';
- const versions=workers.length?'<strong>Versões instaladas por servidor</strong>'+workers.map(([id,w])=>'<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(w.label||w.hostname||id)+'</strong>'+Object.entries(w.serverFileVersions||{}).map(([file,version])=>'<div class="small muted">'+esc(file)+': '+esc(version)+'</div>').join('')+'</div>').join(''):'Aguardando os workers informarem as versões instaladas.';
- box.innerHTML=progress+versions;
+ box.innerHTML='<strong>Andamento dos servidores</strong>'+rows.map(([id,p])=>'<div style="padding:7px 0;border-top:1px solid var(--line)"><strong>'+esc(workerData[id]?.label||workerData[id]?.hostname||id)+'</strong> · '+esc(labels[p.status]||p.status)+'<div>'+esc(p.message||'')+'</div></div>').join('');
 }
 
 function drawWorkers(){
@@ -1126,7 +1044,7 @@ function drawBots(){
   const active=bots.filter(([,b])=>b.enabled);
   const running=runningSet();
   const processes=processSet();
-  const reallyRunning=active.filter(([id])=>processes.has(id));
+  const reallyRunning=active.filter(([id])=>running.has(id));
   const queued=active.filter(([,b])=>!b.workerId||!eligible(workerData[b.workerId]));
 
   $('active').textContent=reallyRunning.length;
@@ -1149,8 +1067,8 @@ function drawBots(){
           </div>
         </div>
         <div class="small muted" style="line-height:1.4">
-          <div><b>Tipo:</b> ${esc(({ia_chat:"IA CHAT",standard:"STANDARD",bot_admin:"BOT ADMIN"})[b.botType||"ia_chat"]||"IA CHAT")}</div><div><b>Status:</b> ${botStatus(id,b,running,processes)}</div>
-          <div><b>Worker:</b> ${esc(b.workerId || b.lastWorkerId || 'Na fila')}</div><div><b>Versão:</b> ${esc((botVersionData[id]&&botVersionData[id].installedVersion)||'Aguardando worker')}</div><div><b>Atualização:</b> ${esc(({received:'Solicitação recebida',updating:'Atualizando',running:'Em execução',starting:'Iniciando',completed:'Atualizado',failed:'Falha'})[(botVersionData[id]||{}).status]||'Sem atualização recente')}</div>
+          <div><b>Status:</b> ${botStatus(id,b,running,processes)}</div>
+          <div><b>Worker:</b> ${esc(b.workerId || b.lastWorkerId || 'Na fila')}</div>
         </div>
         <div style="display:flex;gap:6px;margin-top:auto;padding-top:6px;flex-wrap:wrap">
           <button class="primary" style="flex:1;padding:6px;font-size:11.5px" data-open-bot="${esc(id)}">⚙️ Painel</button>
@@ -1254,7 +1172,7 @@ window.loadBotFiles = async function() {
   const status = $('modalFileStatus'), list = $('modalFileList');
   status.className = "hint"; status.textContent = "Carregando…"; list.innerHTML = "";
   try {
-    const { id, b, wid } = getSelectedBotAndWorker();
+    const { id, wid } = getSelectedBotAndWorker();
     const result = await sendWorkerCommand(wid, { operation: "list", botId: id, path: "" });
     let items = (result.result && result.result.items) || [];
     
@@ -1341,42 +1259,6 @@ window.fetchBotLogs = async function() {
   }
 };
 
-async function botTokenFingerprint(token) {
-  const bytes = new TextEncoder().encode(String(token || ''));
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
-}
-function showBotInvite(status, inviteUrl, appId, cached) {
-  if (!inviteUrl.startsWith('https://discord.com/oauth2/authorize?')) throw new Error('O Discord não retornou um convite válido.');
-  status.className = 'ok';
-  status.innerHTML = (cached ? 'Convite salvo no Firebase' : 'Convite atualizado e salvo no Firebase') + ' para a aplicação ' + esc(appId || '') + ': <a href="' + esc(inviteUrl) + '" target="_blank" rel="noopener noreferrer">Adicionar ao Discord</a>';
-}
-window.generateBotInvite = async function() {
-  const status = $('modalInviteStatus');
-  status.className = 'hint';
-  status.textContent = 'Verificando convite salvo…';
-  try {
-    const { id, wid } = getSelectedBotAndWorker();
-    const bot = botData[id] || {};
-    const fingerprint = await botTokenFingerprint(bot.token);
-    const cache = bot.inviteCache || {};
-    if (cache.tokenFingerprint === fingerprint && String(cache.inviteUrl || '').startsWith('https://discord.com/oauth2/authorize?')) {
-      showBotInvite(status, cache.inviteUrl, cache.applicationId, true);
-      return;
-    }
-    status.textContent = 'Token novo ou convite ausente. Consultando o Discord uma vez…';
-    const result = await sendWorkerCommand(wid, { operation: 'create_invite', botId: id });
-    const inviteUrl = String(result.inviteUrl || '');
-    showBotInvite(status, inviteUrl, result.applicationId, !!result.cached);
-    const inviteCache={tokenFingerprint:fingerprint,applicationId:result.applicationId,inviteUrl,updatedAt:Date.now()};
-    if (botData[id]) botData[id].inviteCache=inviteCache;
-    await update(testRef('bots/'+id),{inviteCache});
-  } catch(e) {
-    status.className = 'error';
-    status.textContent = e.message || String(e);
-  }
-};
-
 window.fetchCurrentBotAvatar = async function() {
   const msg = $('modalProfileMsg');
   msg.className = "hint";
@@ -1402,15 +1284,17 @@ window.saveBotProfileOnlySite = async function() {
   const msg = $('modalProfileMsg'); msg.className = "hint"; msg.textContent = "Enviando alterações ao Worker e ao Discord…";
   try {
     const { id, wid } = getSelectedBotAndWorker();
-    const b = botData[id] || {};
     const name = $('modalProfileName').value.trim();
     const description = $('modalProfileDesc').value.trim();
     const avatarBase64 = $('modalProfileAvatarBase64').value;
     const newToken = $('modalProfileToken').value.trim();
-    const botConfig = b.config && typeof b.config === 'object' ? b.config : {};
-    const mode = botConfig.botHubGuildAccessMode === 'optional' ? 'optional' : 'required';
-    const guildIds = Array.isArray(botConfig.botHubAllowedGuildIds) ? botConfig.botHubAllowedGuildIds : (Array.isArray(b.authorizedGuildIds) ? b.authorizedGuildIds : []);
+    const mode = $('modalGuildAccessMode').value;
+    const rawIds = $('modalGuildAllowlist').value.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
+    const guildIds = [...new Set(rawIds)];
     if(!name) throw new Error("Informe o nome do bot.");
+    if(!['required','optional'].includes(mode)) throw new Error("Modo de permissão inválido.");
+    if(guildIds.some(x=>!/^\d{15,22}$/.test(x))) throw new Error("Há um ID de servidor inválido. Use somente números.");
+    if(guildIds.length>100) throw new Error("Limite de 100 servidores autorizados por bot.");
     msg.textContent = "Validando token e atualizando o perfil no Discord…";
     const result = await sendWorkerCommand(wid, {
       operation:"profile", botId:id, name, description,
@@ -1430,75 +1314,57 @@ window.saveBotProfileOnlySite = async function() {
 };
 
 async function rebalance(){
-  if(busy)return;
-  busy=true;
+  if(busy)return;busy=true;
   try{
     const now=Date.now();
-    const nodes=Object.entries(workerData)
-      .filter(([,w])=>eligible(w))
-      .map(([id,w])=>({id,cap:Math.max(1,capacity(w)),count:0}))
-      .sort((a,b)=>b.cap-a.cap||a.id.localeCompare(b.id));
-    const assignments={};
-    const seenTokens=new Set();
-    const enabled=Object.entries(botData)
-      .filter(([,b])=>b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off')
-      .sort(([a],[b])=>a.localeCompare(b));
-
+    const nodes=Object.entries(workerData).filter(([,w])=>eligible(w)).sort((a,b)=>capacity(b[1])-capacity(a[1]));
+    const counts={};nodes.forEach(([id])=>counts[id]=0);
+    const assignments={};const seenTokens=new Set();
+    const enabled=Object.entries(botData).filter(([,b])=>b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off');
     for(const [bid,b] of enabled){
       const secret=String(b.token||'').trim();
       if(!secret||seenTokens.has(secret)){assignments[bid]=null;continue}
       seenTokens.add(secret);
-
       const previous=b.workerId||b.lastWorkerId||null;
-      const available=nodes.filter(n=>n.count<n.cap);
-      if(!available.length){
-        // Sem capacidade livre: conserva o servidor anterior para não perder a atribuição.
-        assignments[bid]=previous||null;
-        continue;
+      let target=previous;
+      if(!target||!Object.prototype.hasOwnProperty.call(counts,target)||counts[target]>=capacity(workerData[target])){
+        target=nodes.find(([id,w])=>counts[id]<capacity(w))?.[0]||previous;
+      }else if(!eligible(workerData[target])){
+        target=nodes.find(([id,w])=>counts[id]<capacity(w))?.[0]||previous;
       }
-
-      const minLoad=Math.min(...available.map(n=>n.count/n.cap));
-      const tied=available.filter(n=>Math.abs((n.count/n.cap)-minLoad)<1e-9);
-      const target=tied.find(n=>n.id===previous)||tied[0];
-      target.count++;
-      assignments[bid]=target.id;
+      if(target&&Object.prototype.hasOwnProperty.call(counts,target))counts[target]++;
+      assignments[bid]=target;
     }
-
-    const signature=JSON.stringify({assignments,bots:Object.fromEntries(enabled.map(([id,b])=>[id,[b.name,b.token,b.config||{},b.botType||"ia_chat",b.ownerId||null,b.updatedAt||0]]))});
-    if(signature===lastAssignment)return;
+    let signature=JSON.stringify(assignments);if(signature===lastAssignment){busy=false;return}
     lastAssignment=signature;
     const updates={};
     for(const [bid,b] of Object.entries(botData)){
-      const wid=b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off'?(assignments[bid]||null):null;
+      const wid=b.enabled?assignments[bid]||null:null;
       if((b.workerId||null)!==wid)updates['bots/'+bid+'/workerId']=wid;
     }
     if(Object.keys(updates).length)await update(ref(db),updates);
-
     const allWorkerIds=new Set([...Object.keys(workerData),...Object.values(botData).map(b=>b.workerId).filter(Boolean)]);
     for(const wid of allWorkerIds){
       const assigned={};
       for(const [bid,b] of Object.entries(botData)){
-        if(b.enabled!==false&&String(b.desiredState||'on').toLowerCase()!=='off'&&assignments[bid]===wid)
-          assigned[bid]={name:b.name,token:b.token,config:b.config||{},botType:b.botType||"ia_chat",ownerId:b.ownerId||null,allowPasswordSalt:b.allowPasswordSalt||'',allowPasswordHash:b.allowPasswordHash||'',allowUserIds:Array.isArray(b.allowUserIds)?b.allowUserIds:[],authorizedGuildIds:Array.isArray(b.authorizedGuildIds)?b.authorizedGuildIds:[],enabled:true,desiredState:'on',updatedAt:b.updatedAt||now};
+        if(b.enabled&&assignments[bid]===wid)assigned[bid]={name:b.name,token:b.token,config:b.config||{},enabled:true,desiredState:'on',updatedAt:b.updatedAt||now};
       }
       await set(testRef('workerTasks/'+wid),assigned);
     }
-    console.info('[BotHub] Distribuição equilibrada:',nodes.map(n=>({worker:n.id,bots:n.count,capacidade:n.cap})));
   }catch(e){console.error('Rebalance:',e);}
   finally{busy=false}
-}async function toggleBot(id,enabled){
+}
+
+async function toggleBot(id,enabled){
   try{
-    const bot=botData[id]||{},workerId=bot.workerId||bot.lastWorkerId||null;
+    const bot=botData[id]||{};
     const changes={enabled,desiredState:enabled?'on':'off',updatedAt:Date.now()};
-    if(!enabled){changes.lastWorkerId=workerId;changes.workerId=null;}
-    else{changes.workerId=workerId;}
+    if(!enabled){changes.lastWorkerId=bot.workerId||bot.lastWorkerId||null;changes.workerId=null;}
+    else{changes.workerId=bot.lastWorkerId||bot.workerId||null;}
     await update(testRef('bots/'+id),changes);
-    if(!enabled&&workerId&&online(workerData[workerId])){
-      await sendWorkerCommand(workerId,{operation:"stop",botId:id});
-    }
     lastAssignment='';
     await refreshData();
-  }catch(e){alert('Erro ao alterar/parar bot: '+e.message)}
+  }catch(e){alert('Erro: '+e.message)}
 }
 
 async function deleteBot(id){
@@ -1584,23 +1450,16 @@ async function sendWorkerCommand(wid,command,timeoutMs=50000){
   throw new Error("Tempo esgotado para resposta do worker.");
 }
 
-async function publishMainRelease(type,description){
-  const msg=$('mainUpdateMsg');msg.className='hint';msg.textContent='Publicando atualização para os bots…';
+$('publishMainUpdate').onclick=async()=>{
+  const msg=$('mainUpdateMsg');msg.className='hint';
+  const type=$('mainUpdateType').value,description=$('mainUpdateDescription').value.trim();
+  if(!description){msg.className='error';msg.textContent='Escreva uma descrição.';return}
+  if(!confirm('Publicar atualização do main.py?'))return;
+  msg.textContent='Publicando…';
   try{
     await set(testRef('botHubUpdates/current'),{updateId:'main-'+Date.now(),type,description,clusterOnly:false,requestedAt:Date.now()});
-    msg.className='ok';msg.textContent=type==='mandatory'?'Atualização obrigatória enviada a todos os bots ativos.':'Atualização publicada.';
+    msg.className='ok';msg.textContent='Atualização publicada!';
   }catch(e){msg.className='error';msg.textContent=e.message}
-}
-$('publishMainUpdate').onclick=async()=>{
-  const type=$('mainUpdateType').value,description=$('mainUpdateDescription').value.trim();
-  if(!description){$('mainUpdateMsg').className='error';$('mainUpdateMsg').textContent='Escreva uma descrição.';return}
-  if(!confirm('Publicar atualização do main.py?'))return;
-  await publishMainRelease(type,description);
-};
-$('updateAllBots').onclick=async()=>{
-  const description=$('mainUpdateDescription').value.trim()||'Atualização geral do main.py para todos os bots.';
-  if(!confirm('Atualizar TODOS os bots ativos do cluster para a versão publicada do main.py? Cada bot será reiniciado durante a atualização.'))return;
-  await publishMainRelease('mandatory',description);
 };
 
 $('updateCluster').onclick=async()=>{
@@ -1609,7 +1468,7 @@ $('updateCluster').onclick=async()=>{
   msg.className='hint';msg.textContent='Solicitando atualização…';
   try{
     const updateId='manual-'+Date.now();
-    await set(testRef('botHubClusterUpdates/current'),{updateId,type:'mandatory',clusterOnly:true,files:['add_cluster_server.py','bothub_firebase_worker.py'],requestedAt:Date.now()});
+    await set(testRef('botHubClusterUpdates/current'),{updateId,type:'mandatory',clusterOnly:true,files:['start.py','add_cluster_server.py','bothub_firebase_worker.py'],requestedAt:Date.now()});
     msg.className='ok';msg.textContent='Solicitação enviada. Aguardando os servidores…';
     $('clusterUpdateProgress').textContent='Solicitação publicada. Os servidores mostrarão cada etapa assim que receberem o comando.';
   }catch(e){msg.className='error';msg.textContent=e.message}
@@ -1627,17 +1486,14 @@ $('loginBtn').onclick=async()=>{
 
 $('logout').onclick=()=>signOut(auth);
 
-$('botType').onchange=()=>{ $('adminBotFields').classList.toggle('hidden',$('botType').value!=='bot_admin'); $('standardBotFields').classList.toggle('hidden',$('botType').value!=='standard'); };
 $('createBot').onclick=async()=>{
-  const name=$('botName').value.trim(),token=$('botToken').value.trim(),botType=$('botType').value;
+  const name=$('botName').value.trim(),token=$('botToken').value.trim();
   if(!name||token.length<30){$('createMsg').textContent='Informe nome e token válido.';return}
   try{
-    if(Object.values(botData).some(b=>String(b.token||'').trim()===token))throw new Error('Token já cadastrado.');
+    if(Object.values(botData).some(b=>String(b.token||'').trim()===token)){throw new Error('Token já cadastrado.');}
     const id=crypto.randomUUID().replaceAll('-','');
-    const csv=v=>v.split(',').map(x=>x.trim()).filter(x=>/^\d{15,22}$/.test(x));
-    let config={}; if(botType==='bot_admin')config={bot_id:id}; if(botType==='standard'){try{config.standard_commands=JSON.parse($('standardCommands').value||'{}');if(!config.standard_commands||Array.isArray(config.standard_commands)||typeof config.standard_commands!=='object')throw new Error('JSON deve ser um objeto.');}catch(err){throw new Error('Comandos STANDARD inválidos: '+err.message)}}
-    await set(testRef('bots/'+id),{name,token,botType,ownerId:auth.currentUser?.uid||'admin',config,enabled:true,desiredState:'on',workerId:null,createdAt:Date.now(),updatedAt:Date.now()});
-    $('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado como '+botType+'!';
+    await set(testRef('bots/'+id),{name,token,config:{},enabled:true,desiredState:'on',workerId:null,createdAt:Date.now(),updatedAt:Date.now()});
+    $('botName').value='';$('botToken').value='';$('createMsg').textContent='Bot cadastrado!';
     lastAssignment='';await refreshData();
   }catch(e){$('createMsg').textContent='Erro: '+e.message}
 };
@@ -1648,37 +1504,13 @@ function start(){
   $('login').classList.add('hidden');
   $('dashboard').classList.remove('hidden');
   $('connection').textContent='Conectando…';$('connection').className='badge';
-  watch('workers',v=>{workerData=v;syncTrustedWorkers();cleanupStaleWorkers();drawWorkers();drawClusterProgress();rebalance().then(drawBots)});
-  watch('botHubClusterUpdates/progress',v=>{clusterUpdateProgress=v||{};drawClusterProgress();drawWorkers()});watch('botHubBotVersions',v=>{botVersionData=v||{};drawBotUpdateProgress();drawBots()});
+  watch('workers',v=>{workerData=v;cleanupStaleWorkers();drawWorkers();rebalance().then(drawBots)});
+  watch('botHubClusterUpdates/progress',v=>{clusterUpdateProgress=v||{};drawClusterProgress();drawWorkers()});
   watch('bots',v=>{botData=v;drawBots();rebalance()});
-  watch('botHubGlobalApis',()=>renderGlobalApis());
   $('connection').textContent='Conectado';$('connection').className='badge';
   initRealtimeChart();
   startTypewriterOnce();
 }
-
-
-// APIs Globais — administração
-function maskApiKey(key){const v=String(key||'');return v.length>8?v.slice(0,4)+'••••••'+v.slice(-4):'••••••';}
-async function renderGlobalApis(){
-  const box=$('globalApisList');if(!box)return;
-  try{
-    const snap=await get(testRef('botHubGlobalApis'));const items=snap.val()||{};
-    const rows=Object.entries(items);
-    box.innerHTML=rows.length?rows.map(([id,a])=>`<div class="row" style="align-items:flex-start"><div style="min-width:0;flex:1"><b>${esc(a.provider||'API')}</b> <span class="badge ${a.enabled?'':'off'}">${a.enabled?'Ativa':'Pausada'}</span><div class="small muted">Modelo: ${esc(a.model||'padrão')} · Chave: ${maskApiKey(a.key)}</div><div class="small muted">Adicionada por Discord ID: ${esc(a.addedByName||a.addedBy||'Admin do painel')}</div><div class="small muted">Disponibilidade: ${esc(a.status||'Não verificada')}</div></div><div style="display:flex;gap:5px;flex-wrap:wrap"><button class="secondary" data-global-toggle="${esc(id)}">${a.enabled?'Pausar':'Ativar'}</button><button class="danger" data-global-delete="${esc(id)}">Remover</button></div></div>`).join(''):'Nenhuma API global cadastrada.';
-    box.querySelectorAll('[data-global-toggle]').forEach(b=>b.onclick=async()=>{const id=b.dataset.globalToggle,a=items[id];await update(testRef('botHubGlobalApis/'+id),{enabled:!a.enabled,updatedAt:Date.now()});await renderGlobalApis()});
-    box.querySelectorAll('[data-global-delete]').forEach(b=>b.onclick=async()=>{const id=b.dataset.globalDelete;if(!confirm('Remover esta API global?'))return;await remove(testRef('botHubGlobalApis/'+id));await renderGlobalApis()});
-  }catch(e){box.textContent='Erro ao carregar APIs: '+e.message}
-}
-$('addGlobalApi').onclick=async()=>{
- const provider=$('globalApiProvider').value,key=$('globalApiKey').value.trim(),model=$('globalApiModel').value.trim();
- if(key.length<8){$('globalApiMsg').textContent='Informe uma chave válida.';return}
- try{
-  const id=crypto.randomUUID().replaceAll('-','');
-  await set(testRef('botHubGlobalApis/'+id),{provider,key,model,enabled:true,status:'Não verificada',available:null,addedBy:'admin-panel',addedByName:auth.currentUser?.email||'Administrador',createdAt:Date.now(),updatedAt:Date.now()});
-  $('globalApiKey').value='';$('globalApiModel').value='';$('globalApiMsg').textContent='API adicionada. A disponibilidade será atualizada após o primeiro uso.';await renderGlobalApis();
- }catch(e){$('globalApiMsg').textContent='Erro: '+e.message}
-};
 
 onAuthStateChanged(auth,async user=>{
   if(!user){
@@ -1694,7 +1526,6 @@ onAuthStateChanged(auth,async user=>{
       else{$('loginMsg').textContent='UID não autorizado.';await signOut(auth);return;}
     }
     start();
-    renderGlobalApis();
     refreshData().then(()=>refreshAutomaticAvatarsOnLogin()).catch(e=>console.warn('[BotHub] Falha ao atualizar avatares no login:',e));
   }catch(e){
     $('loginMsg').textContent='Erro: '+e.message;
